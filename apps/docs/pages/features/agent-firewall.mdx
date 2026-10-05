@@ -1,0 +1,97 @@
+---
+title: Agent firewall — tool/action policy for LLM agents
+---
+
+# Agent firewall
+
+The guardrail proxy decides whether prompt/response **text** is safe. The
+**agent firewall** decides whether an agent **action** — a tool call your
+model wants to make — is allowed. It runs inline on the hosted proxy, per
+target, and is **off by default**.
+
+## What it gates
+
+When you point an app at a target's [guardrail proxy](/features/sentry) and
+enable the firewall, every tool call the model returns is evaluated against a
+policy:
+
+| Action | Effect |
+| --- | --- |
+| **allow** | forwarded unchanged |
+| **block** | the whole response is refused (`403`), so your app never receives the dangerous tool call |
+| **require_approval** | held for human confirmation (refused at the gateway) |
+| **redact_args** | credential-shaped argument values are masked, then forwarded |
+
+### Built-in policy (always on)
+
+| Rule | Action | Catches |
+| --- | --- | --- |
+| `ssrf-cloud-metadata` | block | `169.254.169.254`, `metadata.google.internal`, … (SSRF / credential theft) |
+| `sensitive-file-read` | block | `/etc/shadow`, `~/.ssh/id_*`, `~/.aws/credentials`, `.env` |
+| `destructive-shell` | block | `rm -rf`, `mkfs`, `dd if=`, `shutdown`, … |
+| `secret-in-args` | redact_args | `ghp_…`, `AKIA…`, `sk-…`, `xox[baprs]-…` |
+
+A custom rule with action **allow**, placed before these, can whitelist a
+specific case (first match wins).
+
+## Enforcement seam (read this)
+
+The hosted proxy is a chat-completions gateway. It sees tool calls only in the
+model's **response** and tool results in the next **request**. So the gateway
+firewall gates the model's **intent to call a tool** and the **data flowing
+back** — it cannot stop an app from executing a tool it never routed through
+the proxy. True execution-time **action** blocking is the job of the in-process
+SDK / sidecar (on the roadmap). The same policy engine powers both seams.
+
+## Configure
+
+UI: **Targets → (your LLM target) → Edit → Agent firewall** — toggle it on,
+set the default action for unmatched calls, and add custom rules.
+
+API:
+
+```bash
+curl -X PUT https://api.pencheff.com/targets/<TARGET_ID>/firewall \
+  -H "Authorization: Bearer <PENCHEFF_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firewall": {
+      "enabled": true,
+      "default_action": "allow",
+      "rules": [
+        {"id": "no-prod-deletes", "action": "require_approval",
+         "tools": ["delete_*", "drop_*"], "arg_patterns": ["prod"],
+         "reason": "destructive op on prod needs sign-off"}
+      ]
+    }
+  }'
+```
+
+Each rule needs at least one `tools` glob or `arg_patterns` regex. Invalid
+regexes are rejected at write time (`400`) so the proxy never faults at
+request time.
+
+## Block response
+
+A blocked tool call returns a uniform `403`:
+
+```json
+{
+  "error": {
+    "message": "Pencheff Sentry blocked: tool call 'http_get' blocked by the agent firewall: targets a cloud metadata endpoint (SSRF / credential theft)",
+    "type": "guardrail_block",
+    "code": "sentry_blocked_response",
+    "pencheff_sentry": { "category": "LLM06", "detector": "firewall:ssrf-cloud-metadata" }
+  }
+}
+```
+
+Firewall decisions also show up in [runtime traces](/features/runtime-traces)
+as a `firewall.block` span.
+
+## Notes
+
+- Same buffered-only limitation as the response detectors: streaming (SSE)
+  responses are forwarded without tool-call gating today.
+- Engine: [`pencheff_sentry/firewall.py`](https://github.com/Magadha-IG/pencheff/blob/main/plugins/sentry/pencheff_sentry/firewall.py)
+  — pure Python, MIT.

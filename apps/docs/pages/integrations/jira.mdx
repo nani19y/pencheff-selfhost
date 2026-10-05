@@ -1,0 +1,58 @@
+---
+title: Jira
+---
+
+# Jira integration
+
+Pencheff's Jira connector creates issues in a target project with
+severity-appropriate priority, full evidence, and CVSS / OWASP /
+compliance metadata. It supports both Jira Cloud and on-prem Data
+Center via REST v3.
+
+## Configuration
+
+Set these env vars (or configure via `/integrations`):
+
+```
+JIRA_URL=https://acme.atlassian.net
+JIRA_EMAIL=security@acme.com
+JIRA_TOKEN=<api-token>
+JIRA_PROJECT=SEC
+```
+
+Create a token at [id.atlassian.com → Security → API tokens](https://id.atlassian.com/manage-profile/security/api-tokens).
+
+## Via MCP
+
+```text
+export_to_jira(
+  session_id=sid,
+  project_key="SEC",
+  issue_type="Bug",
+  severity_filter="high"
+)
+```
+
+## Issue fields populated
+
+- **Summary** — `[HIGH] Reflected XSS on /search?q=`
+- **Description** — full PoC + evidence + remediation (ADF-formatted)
+- **Priority** — `Highest` (critical) / `High` / `Medium` / `Low`
+- **Labels** — `security`, `pencheff`, `owasp-A03`, `cwe-79`
+- **Custom fields** (when configured) — `CVSS Score`, `CWE ID`,
+  `Verification Status`, `EPSS`, `KEV`
+
+## Finding → Jira lifecycle
+
+| Pencheff event | Jira action |
+| --- | --- |
+| New finding (critical/high) | Create issue with `To Do` status |
+| Verification = `true_positive` | Add `verified` label |
+| Suppressed as `false_positive` | Transition to `Done`, reason = FP |
+| SLA breach | Add `sla-breached` label + comment |
+| Re-check marks as fixed | Transition to `Done` with comment |
+
+## On-prem Data Center
+
+Use `JIRA_AUTH=basic` instead of Cloud's basic-over-HTTPS token; the
+REST path is identical.

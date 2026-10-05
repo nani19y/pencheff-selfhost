@@ -1,0 +1,40 @@
+---
+title: Dependencies API
+---
+
+# Dependencies API
+
+## `GET /dependencies/{scan_id}`
+
+Return every dependency discovered during the scan, along with any
+vulnerabilities Pencheff found for each.
+
+Query params:
+
+- `?vulnerable_only=true` — only rows with non-empty `vulnerabilities`
+
+Response:
+
+```json
+[
+  {
+    "id": "...",
+    "scan_id": "...",
+    "ecosystem": "npm",
+    "name": "lodash",
+    "version": "4.17.11",
+    "license": "MIT",
+    "scope": "runtime",
+    "vulnerabilities": [
+      {
+        "id": "CVE-2020-8203",
+        "severity": "high",
+        "summary": "Prototype pollution via _.zipObjectDeep",
+        "cvss_score": 7.4,
+        "fixed_versions": ["4.17.19"]
+      }
+    ],
+    "created_at": "..."
+  }
+]
+```

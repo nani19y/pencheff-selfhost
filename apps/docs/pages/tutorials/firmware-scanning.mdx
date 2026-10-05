@@ -1,0 +1,81 @@
+---
+title: Tutorial — Firmware security scanning
+description: Static analysis of a firmware/embedded image — embedded keys, default credentials, insecure services, cleartext endpoints, and vulnerable components. No device or flashing.
+---
+
+import { Callout } from "nextra/components";
+
+# Tutorial: Firmware security scanning
+
+Statically analyze a firmware image. Pencheff identifies embedded
+filesystems and components, then sweeps for the issues that get embedded
+devices compromised — baked-in keys, default credentials, and backdoors.
+
+## Scenario
+
+* **Artifact.** `device-fw-2.3.bin`, hosted at a URL you control.
+* **No device.** Analysis runs on the image; the hardware is never touched.
+* **Goal.** A findings register (embedded keys, default creds, insecure
+  services, vulnerable components) for the firmware/device team.
+
+## Inputs you need
+
+| Item | Where it goes |
+| --- | --- |
+| Firmware URL (`.bin`/`.img`/archive) | **Artifact URL** field |
+| SHA-256 of the file | **SHA-256** field — integrity gate |
+
+```bash
+shasum -a 256 device-fw-2.3.bin
+```
+
+## Time budget
+
+| Phase | Wall time |
+| --- | --- |
+| Fetch + verify + component map | 1–3 min |
+| String + secrets analysis | 1–2 min |
+| **Total** | **~5 min** |
+
+## Steps
+
+### 1. Register the target
+
+[`app.pencheff.com`](https://app.pencheff.com) → **Register target** →
+**OT / IoT & Hardware Security** → **Firmware / Embedded**:
+
+* **Name** — `Acme device — fw 2.3`
+* **Artifact URL** — `https://builds.acme.com/device-fw-2.3.bin`
+* **SHA-256** — the digest from above
+
+### 2. Run the scan
+
+**Commission scan**. Pencheff verifies the download, runs `binwalk` for the
+component/filesystem map (when available), then extracts printable strings
+and analyzes them.
+
+### 3. Read the findings
+
+| Category | Examples |
+| --- | --- |
+| `firmware_crypto` | embedded PEM private keys (critical), certificates |
+| `firmware_creds` | `/etc/shadow` hashes, `admin:admin` default logins |
+| `firmware_misconfig` | telnet/debug services |
+| `firmware_communication` | cleartext `http://` update endpoints |
+| `firmware_secrets` | hardcoded API keys/tokens |
+| `firmware_components` | BusyBox/Dropbear/OpenSSL versions → CVE matching |
+
+<Callout type="info">
+  An **embedded private key** is flagged Critical — every unit ships the same
+  key, so extracting it from one downloaded firmware breaks TLS/SSH/signing
+  for the entire fleet.
+</Callout>
+
+## Deliverable
+
+A findings register exportable to DOCX/JSON/CSV for the firmware team.
+
+## Next
+
+* [Tutorial: IoT device scanning](/tutorials/iot-device-scanning) — same engine, device framing.
+* [Firmware, IoT & OT Security](/features/firmware-iot) — feature reference.

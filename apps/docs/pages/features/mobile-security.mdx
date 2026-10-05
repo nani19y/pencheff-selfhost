@@ -1,0 +1,136 @@
+---
+title: Mobile Application Security
+description: Static security analysis of Android APK/AAB and iOS IPA files — manifest, secrets, crypto, transport security, and Mach-O protections, mapped to OWASP MASVS. No device or emulator.
+---
+
+import { Callout } from "nextra/components";
+
+# Mobile Application Security
+
+Pencheff statically analyzes Android APK/AAB and iOS IPA files, mapping
+findings to OWASP MASVS and the OWASP Mobile Top 10. Analysis is fully
+static — the app is unpacked and inspected as data, **never installed or
+executed**, so no device, emulator, or root is required.
+
+## Register a mobile target (recommended)
+
+In the app, register an **Android Application** or **iOS Application**
+target under **Mobile & Client Security**: provide a direct artifact URL
+(`.apk`/`.aab` or `.ipa`) and its **SHA-256**, then commission a scan.
+Pencheff downloads and integrity-verifies the artifact, decompiles/unpacks
+it, and runs the static modules.
+
+* **Step-by-step:** [Android APK scanning](/tutorials/android-apk-scanning) ·
+  [iOS IPA scanning](/tutorials/ios-ipa-scanning)
+
+<Callout type="info">
+  Ingestion is by **artifact URL + SHA-256** — the download is rejected
+  unless the digest matches, pinning the exact build. App Store IPAs are
+  FairPlay-encrypted; Pencheff flags this and analyzes everything outside
+  the encrypted code section.
+</Callout>
+
+## MCP / power-user tools
+
+The same engine is exposed to MCP hosts: `scan_mobile_static(session_id,
+apk_path=… | ipa_path=…)` runs the first-party modules over a local file,
+and `scan_mobile_app(...)` adds an optional MobSF REST enrichment pass.
+
+## What it tests
+
+| Check | Android | iOS |
+|-------|---------|-----|
+| Hardcoded secrets (API keys, JWTs, PEM keys) | ✅ | ✅ |
+| Insecure data storage | ✅ | ✅ |
+| Exported components without permissions | ✅ | — |
+| `debuggable=true` flag | ✅ | — |
+| `allowBackup=true` flag | ✅ | — |
+| `usesCleartextTraffic=true` | ✅ | — |
+| Missing `networkSecurityConfig` | ✅ | — |
+| Low `minSdkVersion` (< 24) | ✅ | — |
+| ATS disabled (`NSAllowsArbitraryLoads`) | — | ✅ |
+| Missing PIE flag | — | ✅ |
+| Insecure crypto (DES/3DES/RC4/ECB/MD5) | ✅ | ✅ |
+| Full MobSF enrichment (static + dynamic) | ✅ (APK) | ✅ (IPA) |
+
+## Prerequisites
+
+```bash
+# Android analysis
+brew install apktool   # macOS
+# or: sudo apt install apktool
+
+# Java source recovery (for secrets sweep)
+# Download jadx from https://github.com/skylot/jadx/releases
+# and place jadx binary on PATH
+
+# MobSF (optional but recommended — enriches results significantly)
+docker run -it --rm -p 8000:8000 opensecurity/mobile-security-framework-mobsf:latest
+# Copy the API key shown at startup or from http://localhost:8000/api_docs
+export MOBSF_API_KEY="your-key"
+```
+
+## Basic usage
+
+```text
+scan_mobile_app(
+  session_id = sid,
+  apk_path   = "/path/to/app.apk",
+  platform   = "android",
+  modules    = ["mobsf", "apktool", "manifest", "secrets"],
+  mobsf_url  = "http://127.0.0.1:8000"
+)
+→ {
+    platform: "android",
+    apk_path: "/path/to/app.apk",
+    mobsf: { hash: "abc123", scan_status: 200 },
+    apktool: { output_dir: "/tmp/pencheff-apktool/app", returncode: 0 },
+    manifest: { findings_count: 3, findings: [...] },
+    secrets: { findings_count: 2, findings: [...] }
+  }
+```
+
+## Module breakdown
+
+| Module | Requires | What it does |
+|--------|----------|--------------|
+| `mobsf` | MobSF running + `MOBSF_API_KEY` | Full static scan via MobSF REST API — binary analysis, permissions, URLs, hardcoded secrets, security score |
+| `apktool` | `apktool` on PATH | Decompiles APK to smali + `AndroidManifest.xml` |
+| `manifest` | `apktool` (called internally) | Parses `AndroidManifest.xml` — debuggable, allowBackup, cleartext, exported components, minSdkVersion |
+| `secrets` | `jadx` on PATH | Decompiles APK to Java source, sweeps for 15+ regex patterns: AWS/GCP/Firebase keys, Stripe/Slack/GitHub tokens, JWTs, PEM private keys |
+
+## Swarm integration
+
+When a full swarm scan is configured with a mobile target (`apk_path` or `ipa_path` in session init), the `MobileAppAgent` breaker automatically calls `scan_mobile_app` with all modules. It:
+
+1. Calls `scan_mobile_app` with all modules
+2. Triages MobSF findings by severity — suppresses info-level items
+3. Flags hardcoded secrets with the smali/Java class path and line number
+4. Produces structured findings for the blue team with exact remediation steps
+
+## Example finding
+
+```json
+{
+  "title": "Hardcoded AWS Access Key ID in com/example/app/network/ApiClient.java",
+  "severity": "critical",
+  "category": "mobile_secrets",
+  "owasp_category": "M1",
+  "cvss_score": 9.1,
+  "description": "A hardcoded AWS Access Key ID (AKIA...) was found at line 42 of ApiClient.java. If the APK is decompiled by a third party, these credentials can be used to access AWS resources.",
+  "remediation": "Remove the hardcoded key. Use AWS Cognito, instance roles, or a secrets manager. Rotate the exposed key immediately and audit CloudTrail for unauthorized use.",
+  "evidence": {
+    "file": "com/example/app/network/ApiClient.java",
+    "line": 42,
+    "snippet": "private static final String AWS_KEY = \"AKIAIOSFODNN7EXAMPLE\";"
+  }
+}
+```
+
+## Test targets
+
+To test without a production app, use a deliberately vulnerable APK:
+
+- **DIVA Android** — `https://github.com/payatu/diva-android/releases`
+- **InsecureBankv2** — `https://github.com/dineshshetty/Android-InsecureBankv2`
+- **OWASP iGoat** (iOS) — `https://github.com/OWASP/iGoat-Swift`

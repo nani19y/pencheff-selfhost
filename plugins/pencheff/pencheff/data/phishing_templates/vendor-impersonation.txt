@@ -1,0 +1,18 @@
+Subject: {{vendor_name}} invoice {{invoice_id}} — payment overdue
+
+Hello {{recipient_first}},
+
+This is a reminder that invoice {{invoice_id}} from {{vendor_name}}
+({{vendor_email}}) is now {{days_overdue}} days overdue.
+
+To settle, log in via the secure portal: {{landing_url}}
+
+If the invoice has already been paid, please reply with the
+remittance reference and we'll close the ticket.
+
+Regards,
+{{pretext_full_name}}
+{{vendor_name}} Accounts Receivable
+
+— Authorized vendor-impersonation pretext. Use only against employees
+listed in the engagement scope as in-scope phishing targets.

@@ -1,0 +1,118 @@
+---
+title: Cloud security targets
+description: Register AWS, Azure, and GCP cloud targets for read-only CSPM, CIEM, DSPM, serverless, edge, database, storage, and secrets-manager posture checks.
+---
+
+# Cloud security targets
+
+Pencheff supports six Infrastructure & Cloud Security target types:
+
+| Target type | Wire kind | Main agents |
+| --- | --- | --- |
+| Cloud Account (CSPM) | `cloud_account` | CloudInventoryAgent, CloudIamExposureAgent, CloudAuditLoggingAgent |
+| Serverless Functions | `serverless_function` | ServerlessSecurityAgent, CloudIamExposureAgent |
+| Cloud Storage | `cloud_storage` | CloudStorageAgent, CloudIamExposureAgent |
+| Load Balancer / CDN | `load_balancer_cdn` | EdgeCdnSecurityAgent |
+| Database (Cloud) | `cloud_database` | CloudDatabaseAgent, CloudIamExposureAgent |
+| Secrets Manager | `secrets_manager` | SecretsHygieneAgent, CloudIamExposureAgent |
+
+All cloud scans are read-only. Pencheff inspects provider metadata or
+operator-supplied inventory JSON. Secrets-manager targets never read or store
+secret values; findings only use metadata such as rotation state, policy
+shape, encryption state, and resource name.
+
+## Supported providers
+
+| Provider | Scope field | Authorization method |
+| --- | --- | --- |
+| AWS | Account ID | Access key ID + secret access key, optional STS session token, optional role ARN |
+| Azure | Subscription ID | Tenant ID + client ID + client secret for a Service Principal |
+| GCP | Project ID | Service-account JSON key |
+
+The registration form does not ask for invoke URLs for these providers. The
+target identifier is synthesized as:
+
+```text
+cloud://<provider>/<scope>/<kind>
+```
+
+For example:
+
+```text
+cloud://aws/123456789012/cloud_storage
+cloud://azure/00000000-0000-0000-0000-000000000000/secrets_manager
+cloud://gcp/production-project/cloud_database
+```
+
+## Checks
+
+CloudAccount scans can run the broadest coverage because account inventory can
+include IAM, audit logging, storage, database, serverless, edge, and secrets
+metadata. Resource-specific targets narrow the checks to the selected resource
+family.
+
+| Agent | Examples of findings |
+| --- | --- |
+| CloudIamExposureAgent | wildcard actions, admin-like principals, privilege-escalation actions such as `iam:PassRole` |
+| CloudStorageAgent | public buckets/containers, encryption disabled, access logging disabled |
+| ServerlessSecurityAgent | public invocation, deprecated runtimes, secret-like environment variable names |
+| EdgeCdnSecurityAgent | legacy TLS, missing WAF, exposed origin, risky cache policy |
+| CloudDatabaseAgent | public database access, encryption disabled, backups disabled, deletion protection disabled |
+| SecretsHygieneAgent | rotation disabled, public/broad secret policy, encryption disabled |
+| CloudAuditLoggingAgent | account audit logging disabled, log integrity validation disabled |
+
+## Offline inventory
+
+For teaching, demos, and high-school-friendly testing, you can skip provider
+authorization and paste inventory JSON in the cloud target form.
+
+Cloud storage example:
+
+```json
+{
+  "storage": [
+    {
+      "name": "prod-public-assets",
+      "public": true,
+      "encrypted": false,
+      "logging_enabled": false
+    }
+  ]
+}
+```
+
+Secrets manager example:
+
+```json
+{
+  "secrets": [
+    {
+      "name": "prod/db/password",
+      "rotation_enabled": false,
+      "policy_public": true
+    }
+  ]
+}
+```
+
+Do not include secret values. If a value-shaped field is present in evidence,
+Pencheff redacts it before storing findings.
+
+## Disciplines
+
+Cloud targets can be selected directly or through disciplines:
+
+| Discipline | Compatible target kinds |
+| --- | --- |
+| CSPM | all six cloud target kinds |
+| CIEM | account, serverless, storage, database, secrets |
+| DSPM | storage, database, secrets |
+| Serverless Security | serverless |
+| Edge Security | load balancer / CDN |
+| CWPP | container image, Kubernetes cluster, host, serverless |
+
+## Next
+
+- [Tutorial: cloud target registration](/tutorials/cloud-targets)
+- [IaC scanning](/features/iac)
+- [Container image scanning](/features/container)

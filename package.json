@@ -1,0 +1,13 @@
+{
+  "name": "pencheff-studio-windows",
+  "productName": "Pencheff Studio",
+  "version": "1.0.0",
+  "description": "Pencheff Studio for Windows — AI security pentest platform desktop client.",
+  "main": "src/main.js",
+  "author": {
+    "name": "Pencheff",
+    "email": "support@pencheff.com"
+  },
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://pencheff.com"
+}

@@ -1,0 +1,35 @@
+---
+title: Generic shell runners
+---
+
+# Generic shell CI
+
+Any CI system can run Pencheff — it's just a `pip install` + CLI call.
+
+```bash
+pip install pencheff
+
+pencheff scan \
+  --target "https://staging.example.com" \
+  --profile cicd \
+  --fail-on high \
+  --format json,docx \
+  --output ./reports/
+
+# Non-zero exit code when findings ≥ fail-on are detected.
+```
+
+For policy-driven runs:
+
+```bash
+pencheff run-policy policies/examples/ci_gate.yaml
+```
+
+Return codes:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Scan completed and no finding at/above the fail threshold |
+| 1 | Scan completed but threshold tripped (fail the build) |
+| 2 | Scan failed to start (network / config error) |
+| 3 | Invalid arguments |

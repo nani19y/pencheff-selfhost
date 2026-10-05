@@ -1,0 +1,48 @@
+# Pinned, version-checked advisories for known-vulnerable MCP implementations.
+# Refresh as new MCP CVEs land (the 2024-2026 window is active). Each entry:
+#   name_match: regex matched against server_name AND command tokens
+#   vulnerable_below: semantic version; finding fires when detected version < this
+#   (omit vulnerable_below to flag on any detection)
+- id: mcp-remote-rce
+  name_match: "(?i)mcp-remote"
+  vulnerable_below: "0.1.16"
+  cve: "CVE-2025-6514"
+  cvss: 9.6
+  severity: critical
+  cwe: "CWE-78"
+  title: "Vulnerable mcp-remote (RCE via crafted OAuth endpoint)"
+  description: "mcp-remote < 0.1.16 passes a server-supplied OAuth authorization endpoint to open(), enabling OS command injection / RCE on the client."
+  remediation: "Upgrade mcp-remote to >= 0.1.16."
+  reference: "https://jfrog.com/blog/2025-6514-critical-mcp-remote-rce-vulnerability/"
+- id: mcp-inspector-rce
+  name_match: "(?i)mcp-inspector|modelcontextprotocol/inspector"
+  vulnerable_below: "0.14.1"
+  cve: "CVE-2025-49596"
+  cvss: 9.4
+  severity: critical
+  cwe: "CWE-306"
+  title: "Vulnerable MCP Inspector (unauth localhost proxy RCE)"
+  description: "MCP Inspector < 0.14.1 lacks auth between client and proxy, enabling RCE from a malicious web page via the 0.0.0.0-day + DNS rebinding."
+  remediation: "Upgrade MCP Inspector to >= 0.14.1."
+  reference: "https://www.oligo.security/blog/critical-rce-vulnerability-in-anthropic-mcp-inspector-cve-2025-49596"
+- id: mcp-python-sdk-dns-rebind
+  name_match: "(?i)mcp[- _]?python[- _]?sdk|modelcontextprotocol[/_-]sdk|fastmcp"
+  vulnerable_below: "1.23.0"
+  cve: "CVE-2025-66416"
+  cvss: 7.5
+  severity: high
+  cwe: "CWE-1188"
+  title: "Vulnerable MCP Python SDK (DNS-rebinding protection off by default)"
+  description: "MCP Python SDK < 1.23.0 ships HTTP transports with DNS-rebinding protection disabled by default."
+  remediation: "Upgrade the mcp Python SDK to >= 1.23.0 and configure TransportSecuritySettings/allowed-hosts."
+  reference: "https://advisories.gitlab.com/pypi/mcp/CVE-2025-66416/"
+- id: oatpp-mcp-session-hijack
+  name_match: "(?i)oatpp-mcp|oat\\+\\+"
+  cve: "CVE-2025-6515"
+  cvss: 6.8
+  severity: medium
+  cwe: "CWE-330"
+  title: "Vulnerable oatpp-mcp (predictable session IDs / hijacking)"
+  description: "oatpp-mcp derives SSE session IDs from memory pointers rather than CSPRNG, enabling prompt-hijacking."
+  remediation: "Use cryptographically random session IDs; track the oatpp-mcp advisory."
+  reference: "https://jfrog.com/blog/mcp-prompt-hijacking-vulnerability/"

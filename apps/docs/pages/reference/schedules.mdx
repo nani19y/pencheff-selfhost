@@ -1,0 +1,53 @@
+---
+title: Schedules API
+---
+
+# Schedules API
+
+## `POST /schedules`
+
+```json
+{
+  "target_id": "...",
+  "name": "Nightly OWASP Top 10",
+  "cron_expression": "0 2 * * *",
+  "profile": "standard",
+  "policy_yaml": null,
+  "enabled": true
+}
+```
+
+## `GET /schedules`
+
+List all schedules for the current org.
+
+## `PATCH /schedules/{id}`
+
+Update cron / profile / enabled. Pausing does not delete history.
+
+## `DELETE /schedules/{id}`
+
+Remove a schedule.
+
+## Cron
+
+Standard 5-field cron expressions, evaluated in UTC. The Celery Beat
+dispatcher polls every minute and launches scans whose `next_run_at`
+has elapsed.
+
+## Schedule object
+
+```typescript
+type Schedule = {
+  id: string;
+  target_id: string;
+  name: string;
+  cron_expression: string;
+  profile: string;
+  policy_yaml: string | null;
+  enabled: boolean;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  created_at: string;
+};
+```

@@ -1,0 +1,159 @@
+---
+title: Pencheff Sentry — runtime LLM guardrail
+---
+
+# Pencheff Sentry
+
+Sentry is a runtime LLM guardrail that drops between your application
+and the model provider. It blocks **prompt injection**, **PII /
+secret exfiltration**, **unsafe HTML in model output**, and
+**unbounded consumption** as they happen — instead of catching them
+post-hoc on the next Pencheff red-team scan.
+
+Same OWASP-LLM-Top-10 (2025) taxonomy as the offline scanner. Same
+detector library. Inline.
+
+## Modes
+
+| Mode | What it is | Best for |
+| --- | --- | --- |
+| **HTTP proxy sidecar** | A FastAPI service in front of an OpenAI-compatible upstream | Drop-in URL change for any OpenAI-compatible provider |
+| **LiteLLM plugin** | `pre_call` / `post_call` hooks | Stacks already running LiteLLM |
+| **MCP middleware** | Wraps the MCP tool-call path | LLM agents that call tools — blocks unsafe tool args inline |
+
+The Cloudflare Worker mode (edge deployment) is on the v0.8 roadmap.
+
+## Hosted gateway (per-target)
+
+If you'd rather not run the sidecar, register an **LLM target** in Pencheff,
+configure its guardrails, and point your app at the hosted gateway — no
+install, policy managed in the UI:
+
+```
+POST https://api.pencheff.com/proxy/<TARGET_ID>/v1/chat/completions
+Authorization: Bearer <PENCHEFF_API_KEY>
+```
+
+The gateway runs the same OWASP-LLM detector chain on the prompt and response,
+plus two capabilities that build on it:
+
+- **[Agent firewall](/features/agent-firewall)** — gate the tool calls the
+  model makes (block SSRF / secret exfil / destructive actions, require
+  approval, or redact credential-shaped args). Off by default, per target.
+- **[Runtime traces](/features/runtime-traces)** — every request recorded as a
+  span tree (LLM call · detector verdict · firewall decision), viewable on the
+  target page.
+
+Configure guardrails at **Targets → (LLM target) → Edit → Guardrails**, and the
+firewall just below it. See also the **[memory scanner](/features/memory-scanner)**
+for auditing agent memory / vector stores.
+
+## Quick start
+
+```bash
+pip install pencheff-sentry
+
+pencheff-sentry serve \
+  --upstream https://api.openai.com/v1 \
+  --port 4242 \
+  --max-output-tokens 4000
+```
+
+Then change your application's OpenAI base URL from
+`https://api.openai.com/v1` to `http://localhost:4242`. Sentry forwards
+allowed requests verbatim and blocks unsafe ones with a clean
+`403 sentry_blocked` response that includes the OWASP-LLM category.
+
+```json
+{
+  "error": {
+    "message": "Pencheff Sentry blocked: prompt injection (direct-override)",
+    "type": "guardrail_block",
+    "code": "sentry_blocked",
+    "pencheff_sentry": {
+      "category": "LLM01",
+      "detector": "direct-override"
+    }
+  }
+}
+```
+
+## What it detects
+
+| OWASP LLM | Detector | Examples |
+| --- | --- | --- |
+| **LLM01** | Prompt injection | `ignore previous instructions`, `pretend to be DAN`, `print your system prompt`, encoded variants |
+| **LLM02** | PII / secrets | SSN, credit card, email, phone, AWS access key, OpenAI sk-, GitHub PAT shapes |
+| **LLM05** | Unsafe output handling | `<script>` / `<iframe>` / `javascript:` / inline event handlers in model response |
+| **LLM10** | Unbounded consumption | Output token ceiling configurable via `--max-output-tokens` |
+
+The full pattern set lives in
+[`pencheff_sentry/core.py`](https://github.com/Magadha-IG/pencheff/blob/main/plugins/sentry/pencheff_sentry/core.py)
+— pure Python, no I/O, easy to extend.
+
+## LiteLLM plugin
+
+```python
+import litellm
+from pencheff_sentry.litellm_plugin import register
+
+register(litellm)
+
+# Sentry now intercepts every litellm.completion() call.
+response = litellm.completion(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "..."}],
+)
+```
+
+`pre_call` raises `litellm.BadRequestError` on a blocked prompt. The
+`post_call` hook mutates a blocked response into a safe refusal
+string and stamps `response.pencheff_sentry = {blocked, category,
+detector, reason}` so downstream code can distinguish a
+guardrail-driven refusal from a model-native refusal.
+
+## Audit log
+
+Sentry never persists prompt or response bodies by default —
+auditors asking "did you log my customer's prompt?" get a clean
+answer. The opt-in audit log (`--audit-log path.jsonl`) records
+**decisions only**: verdict, detector, category, plus a SHA-256
+hash of the prompt/response for correlation. Never the body itself.
+
+```jsonl
+{"ts":"2026-05-08T15:00:01Z","side":"prompt","verdict":"block","category":"LLM01","detector":"direct-override","reason":"prompt injection (direct-override)","prompt_hash":"a7c2..."}
+```
+
+## Default judge
+
+The default judge is **IBM Granite Guardian (Apache-2.0)**.
+Llama Guard 3 is opt-in via `PENCHEFF_LLAMA_GUARD_ENABLED=1` — it
+ships under the Llama Community License (≤700 M MAU + attribution
+required), and Pencheff surfaces the license notice in every
+`JudgeResult.reason` so downstream consumers can reproduce it.
+
+See [`features/llm-redteam`](/features/llm-redteam#judges) for the
+full judge ensemble.
+
+## Extending the detector chain
+
+```python
+from pencheff_sentry.core import GuardrailConfig, evaluate_prompt
+
+cfg = GuardrailConfig(
+    extra_patterns=[
+        # (regex, detector_name, owasp_category)
+        (r"(?i)\binternal[- ]doc:[a-z0-9-]+\b", "internal-doc-leak", "LLM02"),
+    ],
+)
+decision = evaluate_prompt(user_prompt, config=cfg)
+if decision.verdict == "block":
+    refuse(decision.reason)
+```
+
+## Source
+
+* Package: `pencheff-sentry` on PyPI (separate from the main `pencheff`
+  package).
+* Source tree: [`plugins/sentry/`](https://github.com/Magadha-IG/pencheff/tree/main/plugins/sentry).
+* License: MIT.

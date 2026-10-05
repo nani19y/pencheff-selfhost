@@ -1,0 +1,96 @@
+# Pencheff fallback chains for graceful degradation.
+#
+# When the primary tool is unavailable / fails / returns malformed output,
+# the orchestrator walks the fallback list in order. Each entry must be a
+# tool that can substitute the primary's role (same input/output contract).
+#
+# Sources:
+# - Each tool's own docs (capabilities checked against the primary's docs).
+
+version: 1
+
+fallbacks:
+  # Subdomain enumeration
+  subfinder:    [amass, assetfinder, knockpy, fierce, dnsenum]
+  amass:        [subfinder, assetfinder, knockpy]
+  assetfinder:  [subfinder, amass, knockpy]
+
+  # Port scanning
+  nmap:         [rustscan, naabu, masscan]
+  rustscan:     [naabu, nmap, masscan]
+  naabu:        [rustscan, nmap, masscan]
+  masscan:      [naabu, rustscan, nmap]
+
+  # Directory bruteforce
+  ffuf:         [feroxbuster, gobuster, dirsearch, dirb]
+  feroxbuster:  [ffuf, gobuster, dirsearch]
+  gobuster:     [ffuf, feroxbuster, dirsearch]
+  dirsearch:    [ffuf, feroxbuster, gobuster]
+
+  # XSS scanners
+  dalfox:       [xsstrike]
+  xsstrike:     [dalfox]
+
+  # SQL injection
+  sqlmap:       [ghauri]
+
+  # TLS auditors
+  testssl:      [sslyze, sslscan]
+  sslyze:       [testssl, sslscan]
+  sslscan:      [sslyze, testssl]
+
+  # Web crawlers
+  katana:       [hakrawler]
+  hakrawler:    [katana]
+
+  # HTTP probing
+  httpx:        [curl, wget]
+
+  # Wayback enumeration
+  gau:          [waybackurls]
+  waybackurls:  [gau]
+
+  # Brute forcers
+  hydra:        [medusa, patator]
+  medusa:       [hydra, patator]
+
+  # SMB enumeration
+  enum4linux-ng: [enum4linux, smbmap]
+  enum4linux:   [enum4linux-ng, smbmap]
+
+  # AD credential spray / smb
+  netexec:      [crackmapexec]
+  crackmapexec: [netexec]
+
+  # Cloud assessors
+  prowler:      [scoutsuite, cloudsploit]
+  scoutsuite:   [prowler, cloudsploit]
+
+  # Container/IaC
+  trivy:        [grype]
+  grype:        [trivy]
+
+  # Binary RE
+  radare2:      [ghidra-headless, objdump]
+  ghidra-headless: [radare2]
+
+  # ROP gadgets
+  ropgadget:    [ropper]
+  ropper:       [ropgadget]
+
+  # Stego — multi-tool fallback for stubborn files
+  stegseek:     [steghide, zsteg]
+  steghide:     [stegseek]
+  zsteg:        [stegseek]
+
+  # Forensics
+  foremost:     [photorec, scalpel]
+  photorec:     [foremost, scalpel]
+
+  # Param discovery
+  arjun:        [paramspider, x8]
+  paramspider:  [arjun]
+  x8:           [arjun, paramspider]
+
+  # OSINT people
+  sherlock:     [social-analyzer]

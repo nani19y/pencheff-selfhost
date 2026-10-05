@@ -1,0 +1,116 @@
+---
+title: Attack Surface Management
+---
+
+# Attack Surface Management (ASM)
+
+Pencheff's ASM engine does continuous passive discovery across your
+organisation's public surface and alerts on new exposures. No active
+scanning — strictly OSINT + certificate-transparency + vendor APIs.
+
+## One-call orchestration: `scan_asm`
+
+`scan_asm` is the unified entry point used by the swarm. It runs passive
+discovery, certificate-transparency watch, and snapshot/diff in one call,
+and persists results to the same inventory.
+
+```text
+scan_asm(
+  session_id=sid,
+  org='acme-inc',
+  root_domain='acme.com',
+  modules=['discover', 'cert_watch', 'change_detection']  # optional, defaults to all
+)
+→ {
+    discover: { subdomains: 47, certs: 180 },
+    cert_watch: { recent_certs: 5, findings_added: 5 },
+    change_detection: { new_assets: 3 },
+  }
+```
+
+| Module | What it runs |
+| --- | --- |
+| `discover` | `subfinder` + `crt.sh` passive subdomain enumeration |
+| `cert_watch` | Certificate Transparency log watch (new issuances in last 7 days) |
+| `change_detection` | Snapshot vs. last run; emits INFO findings for new assets |
+| `asset_inventory` | Lists all known assets (subdomain, IP, port, cert, URL) |
+
+The granular tools below (`asm_discover`, `asm_cert_watch`, `asm_diff`,
+`asm_list_assets`) remain available — `scan_asm` is the single call you use
+from automation or the agent swarm.
+
+## What it discovers
+
+| Source | Signal |
+| --- | --- |
+| `subfinder` | Passive subdomain enumeration (when installed) |
+| [crt.sh](https://crt.sh) | Subdomains from Certificate Transparency logs + cert metadata |
+| Shodan (optional) | Exposed services, banners (requires `SHODAN_API_KEY`) |
+| Censys (optional) | Certs + services (requires Censys creds) |
+
+## Run a discovery
+
+```text
+asm_discover(session_id=sid, org='acme-inc', root_domain='acme.com')
+→ { subdomains: 47, certs: 180, shodan_hosts: 12 }
+```
+
+The result is persisted to `~/.pencheff/asm_inventory.db` (CLI) or the SaaS
+`assets` table (dashboard).
+
+## See what's in your inventory
+
+```text
+asm_list_assets(session_id=sid, org='acme-inc', asset_type='subdomain')
+→ [
+    { type: 'subdomain', value: 'api.acme.com', first_seen: ..., last_seen: ... },
+    { type: 'subdomain', value: 'staging.acme.com', ... },
+    …
+  ]
+```
+
+On the dashboard, **/assets** shows all types (domain, subdomain, IP, port,
+cert, URL) with filter tabs and diff views.
+
+## Change detection
+
+```text
+asm_diff(session_id=sid, org='acme-inc')
+→ { new_assets: 3, findings_added: 3 }
+```
+
+Each new asset becomes an INFO-severity `Finding` so your normal
+integrations (Slack, PagerDuty, etc.) can route it based on severity.
+
+## Certificate Transparency watch
+
+```text
+asm_cert_watch(session_id=sid, domain='acme.com')
+→ { recent_certs: 5, findings_added: 5 }
+```
+
+Flags certs issued in the last 7 days — useful for spotting
+unauthorised issuances or subdomain takeovers.
+
+## Scheduling
+
+The dashboard's `/schedules` UI lets you run ASM on a cron schedule. Pair
+it with an integration to alert on every change:
+
+1. Create a Slack integration with `severity_filter = info`
+2. Create a Schedule with profile `asm`, cron `0 2 * * *`
+3. The Celery Beat dispatcher fires every minute and enqueues due jobs
+
+## Pairing with scans
+
+Pencheff treats ASM assets as first-class scan targets. You can feed the
+inventory straight into a scan:
+
+```text
+# Every subdomain gets a quick cicd pass
+for asset in asm_list_assets(org='acme-inc', asset_type='subdomain'):
+    pentest_init(target_url=f"https://{asset.value}", profile='cicd')
+    …
+```
+
+The dashboard exposes the same as a **Scan every asset** bulk action.

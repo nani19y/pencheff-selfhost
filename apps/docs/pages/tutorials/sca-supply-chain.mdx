@@ -1,0 +1,119 @@
+---
+title: Tutorial — SCA + supply chain
+description: Live OSV / NVD / EPSS / KEV reconciliation, reachability, and prioritised remediation.
+---
+
+import { Callout } from "nextra/components";
+
+# Tutorial: SCA + supply chain
+
+Pencheff&rsquo;s SCA pipe is built around the question &ldquo;is
+this CVE actually reachable from production?&rdquo; Not every CVE
+is. This tutorial walks through the live data sources, the
+reachability classifier, and the prioritisation strip so engineers
+fix the right packages first.
+
+## Scenario
+
+* **Repo.** A Python + TypeScript backend with ~400 direct
+  dependencies, ~3,500 transitive.
+* **Today&rsquo;s Trivy run** flagged 47 CVEs &mdash; too many to
+  triage by hand.
+* **Goal.** Surface the 5 that matter (KEV-flagged + reachable +
+  recent EPSS lift).
+
+## 1. Live CVE data on every scan
+
+Every SCA scan pulls live data &mdash; there is no manual refresh
+step. Pencheff combines four authoritative sources at scan time:
+
+| Source | What it adds | Default TTL | Tunable env var |
+| --- | --- | --- | --- |
+| **OSV.dev** | Per-package vuln list (covers NVD CVEs + GitHub Security Advisories) | 24 h | `PENCHEFF_OSV_TTL_HOURS` |
+| **NVD 2.0** | Per-CVE enrichment: CWE list, CPE URIs, NVD-issued CVSS v3.1, canonical advisory URL | 14 d | `PENCHEFF_NVD_TTL_DAYS` |
+| **EPSS** | Daily exploit-prediction score (0.0 - 1.0) and percentile | 24 h | `PENCHEFF_FEED_TTL_HOURS` |
+| **CISA KEV** | Known-exploited flag + federal remediation deadline | 24 h | `PENCHEFF_FEED_TTL_HOURS` |
+
+Set any TTL to `0` to force a live fetch on every single scan. Set
+`NVD_API_KEY` to raise NVD&rsquo;s rate limit from 5/30 s to
+50/30 s.
+
+The freshness layer **fails open** &mdash; a network blip during
+refresh falls back to the stale cached row rather than dropping
+findings.
+
+## 2. Read the priority strip
+
+Every SCA finding card shows a five-icon priority strip:
+
+| Strip element | Source | What it tells you |
+| --- | --- | --- |
+| **Severity** | NVD CVSS v3.1 + Pencheff override | Headline impact |
+| **Risk score** | `cvss × (1 + epss) × (2 if kev else 1)` | Sortable composite |
+| **Reachability** | Static call-graph + import analysis | `exploited` &middot; `reachable` &middot; `present` &middot; `unknown` |
+| **EPSS** | EPSS feed | Probability of exploit in the next 30 days |
+| **KEV** | CISA KEV catalogue | Active exploitation flag + due date |
+
+Filter on `reachability=reachable` + `kev=true` &mdash; that&rsquo;s
+your fix-this-week list.
+
+## 3. Verify reachability before reporting
+
+For SCA findings on hot paths, the engine runs a static call-graph
++ import analysis to mark `reachable` vs `present`. A CVE in
+`numpy` your service never imports is `present`; one in
+`urllib3` your auth code calls every request is `reachable`.
+
+Reachability runs as part of every repo scan when the language is
+detected; the classifier writes the call-chain into the finding
+detail page so a developer can read &ldquo;`auth.session.refresh
+→ requests.adapters.HTTPAdapter.send → urllib3.connectionpool.…`&rdquo;
+without leaving the report.
+
+## 4. Auto-fix the reachable ones
+
+The Pro fix-PR feature opens a PR that bumps each affected package
+to the smallest version that satisfies the advisory&rsquo;s
+`fixed_in` constraint, runs the test suite, and posts the diff.
+Triggered by clicking **Fix all reachable HIGH+** on the repo
+scan&rsquo;s assessment page (or via the **Fix proposals** API for
+programmatic flows).
+
+When the GitHub App is installed Pencheff also reconciles your
+existing Dependabot alerts &mdash; an alert Dependabot already
+opened gets `fix_status: pr_open` instead of a duplicate PR.
+
+## 5. Compliance fan-out for SCA
+
+The [compliance rollup](/features/compliance-mapping) treats every
+SCA / SBOM finding as `category: components` (or `dependency`).
+That category fans out to:
+
+* **OWASP Top 10:** A06 &mdash; Vulnerable and Outdated Components
+* **PCI-DSS:** 6.2
+* **NIST 800-53:** SA-10, SA-11, SI-2
+* **SOC 2:** CC7.1, CC8.1
+* **ISO 27001:2022:** A.8.8, A.8.19
+* **HIPAA:** 164.308(a)(8), 164.308(a)(1)(ii)(B)
+
+Open `/repos/scans/{id}/compliance`, switch to **NIST 800-53**, and
+copy the SI-2 row into your patch-management evidence pack.
+
+<Callout type="info">
+  **The SBOM is consistent with the SCA findings by construction.**
+  Same parsers, same package list. Auditors who ask &ldquo;does
+  this CVE appear in your SBOM?&rdquo; can pivot from finding card
+  to SBOM line item with one click.
+</Callout>
+
+## Deliverable
+
+* A &ldquo;reachable + KEV&rdquo; shortlist for the engineers.
+* The full DOCX for the auditor.
+* Auto-opened fix-PRs for the reachable HIGH+ findings.
+
+## Next
+
+* [SCA feature reference](/features/sca).
+* [EPSS / KEV / SSVC reference](/features/epss-kev).
+* [Tutorial: SBOM as evidence](/tutorials/sbom-evidence).

@@ -1,0 +1,82 @@
+---
+title: Findings API
+---
+
+# Findings API
+
+## `GET /scans/{scan_id}/findings`
+
+Return every finding for a scan. Filter with query params:
+
+- `?severity=critical`
+- `?category=injection`
+- `?owasp_category=A03`
+- `?verified_only=true`
+- `?include_suppressed=true`
+- `?sort=risk_score` (default; use `cvss_score` or `created_at`)
+
+## `GET /findings/{id}`
+
+Fetch a single finding with full evidence, comments, assignments, tags.
+
+## `PATCH /findings/{id}`
+
+Update status. Valid fields:
+
+```json
+{
+  "verification_status": "true_positive" | "false_positive" | "true_negative" | "false_negative",
+  "suppressed": true,
+  "suppress_reason": "accepted_risk" | "wont_fix" | "false_positive" | "duplicate" | "out_of_scope",
+  "suppress_notes": "string",
+  "resolved_at": "2026-04-21T…Z",
+  "sla_days": 7
+}
+```
+
+## Collaboration
+
+- `POST /findings/{id}/comments` — add a comment
+- `GET /findings/{id}/comments` — list comments
+- `POST /findings/{id}/assign` — `{"assignee_user_id": "..."}`
+- `POST /findings/{id}/tags` — `{"tag": "p0-fix"}`
+- `DELETE /findings/{id}/tags/{tag}` — remove a tag
+
+## Prioritisation fields
+
+Every `Finding` includes the unified prioritisation surface:
+
+| Field | Type | Source |
+| --- | --- | --- |
+| `risk_score` | float (0–100) | computed at insert from CVSS × EPSS × KEV × SSVC × reachability |
+| `ssvc_decision` | string | one of `act`, `attend`, `track_star`, `track` |
+| `reachability` | string | one of `exploited`, `reachable`, `present`, `unknown` — see [Reachability classifier](/features/reachability) |
+| `epss` | float (0–1) \| null | EPSS feed; populated for SCA findings |
+| `kev` | bool | CISA KEV catalog membership |
+
+Sort the list endpoint by `risk_score`:
+
+```
+GET /scans/{scan_id}/findings?sort=risk_score   (default)
+```
+
+The unified, cross-table queue lives at
+[`/unified-findings`](/reference/unified-findings).
+
+## `POST /findings/{id}/propose_fix`
+
+Generates a draft `FixProposal` for the finding. SCA findings get a
+deterministic version-bump diff; SAST/DAST findings synthesise a unified
+diff via the operator-configured patch-synthesis backend. See
+[Auto-fix PRs](/features/auto-fix).
+
+The route accepts `kind` ∈ `{sast, dast}`; SCA findings ride the
+`dast` kind and Pencheff detects the SCA payload from evidence and
+routes internally.
+
+## `POST /findings/{id}/triage`
+
+**Pro tier.** Triage 2.0 — exploitability walkthrough returning
+`{ walkthrough, blast_radius, exploit_scenario, fix_outline,
+confidence }`. Cached on `finding.ai_triage`; pass `?force=true` to
+regenerate. See [Triage 2.0](/features/ai-triage).

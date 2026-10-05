@@ -1,0 +1,38 @@
+---
+title: Proxy sessions API
+---
+
+# Proxy sessions API
+
+## `POST /proxy/start`
+
+Start a new intercepting proxy session tied to a scan.
+
+```json
+{ "scan_id": "...", "port": 8888 }
+```
+
+## `POST /proxy/{id}/stop`
+
+Stop a running proxy session.
+
+## `GET /proxy/scan/{scan_id}`
+
+List proxy sessions (past + present) for a scan.
+
+## Session shape
+
+```typescript
+type ProxySession = {
+  id: string;
+  scan_id: string;
+  port: number;
+  mode: "mitmproxy" | "http-fallback";
+  request_count: number;
+  started_at: string;
+  stopped_at: string | null;
+};
+```
+
+See [Intercepting proxy](/features/proxy) for the dual-mode scanner
+that runs over captured flows.

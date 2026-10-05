@@ -1,0 +1,103 @@
+---
+title: IDE extensions (VSCode + JetBrains)
+---
+
+# IDE extensions
+
+Pencheff ships a Language Server Protocol implementation that surfaces
+findings as inline diagnostics in any LSP-aware editor — VSCode,
+JetBrains (via LSP4IJ), Neovim, Emacs, and friends.
+
+## How it works
+
+```
+~/.pencheff/history/*.json  →  pencheff lsp  →  LSP client  →  inline diagnostics
+```
+
+1. You run `pencheff scan --target …` (or a CI scan publishes results
+   back via the API).
+2. The scan results land in `~/.pencheff/history/`.
+3. The LSP server tails that directory; whenever a new file appears or
+   an existing one is modified, it republishes diagnostics for every
+   open document.
+4. **Polling cost**: one `stat` per second on a directory that rarely
+   has more than a few dozen files — well below noise.
+
+The server **does not** scan on every keystroke. Running a full DAST
+scan in the editor would be a disaster; instead, the workflow is
+"scan from terminal / CI → see results in editor."
+
+## What lights up inline
+
+- **SCA findings** highlight the offending package line in your
+  manifest (`flask==2.0.0` becomes a warning if vulnerable).
+- **SAST findings** highlight the line carrying a taint trace.
+- **DAST findings** against remote URLs are not surfaced inline (they
+  have no local file to attach to) — see them in the dashboard.
+
+Each diagnostic includes the CWE, OWASP category, severity, and the
+finding's remediation guidance as hover text.
+
+## VSCode
+
+```bash
+cd apps/vscode
+npm install
+npm run compile
+npm run package
+code --install-extension pencheff-vscode-0.1.0.vsix
+```
+
+Configure the path to the `pencheff` CLI if it's not on `PATH`:
+
+```jsonc
+// .vscode/settings.json
+{
+  "pencheff.serverPath": "/absolute/path/to/pencheff"
+}
+```
+
+### Commands
+
+- **Pencheff: Refresh findings** — force a republish.
+- **Pencheff: Restart language server** — kill + re-spawn.
+
+## JetBrains (IntelliJ, PyCharm, WebStorm, …)
+
+```bash
+cd apps/jetbrains
+./gradlew buildPlugin
+```
+
+Install the produced `.zip` via **Settings → Plugins → ⚙️ → Install
+plugin from disk…**
+
+Set the binary path through **Settings → Languages & Frameworks →
+Language Servers → Pencheff** (LSP4IJ provides this UI), or set
+`PENCHEFF_BIN=/absolute/path/to/pencheff` in your shell before
+launching the IDE.
+
+## Other LSP clients
+
+The server speaks standard LSP over stdio:
+
+```bash
+pencheff lsp     # JSON-RPC 2.0 framed with Content-Length headers
+```
+
+Configure your editor's LSP client to launch `pencheff lsp` for any
+file in the workspace. Methods supported:
+
+- `initialize` / `initialized` / `shutdown` / `exit`
+- `textDocument/didOpen` / `didSave` / `didClose`
+- `textDocument/publishDiagnostics` (server → client)
+- `pencheff/refresh` (custom — force republish)
+
+## Limitations (v0.1)
+
+- No quick-fix lightbulbs yet — diagnostic data ships over the wire
+  (`diagnostic.data.remediation`) but the code-action provider is not
+  wired.
+- No on-keystroke scanning — see "How it works" above.
+- DAST findings against remote URLs aren't shown inline (no local
+  file).

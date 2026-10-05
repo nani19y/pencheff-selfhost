@@ -1,0 +1,85 @@
+---
+title: Testing a custom module
+---
+
+# Testing a custom module
+
+Pencheff modules are plain Python so `pytest` works as-is. Ship your
+tests alongside the module in `~/.pencheff/custom_modules/tests/` or
+include them in the pencheff repo if you plan to upstream.
+
+## Unit test template
+
+```python
+# ~/.pencheff/custom_modules/tests/test_robots_check.py
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+
+from pencheff.config import TestDepth
+from pencheff.core.session import PentestSession, TargetInfo, DiscoveredState
+from pencheff.core.credentials import CredentialStore
+from pencheff.core.findings import FindingsDB
+
+# Import the module from your custom_modules directory
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path.home() / ".pencheff" / "custom_modules"))
+from robots_check import RobotsCheck
+
+
+@pytest.mark.asyncio
+async def test_flags_admin_disallow():
+    session = PentestSession(
+        id="test", target=TargetInfo(base_url="https://example.com"),
+        credentials=CredentialStore(), depth=TestDepth.QUICK,
+        findings=FindingsDB(), discovered=DiscoveredState(),
+    )
+
+    mock_http = MagicMock()
+    mock_http.request = AsyncMock(return_value=MagicMock(
+        status=200,
+        text="User-agent: *\nDisallow: /admin\n",
+    ))
+
+    findings = await RobotsCheck().run(session, mock_http)
+    assert len(findings) == 1
+    assert "/admin" in findings[0].description
+
+
+@pytest.mark.asyncio
+async def test_no_findings_when_robots_missing():
+    session = PentestSession(
+        id="test", target=TargetInfo(base_url="https://example.com"),
+        credentials=CredentialStore(), depth=TestDepth.QUICK,
+        findings=FindingsDB(), discovered=DiscoveredState(),
+    )
+    mock_http = MagicMock()
+    mock_http.request = AsyncMock(return_value=MagicMock(status=404))
+
+    findings = await RobotsCheck().run(session, mock_http)
+    assert findings == []
+```
+
+Run:
+
+```bash
+pip install pytest pytest-asyncio
+pytest ~/.pencheff/custom_modules/tests/
+```
+
+## Integration test with a live target
+
+Spin up a local vulnerable container (e.g. Juice Shop) and run your
+module end-to-end:
+
+```bash
+docker run --rm -p 3000:3000 bkimminich/juice-shop
+pencheff run-policy - <<'YAML'
+apiVersion: pencheff/v1
+kind: ScanPolicy
+metadata: { name: module-ete }
+spec:
+  targets: [{ url: http://localhost:3000 }]
+  modules:
+    - { name: custom_robots_check }
+YAML
+```

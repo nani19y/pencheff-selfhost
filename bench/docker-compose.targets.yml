@@ -1,0 +1,24 @@
+services:
+  # --- OWASP Juice Shop ---------------------------------------------------
+  # Modern Node/Angular SPA with 100+ deliberately-vulnerable challenges
+  # and a built-in /api/challenges scoreboard. Exposed on :3001 to avoid
+  # clashing with Pencheff's web UI on :3000.
+  juice-shop:
+    image: bkimminich/juice-shop:latest
+    container_name: bench-juice-shop
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+# NOTE: WAVSEP is not included in the default compose because the
+# historically-popular ``citizenstig/wavsep`` image has been removed from
+# Docker Hub and there is no widely-maintained replacement. The bench
+# still supports WAVSEP — you just build it yourself (Tomcat + MySQL).
+# Detailed instructions live at ``bench/targets/wavsep/README.md``.
+# Once it's running on any host:port, point the bench at it with
+# ``TARGET_URL_WAVSEP=http://host:port ./run_all.sh wavsep``.

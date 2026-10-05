@@ -1,0 +1,48 @@
+---
+title: Azure DevOps
+---
+
+# Azure DevOps
+
+Pencheff ships a parameterized Azure Pipelines template at [`apps/azure-devops/azure-pipelines.yml`](https://github.com/Magadha-IG/pencheff/blob/main/apps/azure-devops/azure-pipelines.yml).
+
+## Quick start
+
+Reference the template in your `azure-pipelines.yml`:
+
+```yaml
+extends:
+  template: apps/azure-devops/azure-pipelines.yml@pencheff
+  parameters:
+    target: 'https://your-app.example.com'
+    failOn: 'high'
+```
+
+Set `PENCHEFF_API_TOKEN` as a **secret** pipeline variable in Azure DevOps → Pipelines → Edit → Variables.
+
+## Parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `target` | *(required)* | Target URL or HOST:PORT |
+| `profile` | `cicd` | `quick` \| `standard` \| `deep` \| `api-only` \| `compliance` \| `cicd` |
+| `failOn` | `high` | Minimum severity to fail the build |
+| `apiBase` | *(empty)* | Hosted Pencheff API base URL |
+| `engagementId` | *(empty)* | Scope scan to a specific engagement |
+| `artifactName` | `pencheff-report` | Name of the published build artifact |
+
+## Inline usage
+
+If you prefer not to use the `extends` pattern, copy the `steps:` section from [`apps/azure-devops/azure-pipelines.yml`](https://github.com/Magadha-IG/pencheff/blob/main/apps/azure-devops/azure-pipelines.yml) directly into your existing pipeline.
+
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | No findings at or above `failOn` severity |
+| `2` | At least one finding at or above threshold — build fails |
+| other | Scan error (network, auth, config) |
+
+## Report artifact
+
+The scan report (JSON + Markdown) is published as a build artifact under the name specified by `artifactName`. Access it in Azure DevOps → Pipelines → [run] → Artifacts.

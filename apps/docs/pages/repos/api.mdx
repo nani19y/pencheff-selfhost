@@ -1,0 +1,87 @@
+# API reference
+
+All endpoints live under `/repos` and require a Pencheff session (Clerk
+bearer token on `Authorization: Bearer …`).
+
+## Integrations
+
+```
+GET  /repos/install-url              → { url, configured }
+GET  /repos/callback                 (GitHub redirect target — not called directly)
+
+GET  /repos/integrations             → [{ id, account_login, account_type, ... }]
+POST /repos/integrations/{id}/sync   → refresh the repo list for this install
+DELETE /repos/integrations/{id}      → soft-disconnect
+```
+
+## Repositories
+
+```
+GET  /repos?q=substring              → [{ id, full_name, last_scan_at, severity_counts }]
+GET  /repos/{id}                     → { repo detail }
+POST /repos/{id}/scan                → queue a new scan (202)
+GET  /repos/{id}/scans               → [{ scan row }, ...]
+POST /repos/{id}/sbom                → generate SBOM for default branch (replaces previous)
+GET  /repos/{id}/sbom                → fetch latest SBOM for repository
+```
+
+Request body for `POST /repos/{id}/scan` (all fields optional):
+
+```json
+{
+  "scanners": ["semgrep", "gitleaks", "osv", "yara", "ghsa"],
+  "ref": "refs/heads/main",
+  "commit_sha": "abc123..."
+}
+```
+
+Notes:
+
+- For manual scans, Pencheff resolves the latest commit SHA on the repository’s default branch before scanning.
+
+Request body for `POST /repos/{id}/sbom` (all fields optional):
+
+```json
+{
+  "format": "cyclonedx"
+}
+```
+
+`format` supports `cyclonedx` or `spdx`. A successful generation stores the SBOM and replaces any previously generated SBOM for that repository.
+
+## Scans
+
+```
+GET  /repos/scans/{scan_id}              → { scan detail }
+GET  /repos/scans/{scan_id}/findings     → [{ finding }, ...]
+  ?severity=critical|high|medium|low
+  &scanner=semgrep|gitleaks|osv|yara|ghsa
+```
+
+## Finding shape
+
+```json
+{
+  "id": "...",
+  "scanner": "semgrep",
+  "rule_id": "python.flask.security.xss.flask-template-fragment-xss",
+  "severity": "high",
+  "title": "Template fragment renders untrusted input",
+  "description": "...",
+  "file_path": "app/views.py",
+  "line_start": 42,
+  "line_end": 46,
+  "code_snippet": "return render_template_string(user_input)",
+  "cve": null,
+  "package": null,
+  "installed_version": null,
+  "fixed_version": null,
+  "ai_explanation": null,
+  "fix_status": "none",
+  "fix_pr_url": null,
+  "suppressed": false
+}
+```
+
+`fix_status` moves through `none → proposed → pr_open → merged` as the
+AI-fix flow lands.

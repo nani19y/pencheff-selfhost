@@ -1,0 +1,122 @@
+---
+title: Infrastructure-as-Code scanning
+---
+
+# IaC scanning
+
+Pencheff scans **Dockerfile**, **Kubernetes**, **Terraform**, **Helm**,
+**CloudFormation**, and related infrastructure manifests. Two ways in:
+
+## The easy path — connect a repo
+
+In the SaaS app, open **Repos**, connect a GitHub URL or a local
+folder ([`/repos/connect`](/repos/connect)), and click **Scan**. Every
+scan runs **Trivy IaC** (with CIS benchmarks) plus **Checkov**'s
+1,000+ policy-as-code rules over the entire tree — Dockerfiles,
+Terraform, K8s manifests, Helm, and so on, all in one pass. No
+configuration; the scanners pick up whatever's there.
+
+The findings land in the unified `RepoFinding` model alongside the
+SAST / SCA / secrets results from the same scan. See
+[Repos → Scanners](/repos/scanners) for the full pipeline.
+
+## The targeted path — MCP / agent tools
+
+When the pentest agent (or any MCP host wired to the Pencheff server)
+needs to scan a single class of infrastructure, it has dedicated tools:
+
+| Tool | Wraps |
+| --- | --- |
+| `scan_dockerfile(path)` | hadolint + trivy config |
+| `scan_kubernetes(path)` | native + checkov |
+| `scan_terraform(path)` | trivy + tfsec + checkov |
+| `scan_helm(path, values)` | `helm template` piped through the K8s scanner |
+| `scan_container_image(image_ref)` | trivy / grype on a built image |
+
+The repo-scan path ([Repos → Scanners](/repos/scanners)) calls into
+the same modules under the hood.
+
+## Dockerfile
+
+`scan_dockerfile(session_id, path)` covers:
+
+- Containers running as root (no `USER` directive)
+- `:latest` tags and unpinned images
+- `ADD <url>` vs the safer `COPY` + checksum pattern
+- Secrets embedded in `ENV`/`ARG`
+- `RUN apt-get install` without `--no-install-recommends`
+- `RUN curl … | sh` — remote code execution on build
+- All `hadolint` rules (when installed)
+- `trivy config` CIS benchmarks (when installed)
+
+## Kubernetes
+
+`scan_kubernetes(session_id, path)` walks every YAML doc and flags:
+
+- `hostNetwork` / `hostPID` / `hostIPC`
+- Containers with `privileged: true`
+- `runAsUser: 0` without `runAsNonRoot`
+- `allowPrivilegeEscalation` not disabled
+- Dangerous capabilities added (`SYS_ADMIN`, `NET_ADMIN`)
+- Missing resource limits (DoS risk)
+- `:latest` or untagged images
+- Plaintext secrets in `env` instead of `valueFrom.secretKeyRef`
+- `LoadBalancer` Services without `loadBalancerSourceRanges`
+
+Add `checkov` for 500+ policy-as-code rules on top.
+
+## Terraform
+
+`scan_terraform(session_id, path)` covers:
+
+- Hardcoded AWS access keys (`AKIA…`, `ASIA…`, …)
+- S3 buckets with `acl = "public-read"` / `"public-read-write"`
+- Security groups opening `0.0.0.0/0` to dangerous ports
+  (22, 3389, 3306, 1433, 5432, 6379, 27017)
+- `storage_encrypted = false` / `encrypted = false`
+- IAM policies with `"Action": "*"` + `"Resource": "*"`
+
+Add `tfsec` and `checkov` for full CIS + Azure + GCP coverage.
+
+## Helm
+
+`scan_helm(session_id, chart_path, values_file)` runs
+`helm template` and pipes the rendered manifests through the
+Kubernetes scanner — same rules, same findings.
+
+## Container images
+
+`scan_container_image(session_id, image_ref)` pulls the image via
+`trivy` (preferred) or `grype`, and emits findings for:
+
+- **CVEs** in OS packages and application dependencies (CVSS + EPSS + KEV)
+- **Secrets** leaked in image layers (API keys, private keys, tokens)
+- **Misconfigurations** (CIS benchmarks)
+
+Example:
+
+```text
+scan_container_image(session_id=sid, image_ref='myapp:1.4.2')
+```
+
+## Example policy
+
+A minimal IaC-only scan policy:
+
+```yaml
+apiVersion: pencheff/v1
+kind: ScanPolicy
+metadata: { name: iac-gate }
+spec:
+  targets: [{ url: local:./ }]
+  modules:
+    - { name: scan_dockerfile, params: { path: ./ } }
+    - { name: scan_kubernetes, params: { path: ./k8s/ } }
+    - { name: scan_terraform, params: { path: ./infra/ } }
+  assertions:
+    - { id: no_critical, condition: "critical == 0" }
+  thresholds: { fail_on: high }
+```
+
+Profiles ship with sensible defaults; override thresholds per scan via
+`--fail-on` on the CLI.

@@ -1,0 +1,153 @@
+---
+title: Your first scan
+description: Run a scan in 60 seconds — SaaS, MCP host, or CLI.
+---
+
+import { Callout, Tabs } from "nextra/components";
+
+# Your first scan
+
+Pencheff's default `standard` profile maps findings to OWASP Top 10
+categories in ~15 minutes. Pick the surface you want to work from:
+
+<Tabs items={["SaaS Dashboard", "MCP host", "CLI / CI", "LLM red team"]}>
+<Tabs.Tab>
+
+1. Open [app.pencheff.com](https://app.pencheff.com) and sign in.
+2. **Register target** → enter the URL, optional credentials, scope, exclude paths.
+3. Pick a profile (`standard` is the default balanced OWASP Top 10 run).
+4. Click **Start scan** — you'll be redirected to a live progress page with SSE-streamed stages.
+5. When it finishes, browse findings by severity, OWASP category, compliance framework.
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+```text
+> Pentest https://juice-shop.herokuapp.com — standard profile, report to slack
+
+I'll run a full standard scan now.
+```
+
+An MCP-driven host (Cursor, Continue, Cline, Zed, …) uses the MCP tools in this order (fully automatic):
+
+1. `pentest_init` → new session
+2. `check_dependencies` → see which external tools are available
+3. `recon_passive` → `recon_active` → `recon_api_discovery`
+4. `scan_waf` → `payload_generate`
+5. `scan_injection` → `test_endpoint` (manual exploitation)
+6. `scan_client_side` → `scan_auth` → `scan_authz` → `scan_advanced`
+7. `exploit_chain_suggest` → `test_chain`
+8. `generate_report` and `export_to_slack`
+
+The agent will pause to explain each finding and prove exploitability with a
+PoC before reporting it.
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+```bash
+# Headless single-target scan — outputs JSON + Word report.
+pencheff scan \
+  --target https://juice-shop.herokuapp.com \
+  --profile standard \
+  --format json,docx \
+  --output ./reports/
+
+# Or run a YAML policy:
+pencheff run-policy policies/examples/owasp_top10.yaml
+
+# CI/CD gate — non-zero exit on any HIGH+ finding (the former
+# `cicd` profile is now folded into `quick`).
+pencheff scan \
+  --target $TARGET_URL \
+  --profile quick \
+  --fail-on high \
+  --format json \
+  --output ./reports/
+```
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+LLM endpoints are a third **target kind** alongside URL and Repo.
+Register the chat-completions URL once, paste your API key as an
+`Authorization: Bearer …` header, pick a red-team profile, and
+Pencheff fires all 10 OWASP LLM Top 10 (2025) modules at it.
+
+```bash
+pencheff llm-redteam \
+  --target https://your-llm.example.com/v1/chat/completions \
+  --provider openai-chat \
+  --model your-model-id \
+  --header "Authorization=Bearer your-token" \
+  --profile standard \
+  --strategies base64,jailbreak,crescendo,leetspeak \
+  --datasets donotanswer,harmbench \
+  --guardrails pii,secrets,unsafe-code,tool-authz \
+  --judge-provider openai-moderation \
+  --judge-endpoint https://your-judge.example.com/moderations \
+  --max-rps 0.3 \
+  --max-cost-usd 5 \
+  --output-format html \
+  --output-file llm-report.html \
+  --fail-on high
+```
+
+In the SaaS UI:
+
+1. **Register target** → pick **LLM endpoint**.
+2. Endpoint URL = the chat-completions URL (**not** the model info
+   page — a common mistake).
+3. Add an `Authorization` header row with the value `Bearer sk-…`
+   (the literal word `Bearer` plus a space, then your key).
+4. Pick provider, model, and a profile (`quick` / `standard` / `deep`).
+5. Optionally configure a judge (`openai-moderation` is recommended
+   for reasoning-model targets), an attacker LLM for PAIR, an
+   embedder for semantic verdicts, and rate limits (default Max RPM
+   = 18 to stay under OpenRouter's free-tier cap).
+
+Findings are mapped to OWASP LLM Top 10, MITRE ATLAS, NIST AI RMF,
+and EU AI Act. Compare two scans at `/scans/compare?a=…&b=…` to gate
+PRs on safety regressions.
+
+</Tabs.Tab>
+</Tabs>
+
+<Callout type="info">
+  Pencheff will **never** send traffic outside the scope you declared. Targets
+  are private by default, and credentials are Fernet-encrypted at rest in the
+  hosted SaaS, or `MaskedSecret`-wrapped (never logged) in the CLI.
+</Callout>
+
+## Picking a profile
+
+The dashboard exposes three tiers. Older specialised profiles
+(`engage`, `compliance`, `api-only`, `cicd`, `sca`, `iac`,
+`supply-chain`, `network-va`, `hackme`, `continuous`,
+`compliance-full`) are still accepted by the API for backward
+compatibility but get coerced to one of these three tiers at the
+runner — pick the tier that matches the depth you want.
+
+| Profile | Time | What's included |
+| --- | --- | --- |
+| `quick` | ~5–10 min | Top-severity probes only. CI/CD-friendly fail-fast on critical/high. (Folds in the legacy `cicd`.) |
+| `standard` | ~20–40 min | OWASP Top 10 + active scanner. REST/GraphQL/API surface. ASM/SCA/IaC checks. Deterministic bug-bounty pipeline (subdomain → live filter → crawl → param → scan → triage). CVE correlation. (Folds in the legacy `api-only`, `asm`, `sca`, `iac`.) |
+| `deep` | 60+ min | Every module + Pulse + attack chains. Full swarm orchestration (Tier 2 · all 7 phases · top-1000 ports · subdomain fan-out ≤100). Deterministic orchestrator + MITRE ATT&CK narrative. PCI-DSS / SOC 2 / ISO 27001 / NIST / HIPAA mappings. (Folds in the legacy `engage`, `compliance`, `compliance-full`, `supply-chain`, `network-va`, `hackme`, `continuous`.) |
+| `mobile-static` | ~5 min | _CLI only_ — static analysis of an APK or IPA: manifest, secrets, crypto, plist. No device required. |
+
+LLM red-team scans use their own profile cap separate from URL profiles:
+
+| Profile | Payloads | Wall time @ 18 RPM |
+| --- | --- | --- |
+| `quick` (LLM) | 25 | ~2 min |
+| `standard` (LLM) | 75 | ~5 min |
+| `deep` (LLM) | 250 | ~15–60 min |
+
+See the full module list with `list_scan_profiles`.
+
+## What's next
+
+- [Core concepts](/getting-started/concepts) — understand sessions, findings, chains
+- [Features](/features/dast) — deep-dive each scan area
+- [LLM red team](/features/llm-redteam) — adversarial testing for chat endpoints
+- [Repo scanning](/repos/connect) — connect a GitHub repo and scan source + deps

@@ -1,0 +1,104 @@
+---
+title: Integrations overview
+---
+
+# Integrations
+
+Pencheff fans out findings to chat, paging, and SIEM destinations based
+on per-integration severity filters. Each integration is encrypted at
+rest (Fernet) and configured once via the SaaS `/integrations` API, the
+dashboard, or the MCP `export_to_*` tools.
+
+## Supported destinations
+
+| Kind | Use for | Protocol |
+| --- | --- | --- |
+| [Slack](/integrations/slack) | Team chat summaries | Incoming webhook |
+| [Microsoft Teams](/integrations/teams) | Team chat summaries | Incoming webhook (Connector) |
+| [Google Chat](/integrations/google-chat) | Team chat summaries | Incoming webhook |
+| [Discord](/integrations/discord) | Chat + community notifications | Webhook with embeds |
+| [PagerDuty](/integrations/pagerduty) | Paging on critical / high | Events API v2 |
+| [Opsgenie](/integrations/opsgenie) | Paging + routing rules | Alerts API v2 |
+| [Splunk HEC](/integrations/splunk) | SIEM ingestion | HTTP Event Collector |
+| [Generic signed webhook](/integrations/webhook) | Anything else — SOAR, custom endpoints | HMAC-signed HTTP POST |
+| [GitHub Issues](/integrations/github) | Issue creation on critical/high | `gh` CLI / REST |
+| [Jira](/integrations/jira) | Ticket creation per finding, comment on update | REST v3 |
+
+## Three-stage filter
+
+Every event flows through three independent filters before it leaves
+Pencheff. An integration only fires when all three pass:
+
+```
+event ──> [ enabled? ] ──> [ target in scope? ] ──> [ event type subscribed? ] ──> [ severity above filter? ] ──> dispatch
+```
+
+### 1. Per-target scope
+
+Each integration carries a `target_ids: list[str] | NULL` column.
+
+- `NULL` (or empty list) → fires for **every target** in the workspace
+  (DAST URL targets *and* repo-mirror targets — see
+  [repos as targets](/repos/connect)).
+- Populated → fires only for scans against those targets.
+
+This lets you wire e.g. a PagerDuty integration scoped to one
+critical-tier production target, while a Slack channel takes the
+firehose for every target.
+
+### 2. Per-event filter
+
+Each integration carries an `events: list[str] | NULL` column. The five
+lifecycle events are:
+
+| Event | When it fires | Payload |
+| --- | --- | --- |
+| `scan_started` | scan_runner accepts a new scan | target name + profile |
+| `scan_done` | scan finishes successfully | grade + severity counts |
+| `scan_failed` | unhandled exception in the worker | error message |
+| `finding_new` | each finding persisted at scan completion | severity + CVSS + title + endpoint |
+| `finding_changed` | analyst updates verification, suppresses, unsuppresses, or rechecks | diff string (`verification_status: unverified → true_positive`) |
+
+`NULL` (or empty list) → all five fire. Populate to subscribe to a
+subset — e.g. PagerDuty might only want `scan_failed` + `finding_new`,
+while a Jira integration only wants `finding_new` + `finding_changed`.
+
+### 3. Severity filter
+
+Each integration has a `severity_filter` — applies only to
+finding-level events (`finding_new`, `finding_changed`). Scan-level
+events (`scan_started`, `scan_done`, `scan_failed`) bypass it. Default
+is `high`.
+
+| `severity_filter` | Routed severities |
+| --- | --- |
+| `critical` | critical only |
+| `high` | high + critical |
+| `medium` | medium + high + critical |
+| `low` | low + medium + high + critical |
+| `info` | everything |
+
+Pair a `critical`-only PagerDuty integration with a `medium`-and-above
+Slack integration to avoid pager fatigue without losing visibility.
+
+## When they fire
+
+| Trigger | Source |
+| --- | --- |
+| `scan_started` | `scan_runner.run_scan` line 195 enqueues `notify_event.delay(scan_id, "scan_started")` |
+| `scan_done` + per-finding `finding_new` | `notify_scan_findings.delay(scan_id)` at end-of-success in scan_runner; one Celery task fans both out |
+| `scan_failed` | scan_runner exception handler |
+| `finding_changed` | findings router endpoints (`POST /findings/{id}/status`, `/suppress`, `/unsuppress`, `/recheck`) |
+
+The MCP `export_to_*` tools also exist for ad-hoc dispatch from the
+agent — they bypass the Celery pipeline and target one integration
+directly.
+
+## Testing
+
+The dashboard and API both expose a `POST /integrations/{id}/test`
+endpoint. It sends a minimal "Pencheff integration test" payload so you
+can verify the destination is reachable before a real scan runs. For
+**Jira**, the test creates an issue under the configured project key
+and immediately deletes it (best-effort cleanup) so the connectivity
+check confirms both auth and write access without polluting the board.

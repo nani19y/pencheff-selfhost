@@ -1,0 +1,107 @@
+---
+title: SBOM generation
+---
+
+# SBOM generation
+
+Pencheff produces **SPDX 2.3** and **CycloneDX 1.5** Software Bills of
+Materials from any repository using the same manifest parsers that back
+[SCA](/features/sca).
+
+## Generate SBOMs from the Web UI
+
+From any repository page, select **Generate SBOM**.
+
+- The SBOM is generated from the latest commit on the repository’s default branch
+- The latest SBOM is displayed on the repository page in both **Table** and **JSON** views
+- A new generation replaces the previous SBOM for that repository
+- The SBOM can be downloaded as JSON
+
+## Generate an SBOM
+
+From the MCP:
+
+```text
+generate_sbom(session_id=sid, path='./', fmt='both', output_dir='./sbom-out/')
+→ {
+    source: 'native-parsers',
+    component_count: 147,
+    formats_generated: ['cyclonedx', 'spdx']
+  }
+```
+
+From Python:
+
+```python
+from pathlib import Path
+from pencheff.modules.sca.sbom_generator import generate_sbom
+
+result = generate_sbom(Path('.'), fmt='both')
+# result['formats']['cyclonedx']  — CycloneDX 1.5 dict
+# result['formats']['spdx']       — SPDX 2.3 dict
+```
+
+## Repository SBOM API
+
+Self-hosted and API consumers can generate and fetch the latest SBOM per repository:
+
+```text
+POST /repos/{repo_id}/sbom   → generate (replaces previous)
+GET  /repos/{repo_id}/sbom   → fetch latest
+```
+
+## Format details
+
+### CycloneDX 1.5
+
+```json
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:...",
+  "metadata": {
+    "timestamp": "2026-04-21T...Z",
+    "tools": [{ "vendor": "pencheff", "name": "pencheff-sbom", "version": "1.0" }],
+    "component": { "type": "application", "name": "your-repo" }
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg:pypi/httpx@0.27.0",
+      "name": "httpx",
+      "version": "0.27.0",
+      "purl": "pkg:pypi/httpx@0.27.0",
+      "licenses": [{ "license": { "id": "BSD-3-Clause" } }],
+      "properties": [
+        { "name": "pencheff:ecosystem", "value": "PyPI" },
+        { "name": "pencheff:scope", "value": "runtime" }
+      ]
+    }
+  ]
+}
+```
+
+### SPDX 2.3
+
+Full SPDX document with a root `SPDXRef-App-<hash>` package, `DEPENDS_ON`
+relationships to every dependency, and PURL `externalRefs`.
+
+## Prefer `syft` when available
+
+If `syft` is installed, Pencheff shells out to it for richer data
+(transitive deps for Go/Java, better license detection). The native
+parsers are the fallback — they always work, even in air-gapped builds.
+
+```bash
+# Install syft for higher-fidelity SBOMs
+brew install syft
+```
+
+Check which source was used via `result['source']`: `native-parsers` or
+`syft`.
+
+## Compliance
+
+The `supply-chain` and `compliance-full` profiles bundle `generate_sbom`
+automatically. Emitted SBOM files are also attached to exported DOCX
+reports under an "Appendix: SBOM" section.

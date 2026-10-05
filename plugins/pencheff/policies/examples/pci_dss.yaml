@@ -1,0 +1,23 @@
+apiVersion: pencheff/v1
+kind: ScanPolicy
+metadata:
+  name: pci-dss
+  description: Focused on PCI-DSS v4.0 technical controls — crypto, auth, injection, logging.
+spec:
+  targets:
+    - url: ${TARGET_URL}
+  modules:
+    - { name: scan_infrastructure, depth: standard }
+    - { name: scan_injection,      depth: standard }
+    - { name: scan_client_side,    depth: standard }
+    - { name: scan_auth,           depth: standard }
+    - { name: scan_authz,          depth: standard }
+    - { name: scan_cloud,          depth: standard }
+  assertions:
+    - { id: no_critical, condition: "critical == 0" }
+    - { id: no_high,     condition: "high == 0" }
+  thresholds:
+    fail_on: high
+  reports:
+    - { format: docx, path: "./reports/pci-dss/" }
+    - { format: json, path: "./reports/pci-dss/" }

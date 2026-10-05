@@ -1,0 +1,58 @@
+---
+title: Slack
+---
+
+# Slack integration
+
+Pencheff posts a summary message to a Slack channel via a standard
+Incoming Webhook. The message includes a severity breakdown and the
+top 5 findings ranked by CVSS (with EPSS + KEV annotations when
+available).
+
+## Setup
+
+1. In Slack, go to **Apps → Incoming Webhooks → Add to Slack**.
+2. Pick a channel, copy the webhook URL (`https://hooks.slack.com/…`).
+3. In Pencheff: **Dashboard → Integrations → Connect → Slack**. Paste
+   the URL, set severity filter, save.
+
+## Via API
+
+```http
+POST /integrations
+Content-Type: application/json
+
+{
+  "kind": "slack",
+  "name": "#security-critical",
+  "severity_filter": "high",
+  "config": { "webhook_url": "https://hooks.slack.com/services/XXX/YYY/ZZZ" }
+}
+```
+
+## Via MCP
+
+```text
+export_to_slack(
+  session_id=sid,
+  webhook_url="https://hooks.slack.com/services/...",
+  severity_filter="high"
+)
+```
+
+## What the message looks like
+
+```
+*Pencheff scan update* — 2 critical • 5 high • 12 medium
+
+──────────────
+
+*[CRITICAL] SQL Injection — /api/users?id=FUZZ*
+`https://example.com/api/users` — CVSS 9.8 — A03
+Time-based blind SQLi confirmed via `UNION SELECT SLEEP(5)`. Database
+fingerprinted as PostgreSQL 15.2. `pg_dump` of 3 tables exfiltrated
+in the PoC.
+
+*[CRITICAL] SSRF → AWS IMDS*
+...
+```

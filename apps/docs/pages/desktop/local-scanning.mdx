@@ -1,0 +1,141 @@
+---
+title: Local repository scanning
+description: Run Pencheff scanners against a folder on your Mac without uploading source — results sync back to your workspace.
+---
+
+# Local repository scanning
+
+The web app scans GitHub repositories by cloning them into Pencheff's
+cloud workers. Studio runs the **same scanners — `semgrep`, `gitleaks`,
+`trivy_fs`, `osv-scanner` — on the laptop where the code already lives**,
+then streams only the findings (not the source) back to your workspace.
+
+Use cases:
+
+- **Private monorepos** that don't have a GitHub App installation or that
+  policy forbids cloning off-network.
+- **Pre-commit local checks** before you've pushed anything.
+- **Air-gapped or offline workstations** — start a scan, finish later,
+  ingest results when you reconnect.
+
+## Workflow
+
+1. **Register the folder as a local-provider repo.**
+   In Studio → **Repos** → **Add repository** → **Local folder**, point
+   at the path on disk. Studio mirrors it as a `Target` so it shows up
+   alongside cloud repos in scans and findings.
+
+2. **Open a desktop-local scan row.**
+   Click **Run scan** on the local repo. Studio calls:
+
+   ```http
+   POST /repos/{repo_id}/scan/local
+   Content-Type: application/json
+
+   {
+     "commit_sha": "abc1234…",        // optional, defaults to current HEAD
+     "scanners": ["semgrep", "gitleaks", "trivy_fs", "osv-scanner"]
+   }
+   ```
+
+   The API returns a `RepoScan` row in `running` state with
+   `trigger="desktop_local"` so it appears in the **Assessments** list
+   immediately.
+
+3. **Studio runs the scanners locally.**
+   Each tool is invoked as a separate `Process` (no shell), with stdout
+   parsed into the canonical finding schema. Progress streams into the
+   bottom-of-window status tray.
+
+4. **Studio ingests the findings.**
+   On completion (or failure), Studio calls:
+
+   ```http
+   POST /repos/scans/{scan_id}/ingest
+   Content-Type: application/json
+
+   {
+     "findings": [ /* canonical RepoFinding[] */ ],
+     "stats": { "files_scanned": 1234, "duration_ms": 47210 },
+     "sbom": { /* optional CycloneDX */ },
+     "error": null
+   }
+   ```
+
+   The scan row transitions to `done` (or `failed`). Findings now show
+   up everywhere — the Studio Findings view, the web Assessments page,
+   the unified-findings stream, and any wired integrations (Slack, Jira,
+   GitHub check runs).
+
+The ingest endpoint refuses to accept findings for any scan whose
+`trigger` is not `desktop_local` — cloud-worker scans are owned by Celery
+and cannot be hijacked.
+
+## Required scanners on your Mac
+
+Studio doesn't bundle the scanner binaries; it expects them on `PATH`.
+
+```bash
+brew install semgrep gitleaks trivy osv-scanner
+```
+
+The Studio Settings → Local Data section shows which scanners resolved
+and which are missing. A missing scanner is non-fatal — it just gets
+skipped for the affected scan, and the missing tool is recorded on the
+scan row.
+
+## What gets sent to Pencheff's cloud, and what doesn't
+
+| Data | Sent to cloud? |
+| --- | --- |
+| Finding metadata (rule ID, severity, title, file path, line range, snippet) | ✔ Yes — that's the whole point |
+| Source code at large — full files, untouched lines | ✘ No |
+| Repository git history, blobs, .git directory | ✘ No |
+| SBOM (CycloneDX / SPDX), if you opt in | ✔ Optional, controlled per-scan |
+| Scanner stdout / stderr (for debugging failures) | ✘ No, kept local |
+
+Code snippets attached to findings are **bounded to the lines the finding
+references** (typically 5-20 lines of context), never whole files.
+
+## Sandbox
+
+Pencheff Studio is **not sandboxed**. The
+`com.apple.security.app-sandbox` entitlement is intentionally absent
+because sandboxed apps cannot:
+
+- Read or execute Homebrew-installed binaries outside their container —
+  every scanner would resolve as "not installed".
+- Read arbitrary user paths — the local repository scanning use-case
+  fundamentally requires reading the folder you point at.
+
+To compensate, Studio ships with:
+
+- **Hardened Runtime** enabled (`-o runtime` codesign flag).
+- **Developer ID Application** signing + Apple notarisation + a stapled
+  ticket — Gatekeeper accepts the binary without `xattr -dr com.apple.quarantine`.
+- Only two entitlements granted: `network.client` and `network.server`
+  (the second is for the loopback OAuth callback listener).
+- No `~/Library` writes outside `~/Library/Application Support/com.pencheff.studio/`.
+- A local SwiftData mirror that you can wipe from **Settings → Local
+  Data → Clear local data**.
+
+We treat this as the appropriate trade-off for a developer-installed
+security tool distributed outside the App Store. If your organisation
+requires sandboxed binaries for installed software, the web app + MCP
+server combination covers every other workflow.
+
+## Limitations
+
+- **Single repo per scan** — chain runs with `Schedules` if you want a
+  batch.
+- **No live progress percentage** — scanners stream findings as they
+  arrive, but a sub-1s ETA isn't computable for `semgrep` rule packs.
+- **Local scans don't trigger GitHub check runs** — the repo isn't
+  cloud-attached, so there's no commit to annotate. Use a cloud-trigger
+  scan if you need check-run integration.
+
+## See also
+
+- [Install Pencheff Studio →](/desktop/install)
+- [API reference: `/repos/{id}/scan/local`](/reference/scans)
+- [Connecting a GitHub repo (cloud)](/repos/connect)

@@ -1,0 +1,44 @@
+---
+title: SOC 2
+---
+
+# SOC 2
+
+Pencheff maps findings to SOC 2 Trust Services Criteria (primarily
+Security / Common Criteria CC6–CC7 and Availability A1).
+
+| TSC | Example controls | Coverage |
+| --- | --- | --- |
+| CC6.1 — Logical access controls | CC6.1, CC6.2, CC6.3 | `scan_auth`, `scan_authz`, `scan_oauth`, `scan_mfa_bypass` |
+| CC6.6 — Boundary protection | CC6.6 | CORS, SSRF, clickjacking, WebSocket security |
+| CC6.7 — Encryption | CC6.7 | `scan_infrastructure` (TLS) |
+| CC7.1 — Detection / monitoring | CC7.1 | Passive scanner, change detection via ASM |
+| CC7.2 / CC7.3 — Anomaly handling | CC7.2, CC7.3 | Continuous profile + retest automation |
+| CC8.1 — Change management | CC8.1 | SBOM + dep scan in CI/CD gate |
+| A1.1 — Availability / capacity | A1.1 | `scan_business_logic` (rate limiting, race), cloud misconfig |
+
+## Policy example
+
+```yaml
+apiVersion: pencheff/v1
+kind: ScanPolicy
+metadata: { name: soc2 }
+spec:
+  targets: [{ url: "${TARGET_URL}" }]
+  modules:
+    - { name: scan_infrastructure, depth: standard }
+    - { name: scan_auth,           depth: standard }
+    - { name: scan_authz,          depth: standard }
+    - { name: scan_cloud,          depth: standard }
+    - { name: scan_dependencies,   params: { path: "./" } }
+    - { name: generate_sbom,       params: { path: "./", format: spdx } }
+  thresholds: { fail_on: high }
+  reports:
+    - { format: docx, path: "./reports/soc2/" }
+```
+
+## Evidence packet
+
+The DOCX report has a **SOC 2 Control Mapping** appendix with one row
+per CC control, showing findings and remediation status — suitable for
+submission to your auditor as Type II evidence.

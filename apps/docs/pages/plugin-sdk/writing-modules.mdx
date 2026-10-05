@@ -1,0 +1,121 @@
+---
+title: Writing a custom module
+---
+
+# Plugin SDK — writing a custom module
+
+Pencheff auto-discovers Python files in `~/.pencheff/custom_modules/`
+when `PENCHEFF_ENABLE_CUSTOM_MODULES=1` is set. Any `BaseTestModule`
+subclass is picked up and made available to the policy engine and the
+Pencheff engine.
+
+## 1. Scaffold
+
+```bash
+mkdir -p ~/.pencheff/custom_modules
+cat > ~/.pencheff/custom_modules/robots_check.py <<'PY'
+from __future__ import annotations
+
+from pencheff.config import Severity
+from pencheff.core.findings import Evidence, Finding
+from pencheff.modules.base import BaseTestModule
+
+
+class RobotsCheck(BaseTestModule):
+    name = "custom_robots_check"
+    category = "misconfiguration"
+    owasp_categories = ["A05"]
+    description = "Flag robots.txt disallows that expose admin paths."
+
+    def get_techniques(self) -> list[str]:
+        return ["robots-leak"]
+
+    async def run(self, session, http, targets=None, config=None):
+        base = session.target.base_url.rstrip("/")
+        try:
+            r = await http.request("GET", f"{base}/robots.txt")
+        except Exception:
+            return []
+        if r is None or r.status != 200:
+            return []
+
+        findings = []
+        for line in r.text.splitlines():
+            low = line.lower()
+            if low.startswith("disallow:") and "admin" in low:
+                findings.append(Finding(
+                    title="robots.txt leaks an admin path",
+                    severity=Severity.LOW,
+                    category="misconfiguration",
+                    owasp_category="A05",
+                    description=f"Exposes: {line}",
+                    remediation=(
+                        "Remove admin entries from robots.txt — rely on "
+                        "authentication, not obscurity."
+                    ),
+                    endpoint=f"{base}/robots.txt",
+                    evidence=[Evidence(
+                        request_method="GET",
+                        request_url=f"{base}/robots.txt",
+                        response_status=200,
+                        description=line,
+                    )],
+                ))
+        return findings
+PY
+```
+
+## 2. Enable + run
+
+```bash
+export PENCHEFF_ENABLE_CUSTOM_MODULES=1
+
+pencheff run-policy - <<'YAML'
+apiVersion: pencheff/v1
+kind: ScanPolicy
+metadata: { name: with-custom }
+spec:
+  targets: [{ url: https://example.com }]
+  modules:
+    - { name: custom_robots_check }
+YAML
+```
+
+## Module contract
+
+Every module **must** implement:
+
+| Attribute | Type | Purpose |
+| --- | --- | --- |
+| `name` | `str` | Unique identifier (lowercase, underscores) |
+| `category` | `str` | One of `injection / auth / authz / misconfiguration / components / …` |
+| `owasp_categories` | `list[str]` | `["A01"]` style identifiers |
+| `description` | `str` | One-line summary (shown in the dashboard) |
+| `get_techniques()` | `→ list[str]` | Technique labels for telemetry |
+| `run(session, http, targets, config)` | async `→ list[Finding]` | The actual work |
+
+`http` is a `PencheffHTTPClient` — use it for all outbound requests so
+rate-limiting, credential injection, and audit-logging all happen
+automatically.
+
+## Emit good findings
+
+- Populate `cvss_score` + `cvss_vector` when you can; the reporting
+  layer will derive severity from CVSS.
+- Use `category` values from existing modules to inherit compliance
+  mapping (`injection`, `auth`, `components`, etc.).
+- Include at least one `Evidence` with a real request/response pair —
+  the agent will later `test_endpoint` to confirm.
+- Set `verification_status` to `TRUE_POSITIVE` only if you've already
+  confirmed exploitability inside the module.
+
+## Security note
+
+Custom modules execute as the pencheff process — full host privileges.
+**Never** enable `PENCHEFF_ENABLE_CUSTOM_MODULES=1` on shared
+infrastructure without reviewing every file.
+
+## What's next
+
+- [Testing your module](/plugin-sdk/testing)
+- [Publishing to teammates](/plugin-sdk/publishing)

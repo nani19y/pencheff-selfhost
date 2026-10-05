@@ -1,0 +1,45 @@
+---
+title: Opsgenie
+---
+
+# Opsgenie integration
+
+Pencheff creates Opsgenie alerts via the [Alerts API v2](https://docs.opsgenie.com/docs/alert-api).
+
+## Setup
+
+1. In Opsgenie: **Settings → API key management → + Add new API key**.
+2. Grant the key `Create and update access` to the alerts channel.
+3. In Pencheff: **Dashboard → Integrations → Connect → Opsgenie**. Paste
+   the API key, save.
+
+## Via API
+
+```http
+POST /integrations
+{
+  "kind": "opsgenie",
+  "name": "secops",
+  "severity_filter": "high",
+  "config": { "api_key": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" }
+}
+```
+
+## Via MCP
+
+```text
+export_to_opsgenie(session_id=sid, api_key="...")
+```
+
+## Priority mapping
+
+| Pencheff severity | Opsgenie priority |
+| --- | --- |
+| critical | `P1` |
+| high | `P2` |
+| medium | `P3` |
+| low | `P4` |
+| info | `P5` |
+
+Tags added to every alert: the finding's `category`, `owasp_category`,
+and `pencheff`.

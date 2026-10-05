@@ -1,0 +1,20 @@
+apiVersion: v2
+name: pencheff-admission
+description: |
+  Pencheff Kubernetes admission webhook — blocks pods whose images
+  carry unfixed critical-severity CVEs reported by the Pencheff API.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+icon: https://github.com/BalaSriharsha-Ch/pencheff/raw/main/apps/web/public/logo.svg
+home: https://github.com/BalaSriharsha-Ch/pencheff
+sources:
+  - https://github.com/BalaSriharsha-Ch/pencheff/tree/main/apps/k8s-admission
+maintainers:
+  - name: Pencheff
+    url: https://github.com/BalaSriharsha-Ch/pencheff
+keywords:
+  - security
+  - admission-webhook
+  - cve
+  - container-security

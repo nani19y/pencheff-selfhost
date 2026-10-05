@@ -1,0 +1,81 @@
+---
+title: DAST — dynamic web application testing
+---
+
+# DAST — dynamic web application testing
+
+Pencheff's core DAST engine maps findings to OWASP Top 10 categories and
+the advanced classes most scanners miss. Every module emits unified
+`Finding` records carrying CVSS, CWE, OWASP category, and auto-mapped
+compliance references.
+
+## Coverage map
+
+| Class | Module | Highlights |
+| --- | --- | --- |
+| SQL Injection | `scan_injection` | Error-based, blind boolean, time-based, UNION, second-order. DB fingerprinting: MySQL / PG / MSSQL / Oracle / SQLite. |
+| NoSQL Injection | `scan_injection` | MongoDB operator injection (`$gt`, `$ne`, `$regex`, `$where`), auth bypass. |
+| Command Injection | `scan_injection` | Output + blind, pipe/semicolon/backtick/`$()`, time-based (`ping` / `sleep`). |
+| SSTI | `scan_injection` | Jinja2, Twig, Mako, ERB, Freemarker. |
+| XXE | `scan_injection` | Classic, blind, parameter entities, billion laughs. |
+| SSRF | `scan_injection` | Cloud metadata (AWS IMDSv1/v2, GCP, Azure, DO), encoding bypasses, OAST via interactsh. |
+| LDAP Injection | `scan_injection` | Filter injection, auth bypass, blind boolean. |
+| Open Redirect | `scan_injection` | 25+ param names, 12 bypass techniques. |
+| Header Injection | `scan_injection` | CRLF, response splitting, host header poisoning. |
+| Reflected/Stored XSS | `scan_client_side` | Context-aware detection (tag / attribute / script / JS). |
+| DOM XSS | `scan_dom_xss` | Static source→sink + Playwright-based dynamic injection. |
+| CSRF | `scan_client_side` | Token absence/weakness, SameSite bypass, double-submit check. |
+| Clickjacking | `scan_client_side` | X-Frame-Options + CSP frame-ancestors analysis. |
+| Session management | `scan_auth` | Timeout, fixation, hijacking, concurrent sessions. |
+| JWT attacks | `scan_auth` | `none` algorithm, RS256→HS256 confusion, claim tampering. |
+| Brute force | `scan_auth` | Account enumeration via timing, lockout, rate limits. |
+| MFA bypass | `scan_mfa_bypass` | Direct endpoint access, OTP brute force, race conditions. |
+| OAuth/OIDC | `scan_oauth` | `redirect_uri` bypass, state validation, token leakage, PKCE bypass. |
+| IDOR | `scan_authz` | Numeric + UUID enumeration, parameter substitution. |
+| Privilege escalation | `scan_authz` | Vertical + horizontal, role injection, forced browsing. |
+| Mass assignment | `scan_api` | Rails `attr_accessible`, Django admin fields, Laravel whitelist bypass. |
+| GraphQL | `scan_api` | Introspection, depth limits, batch limits, field suggestion. |
+| WebSocket | `scan_websocket` | CSWSH, auth bypass, message injection. |
+| HTTP smuggling | `scan_advanced` | CL.TE, TE.CL, TE.TE with 12 header obfuscations. |
+| Cache poisoning | `scan_advanced` | Unkeyed headers, cache deception, fat GET. |
+| Deserialization | `scan_advanced` | Java gadgets, Python pickle, .NET ViewState, YAML. |
+| Prototype pollution | `scan_advanced` | Server-side JSON + client-side URL param. |
+| Subdomain takeover | `scan_subdomain_takeover` | 20+ dangling-CNAME services, NS delegation. |
+| Cloud metadata | `scan_cloud` | IMDS access via SSRF, role assumption. |
+| S3 buckets | `scan_cloud` | Public list/read/write, ACL checks. |
+| File upload | `scan_file_handling` | Double-ext, MIME confusion, magic-byte injection, polyglots. |
+| Path traversal | `scan_file_handling` | Encoding bypasses, null-byte, UNC paths. |
+| Rate limiting | `scan_business_logic` | Header bypass, IP rotation, parameter variation. |
+| Race conditions | `scan_business_logic` | TOCTOU, double-spend, concurrent state mutation. |
+| Workflow bypass | `scan_business_logic` | Step skip, state tampering, token reuse. |
+
+## How the scan chooses what to run
+
+`recon_passive` + `recon_active` fingerprint technology stack and discover
+endpoints. `scan_waf` fingerprints the WAF. `payload_generate` then builds
+WAF-aware payloads before each injection module runs. After every scan the
+agent is instructed to call `test_endpoint` with the top 3–5 candidates to
+verify exploitability before the finding is labelled `true_positive`.
+
+## Manual hacking tools
+
+Between scans the agent uses `test_endpoint` to probe:
+
+- Default creds (`admin/admin`, `admin/password`, `test/test`)
+- Debug endpoints (`/debug`, `/console`, `/admin`, `/actuator`, `/.env`, `/phpinfo.php`)
+- Parameter tampering (`price=0`, `role=admin`, `is_staff=true`)
+- Exposed git/env/backup files (`/.git/config`, `/.env`, `/.bak`)
+- HTTP verb tampering (`GET`→`POST`→`PUT`→`DELETE`)
+
+## External tools it chains
+
+When installed, Pencheff fires:
+
+- `pencheff map --target <target> --all-ports -A` for full service enumeration
+- `scan_pulse` / `pencheff pulse` for template-based checks
+- `pencheff sqli` when injection modules find candidates — proves SQLi safely without dumping data
+- `dalfox` for deep XSS
+- `ffuf` / `gobuster` for directory enumeration
+- `hydra` for authentication brute-force with real wordlists
+
+See [CLI reference](/cli/reference) for the full external-tool list.

@@ -1,0 +1,136 @@
+---
+title: Quickstart — URL scan
+description: Run a DAST scan against a live URL in under 10 minutes.
+---
+
+import { Callout, Tabs } from "nextra/components";
+
+# Quickstart: URL scan (DAST)
+
+Point Pencheff at a live URL and get a verified, exploit-first
+assessment with OWASP Top 10 mapping in 5-40 minutes depending on the
+profile. The same engine drives the SaaS dashboard, the CLI, and the
+MCP tools &mdash; pick whichever surface matches your workflow.
+
+<Callout type="warning">
+  **Authorization is mandatory.** Every scan API call carries a
+  `consent_payload`. Run only against systems you own or have written
+  permission to test. Pencheff will refuse to scan otherwise.
+</Callout>
+
+## 1. Pick a target
+
+| Scenario | What to point at | Profile to start with |
+| --- | --- | --- |
+| Public marketing site | `https://acme.com` | `quick` |
+| Production web app | `https://app.acme.com` | `standard` |
+| API behind a token | `https://api.acme.com/v1` | `standard` (with auth header) |
+| Stage / pre-prod, exhaustive sweep | `https://stage.acme.com` | `deep` |
+| Single-page app / SPA | `https://app.acme.com` | `standard` (Playwright crawl auto-engages) |
+
+## 2. Run it
+
+<Tabs items={["SaaS Dashboard", "CLI", "MCP host"]}>
+<Tabs.Tab>
+
+1. Open [`app.pencheff.com`](https://app.pencheff.com), sign in,
+   click **Register target**.
+2. Paste the URL, optionally add credentials, scope, and exclude
+   paths.
+3. Pick a profile (`standard` is the default balanced run).
+4. Click **Start scan** &mdash; you&rsquo;ll be redirected to a live
+   progress page. Stages stream over SSE.
+5. When it finishes, browse findings by severity, OWASP category, or
+   compliance framework.
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+```bash
+# 5-10 minute fast pass — fail the build on any HIGH+ finding.
+pencheff scan \
+  --target https://example.com \
+  --profile quick \
+  --fail-on high \
+  --format json,docx \
+  --output ./reports/
+
+# 20-40 minute balanced run — the documented default.
+pencheff scan \
+  --target https://example.com \
+  --profile standard \
+  --output ./reports/
+
+# 60+ minute deep run — auto-creates an engagement, persists a
+# DREAD threat model, and runs the full attack-chain phase.
+pencheff scan \
+  --target https://example.com \
+  --profile deep \
+  --save-history \
+  --output ./reports/
+
+# Authenticated scan — credentials never leave the local machine.
+pencheff scan \
+  --target https://app.example.com \
+  --profile standard \
+  --username analyst@example.com \
+  --password "$APP_PASSWORD"
+```
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+```text
+> Pentest https://juice-shop.herokuapp.com — standard profile
+
+I'll run a full standard scan now.
+```
+
+The MCP host fans the request out across the canonical tool order:
+
+1. `pentest_init` &mdash; new session
+2. `check_dependencies` &mdash; see which external tools are detected
+3. `recon_passive` → `recon_active` → `recon_api_discovery`
+4. `scan_waf` → `payload_generate`
+5. `scan_injection` → `test_endpoint` (manual exploitation)
+6. `scan_client_side` → `scan_auth` → `scan_authz` → `scan_advanced`
+7. `exploit_chain_suggest` → `test_chain`
+8. `generate_report` and the chosen exporter
+
+</Tabs.Tab>
+</Tabs>
+
+## 3. Read the result
+
+* Findings appear in the unified queue with severity, CVSS v3.1 +
+  v4.0, OWASP category, and compliance fan-out.
+* Every finding flagged by a scanner is followed up by `test_endpoint`
+  &mdash; the report contains only `true_positive` rows by default.
+* `deep` profiles attach a [STRIDE / DREAD threat
+  model](/features/threat-model) and a [compliance
+  rollup](/features/compliance-mapping) to the scan.
+* The DOCX report carries an executive summary, the findings register,
+  the compliance appendix, and (for `deep`) the threat model.
+
+## Common gotchas
+
+* **Cloudflare / WAF returns 403.** Add the WAF&rsquo;s session cookie
+  via the dashboard&rsquo;s **Headers** row on the target.
+  `scan_waf` will detect and tag the WAF; payloads adapt automatically.
+* **SPA returns a blank shell.** Use `standard` or `deep` &mdash; both
+  trigger the Playwright crawler. `quick` only runs the fast HTTP
+  crawler.
+* **Rate-limited target.** Use the dashboard&rsquo;s **Throttle** card
+  on the target to cap requests-per-second; the engine slows every
+  dispatcher.
+* **Auth flow is not OIDC.** Record a [login macro](/features/authentication)
+  once via the dashboard&rsquo;s **Authentication** card; the macro
+  attaches to the target and replays on every scan.
+
+## Next
+
+* [Tutorial: end-to-end web app](/tutorials/web-app-pentest) &mdash;
+  same flow with auth, exclusions, and a customer-ready DOCX.
+* [Compliance mapping](/quickstart/compliance) &mdash; turn the scan
+  into audit evidence.
+* [CI/CD integration](/ci-cd/github-actions) &mdash; gate every PR.

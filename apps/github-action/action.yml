@@ -1,0 +1,114 @@
+name: "Pencheff Security Scan"
+description: "Scan a target with Pencheff and fail the build on findings above a severity threshold."
+author: "Pencheff"
+branding:
+  icon: "shield"
+  color: "purple"
+
+inputs:
+  target:
+    description: "Target URL (or HOST:PORT) to scan."
+    required: true
+  profile:
+    description: "Scan profile: quick | standard | deep | api-only | compliance | cicd"
+    required: false
+    default: "cicd"
+  fail-on:
+    description: "Minimum severity to fail the build: info | low | medium | high | critical"
+    required: false
+    default: "high"
+  api-base:
+    description: "Pencheff API base URL (when running against a hosted backend)."
+    required: false
+    default: ""
+  api-token:
+    description: "Pencheff API bearer token (sets PENCHEFF_API_TOKEN)."
+    required: false
+    default: ""
+  engagement-id:
+    description: "Optional engagement to scope the scan to."
+    required: false
+    default: ""
+  pr-comment:
+    description: "Post a summary comment on the triggering PR (true|false)."
+    required: false
+    default: "true"
+  artifact-name:
+    description: "Name of the report artifact uploaded to the workflow run."
+    required: false
+    default: "pencheff-report"
+
+outputs:
+  report-path:
+    description: "Path to the generated JSON report on the runner."
+    value: ${{ steps.scan.outputs.report_path }}
+  worst-severity:
+    description: "Highest severity found (critical|high|medium|low|info|none)."
+    value: ${{ steps.scan.outputs.worst_severity }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install Pencheff
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install pencheff
+
+    - name: Run Pencheff scan
+      id: scan
+      shell: bash
+      env:
+        PENCHEFF_API_BASE: ${{ inputs.api-base }}
+        PENCHEFF_API_TOKEN: ${{ inputs.api-token }}
+      run: |
+        out_dir="${RUNNER_TEMP}/pencheff-report"
+        mkdir -p "$out_dir"
+        extra=""
+        if [ -n "${{ inputs.engagement-id }}" ]; then
+          extra="--engagement-id ${{ inputs.engagement-id }}"
+        fi
+        set +e
+        pencheff scan \
+          --target "${{ inputs.target }}" \
+          --profile "${{ inputs.profile }}" \
+          --fail-on "${{ inputs.fail-on }}" \
+          --output "$out_dir" \
+          --format json,markdown $extra
+        rc=$?
+        set -e
+        echo "report_path=$out_dir" >> "$GITHUB_OUTPUT"
+        # Worst severity is determined by the CLI exit code in this build:
+        # 0 = no findings at/above threshold; 2 = at-or-above threshold.
+        case "$rc" in
+          0) echo "worst_severity=none" >> "$GITHUB_OUTPUT" ;;
+          2) echo "worst_severity=${{ inputs.fail-on }}" >> "$GITHUB_OUTPUT" ;;
+          *) echo "worst_severity=error" >> "$GITHUB_OUTPUT" ;;
+        esac
+        # Re-emit the original exit code so the action signals build state.
+        exit $rc
+
+    - name: Upload report artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.scan.outputs.report_path }}
+
+    - name: Post PR comment
+      if: ${{ always() && inputs.pr-comment == 'true' && github.event_name == 'pull_request' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ env.GITHUB_TOKEN }}
+      run: |
+        python "${{ github.action_path }}/pr_comment.py" \
+          --report-dir "${{ steps.scan.outputs.report_path }}" \
+          --pr "${{ github.event.pull_request.number }}" \
+          --repo "${{ github.repository }}" \
+          --target "${{ inputs.target }}" \
+          --fail-on "${{ inputs.fail-on }}"

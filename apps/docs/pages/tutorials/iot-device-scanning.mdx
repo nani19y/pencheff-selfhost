@@ -1,0 +1,83 @@
+---
+title: Tutorial — IoT device security testing (camera, drone, vacuum)
+description: Statically test a consumer IoT device by analyzing its firmware — default credentials, embedded keys, insecure services, and vulnerable components. No device or network access.
+---
+
+import { Callout } from "nextra/components";
+
+# Tutorial: IoT device security testing
+
+Test the security of a camera, drone, robot vacuum, or router by analyzing
+its **firmware** — the safe, repeatable way to assess an IoT device without
+touching the live hardware or putting it on the network.
+
+## Scenario
+
+* **Device.** A Wi-Fi security camera (the same flow applies to a drone,
+  robot vacuum, or router).
+* **Artifact.** The camera's firmware image, obtained from the vendor's
+  update site or an OTA capture, hosted at a URL you control.
+* **Goal.** Find default credentials, embedded keys, backdoor services, and
+  vulnerable components before an attacker does.
+
+## Get the firmware
+
+| Source | How |
+| --- | --- |
+| Vendor update/support site | Download the latest firmware `.bin`/`.zip` |
+| OTA capture | Intercept the device's update request (it fetches the image over the network) |
+| Flash dump | Read the SPI flash with a programmer (CH341A) and `flashrom` |
+
+## Inputs you need
+
+| Item | Where it goes |
+| --- | --- |
+| Firmware URL | **Artifact URL** field |
+| SHA-256 of the file | **SHA-256** field |
+| Vendor / model / device class (optional) | labelling fields |
+
+```bash
+shasum -a 256 camera-fw.bin
+```
+
+## Steps
+
+### 1. Register the target
+
+[`app.pencheff.com`](https://app.pencheff.com) → **Register target** →
+**OT / IoT & Hardware Security** → **IoT Device**:
+
+* **Name** — `Acme Cam 2 — fw 1.4`
+* **Artifact URL** — `https://updates.acme.com/cam2/fw-1.4.bin`
+* **SHA-256** — the digest above
+
+### 2. Run the scan
+
+**Commission scan**. Pencheff verifies the image, maps its components
+(`binwalk`), and analyzes the extracted strings.
+
+### 3. Read the findings
+
+The highest-value IoT findings:
+
+* **Default credentials** (`admin:admin`, `root:root`) — the exact weakness
+  the Mirai botnet weaponized to build a camera/router botnet.
+* **Embedded private keys** — shared across every device of that model.
+* **Telnet / debug services** — remote-access backdoors.
+* **Cleartext update endpoints** — let an attacker MITM a firmware update.
+* **Outdated components** — BusyBox/Dropbear/OpenSSL versions with CVEs.
+
+<Callout type="warning">
+  **No live probing.** Pencheff analyzes the firmware image only — it never
+  connects to the device or your network. That makes it safe to run and means
+  it works even for a device you can't reach from the cloud.
+</Callout>
+
+## Deliverable
+
+An IoT device risk register exportable to DOCX/JSON/CSV.
+
+## Next
+
+* [Tutorial: Firmware scanning](/tutorials/firmware-scanning)
+* [Firmware, IoT & OT Security](/features/firmware-iot) — feature reference.

@@ -1,0 +1,41 @@
+scanner,target,severity,cwe,title,url,confidence,verified
+zap,juice-shop,medium,693,Content Security Policy (CSP) Header Not Set,http://host.docker.internal:3001,3,false
+zap,juice-shop,medium,693,Content Security Policy (CSP) Header Not Set,http://host.docker.internal:3001/ftp,3,false
+zap,juice-shop,medium,693,Content Security Policy (CSP) Header Not Set,http://host.docker.internal:3001/ftp/encrypt.pyc,3,false
+zap,juice-shop,medium,693,Content Security Policy (CSP) Header Not Set,http://host.docker.internal:3001/ftp/package.json.bak,3,false
+zap,juice-shop,medium,693,Content Security Policy (CSP) Header Not Set,http://host.docker.internal:3001/sitemap.xml,3,false
+zap,juice-shop,medium,264,Cross-Domain Misconfiguration,http://host.docker.internal:3001/assets/public/favicon_js.ico,2,false
+zap,juice-shop,medium,264,Cross-Domain Misconfiguration,http://host.docker.internal:3001/chunk-T3PSKZ45.js,2,false
+zap,juice-shop,low,693,Cross-Origin-Embedder-Policy Header Missing or Invalid,http://host.docker.internal:3001,2,false
+zap,juice-shop,low,693,Cross-Origin-Embedder-Policy Header Missing or Invalid,http://host.docker.internal:3001/,2,false
+zap,juice-shop,low,693,Cross-Origin-Embedder-Policy Header Missing or Invalid,http://host.docker.internal:3001/ftp,2,false
+zap,juice-shop,low,693,Cross-Origin-Embedder-Policy Header Missing or Invalid,http://host.docker.internal:3001/juice-shop/build/routes/fileServer.js:59:18,2,false
+zap,juice-shop,low,693,Cross-Origin-Embedder-Policy Header Missing or Invalid,http://host.docker.internal:3001/sitemap.xml,2,false
+zap,juice-shop,low,693,Cross-Origin-Opener-Policy Header Missing or Invalid,http://host.docker.internal:3001,2,false
+zap,juice-shop,low,693,Cross-Origin-Opener-Policy Header Missing or Invalid,http://host.docker.internal:3001/,2,false
+zap,juice-shop,low,693,Cross-Origin-Opener-Policy Header Missing or Invalid,http://host.docker.internal:3001/ftp,2,false
+zap,juice-shop,low,693,Cross-Origin-Opener-Policy Header Missing or Invalid,http://host.docker.internal:3001/juice-shop/build/routes/fileServer.js:59:18,2,false
+zap,juice-shop,low,693,Cross-Origin-Opener-Policy Header Missing or Invalid,http://host.docker.internal:3001/sitemap.xml,2,false
+zap,juice-shop,low,749,Dangerous JS Functions,http://host.docker.internal:3001/chunk-LHKS7QUN.js,1,false
+zap,juice-shop,low,749,Dangerous JS Functions,http://host.docker.internal:3001/main.js,1,false
+zap,juice-shop,low,16,Deprecated Feature Policy Header Set,http://host.docker.internal:3001/chunk-24EZLZ4I.js,2,false
+zap,juice-shop,low,16,Deprecated Feature Policy Header Set,http://host.docker.internal:3001/chunk-T3PSKZ45.js,2,false
+zap,juice-shop,low,16,Deprecated Feature Policy Header Set,http://host.docker.internal:3001/chunk-TWZW5B45.js,2,false
+zap,juice-shop,low,16,Deprecated Feature Policy Header Set,http://host.docker.internal:3001/polyfills.js,2,false
+zap,juice-shop,low,16,Deprecated Feature Policy Header Set,http://host.docker.internal:3001/scripts.js,2,false
+zap,juice-shop,low,497,Timestamp Disclosure - Unix,http://host.docker.internal:3001,1,false
+zap,juice-shop,low,497,Timestamp Disclosure - Unix,http://host.docker.internal:3001,1,false
+zap,juice-shop,low,497,Timestamp Disclosure - Unix,http://host.docker.internal:3001,1,false
+zap,juice-shop,low,497,Timestamp Disclosure - Unix,http://host.docker.internal:3001/sitemap.xml,1,false
+zap,juice-shop,low,497,Timestamp Disclosure - Unix,http://host.docker.internal:3001/sitemap.xml,1,false
+zap,juice-shop,info,-1,Modern Web Application,http://host.docker.internal:3001,2,false
+zap,juice-shop,info,-1,Modern Web Application,http://host.docker.internal:3001/,2,false
+zap,juice-shop,info,-1,Modern Web Application,http://host.docker.internal:3001/juice-shop/build/routes/fileServer.js:43:13,2,false
+zap,juice-shop,info,-1,Modern Web Application,http://host.docker.internal:3001/juice-shop/build/routes/fileServer.js:59:18,2,false
+zap,juice-shop,info,-1,Modern Web Application,http://host.docker.internal:3001/sitemap.xml,2,false
+zap,juice-shop,info,524,Storable and Cacheable Content,http://host.docker.internal:3001/robots.txt,2,false
+zap,juice-shop,info,524,Storable but Non-Cacheable Content,http://host.docker.internal:3001/assets/public/favicon_js.ico,2,false
+zap,juice-shop,info,524,Storable but Non-Cacheable Content,http://host.docker.internal:3001/chunk-24EZLZ4I.js,2,false
+zap,juice-shop,info,524,Storable but Non-Cacheable Content,http://host.docker.internal:3001/chunk-T3PSKZ45.js,2,false
+zap,juice-shop,info,524,Storable but Non-Cacheable Content,http://host.docker.internal:3001/chunk-TWZW5B45.js,2,false
+zap,juice-shop,info,524,Storable but Non-Cacheable Content,http://host.docker.internal:3001/polyfills.js,2,false

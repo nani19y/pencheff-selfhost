@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pencheff-sentry"
+version = "0.1.0"
+description = "Runtime LLM guardrail proxy / LiteLLM plugin / MCP middleware for Pencheff."
+license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "Pencheff" }]
+readme = "README.md"
+requires-python = ">=3.11"
+
+# Pencheff Sentry deliberately keeps a small dependency footprint —
+# the detector core is regex + token counting; httpx is the only
+# runtime requirement for the proxy mode. The judge integrations
+# (Granite Guardian / Llama Guard / OpenAI Moderation) reuse the
+# in-tree judges from the main Pencheff plugin, so they're a peer
+# install, not a hard dep.
+dependencies = [
+    "httpx>=0.27.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "pydantic>=2.7.0",
+]
+
+[project.optional-dependencies]
+litellm = ["litellm>=1.40.0"]
+all = ["pencheff-sentry[litellm]"]
+
+[project.scripts]
+pencheff-sentry = "pencheff_sentry.cli:main"
+
+[tool.setuptools]
+packages = ["pencheff_sentry"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.0",
+]

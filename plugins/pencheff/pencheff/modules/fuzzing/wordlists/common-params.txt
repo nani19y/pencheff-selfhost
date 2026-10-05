@@ -1,0 +1,25 @@
+# Common parameter names likely to be interesting targets
+id
+user
+user_id
+admin
+token
+access_token
+api_key
+apikey
+auth
+session
+role
+redirect
+url
+next
+return
+callback
+file
+path
+include
+page
+action
+type
+data
+debug

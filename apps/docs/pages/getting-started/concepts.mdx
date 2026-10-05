@@ -1,0 +1,130 @@
+---
+title: Core concepts
+description: Sessions, findings, profiles, policies, chains, suppression — the mental model for Pencheff.
+---
+
+# Core concepts
+
+## Session
+
+Every scan runs inside a **PentestSession** identified by a 12-char hex ID.
+The session holds the target, discovered state (endpoints, subdomains,
+tech stack, open ports, WebSocket endpoints, OAuth endpoints, WAF info,
+exploit chains), credentials, a `FindingsDB`, and a full request log.
+
+Sessions live in memory while the scan runs; the SaaS backend persists them
+to Postgres so the dashboard can keep rendering long after the agent
+disconnected.
+
+## Finding
+
+A **Finding** captures a single vulnerability with:
+
+- `severity` (`critical | high | medium | low | info`) and `cvss_score`/`cvss_vector`
+- `category` (`injection`, `auth`, `authz`, `components`, `misconfiguration`, …)
+- `owasp_category` (A01…A10) — automatically maps into PCI-DSS, NIST 800-53,
+  SOC 2, ISO 27001, HIPAA
+- `verification_status` — `unverified | true_positive | false_positive | true_negative | false_negative`
+- `evidence` — list of request/response pairs proving the vuln
+- `remediation` and `references`
+- `epss`, `kev`, and `risk_score = cvss × (1 + epss) × (2 if kev else 1)` — see
+  [EPSS & KEV enrichment](/features/epss-kev)
+- `sla_days` and `due_date` — computed from severity, breached hourly by the
+  SaaS SLA monitor
+
+Findings are deduplicated by `(endpoint, parameter, category, title)`.
+
+## Verification status
+
+| Status | Meaning |
+| --- | --- |
+| `unverified` | Scanner flagged it, not yet confirmed |
+| `true_positive` | Proven exploitable via `test_endpoint` |
+| `false_positive` | Scanner error — tested and safe |
+| `true_negative` | Confirmed absent |
+| `false_negative` | Missed by scanner, found manually |
+
+An elite Pencheff report contains **only** findings verified as
+`true_positive`. The agent is instructed to never report unverified findings
+as confirmed.
+
+## Suppression
+
+A finding can be suppressed with one of:
+
+- `accepted_risk` — known and accepted
+- `wont_fix` — acknowledged but not in remediation scope
+- `false_positive` — confirmed noise
+- `duplicate` — same vuln tracked elsewhere
+- `out_of_scope` — outside agreed test scope
+
+Suppressed findings are excluded from reports by default but remain in the
+database with timestamp, reason, and notes.
+
+## Profile
+
+A **profile** is a named preset that selects which modules to run, at what
+depth, with what crawl settings. See the
+[first-scan guide](/getting-started/first-scan#picking-a-profile) for the
+12 built-in profiles.
+
+## Policy
+
+A **ScanPolicy** (`apiVersion: pencheff/v1`) is a YAML file that fully
+specifies a scan: targets, auth, modules, assertions, thresholds, reports,
+schedule.
+
+```yaml
+apiVersion: pencheff/v1
+kind: ScanPolicy
+spec:
+  targets: [{ url: https://example.com }]
+  modules:
+    - { name: scan_injection, depth: standard }
+  assertions:
+    - { id: no_critical, condition: "critical == 0" }
+  thresholds: { fail_on: high }
+```
+
+Scan profile YAML is stored alongside each schedule.
+
+## Exploit chain
+
+A **chain** is a multi-step narrative attack. Pencheff's `exploit_chain_suggest`
+tool proposes chains like:
+
+- SSRF → cloud metadata → IAM credential theft → S3 read
+- XSS → session theft → admin impersonation → database dump
+- IDOR → user enumeration → admin → privilege escalation
+- Open redirect → OAuth token theft → account takeover
+
+`test_chain` then runs each step and records the evidence end-to-end.
+
+## Compliance mapping
+
+Every finding carries an OWASP category; Pencheff's `reporting/compliance.py`
+auto-derives:
+
+- OWASP Top 10 2021
+- PCI-DSS 4.0 requirement numbers
+- NIST 800-53 Rev 5 control families
+- SOC 2 Trust Services Criteria
+- ISO 27001:2022 Annex A controls
+- HIPAA Security Rule safeguards
+
+Compliance reports are pre-rendered in Word, CSV, JSON, and SPDX/CycloneDX
+(for SBOM).
+
+## Credentials
+
+Credentials live in a `CredentialStore` — one session can carry multiple
+named sets (`default`, `admin`, `readonly`, …) for testing authorization
+boundaries. Every credential is wrapped in a `MaskedSecret` that masks
+itself in `repr`/`str` to prevent accidental leakage. The SaaS backend
+stores them Fernet-encrypted at rest.
+
+## What's next
+
+- [Features](/features/dast) — explore each scan area
+- [CLI reference](/cli/reference) — every CLI flag and subcommand
+- [API reference](/reference/overview) — REST + MCP tool reference

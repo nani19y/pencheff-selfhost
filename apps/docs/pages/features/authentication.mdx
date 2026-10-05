@@ -1,0 +1,95 @@
+---
+title: Authentication & sessions
+---
+
+# Authentication & sessions
+
+Pencheff supports authenticated scanning for real-world targets where
+most of the attack surface lives behind login.
+
+## Credential types
+
+`CredentialSet` accepts any combination of:
+
+- `username` + `password`
+- `api_key` — sent as `X-API-Key` header
+- `token` — sent as `Authorization: Bearer …`
+- `cookie` — raw cookie string
+- `custom_headers` — arbitrary header name/value pairs
+
+All values are `MaskedSecret`-wrapped so they never leak via `repr` / logs.
+In the SaaS, they're Fernet-encrypted at rest.
+
+## Multiple roles
+
+Load multiple credential sets to test authorization boundaries:
+
+```text
+pentest_configure(session_id=sid, updates={
+  "credentials": {
+    "name": "admin",
+    "username": "admin@example.com",
+    "password": "AdminPass1!"
+  }
+})
+
+pentest_configure(session_id=sid, updates={
+  "credentials": {
+    "name": "user",
+    "username": "user@example.com",
+    "password": "UserPass1!"
+  }
+})
+```
+
+`scan_authz` uses them to detect horizontal (user → other user's data)
+and vertical (user → admin) escalations.
+
+## Login macros (interactive recording)
+
+For complex flows (SPA login, multi-step OTP), record a macro
+interactively:
+
+```text
+record_login_macro(session_id=sid, url='https://app.example.com/login')
+```
+
+A headed Chromium opens — you log in manually, the macro records
+the network traffic and persists cookies + localStorage tokens. On
+subsequent scans the macro replays automatically.
+
+## Authenticated crawl
+
+```text
+authenticated_crawl(session_id=sid, credentials_ref='admin')
+```
+
+Crawls all endpoints with credentials injected, discovering
+post-login-only routes.
+
+## OAuth / OIDC
+
+`scan_oauth` covers:
+
+- `redirect_uri` bypass (13+ techniques: subdomain, encoding, fragment,
+  protocol-relative, backslash, null-byte, loose path matching)
+- `state` parameter validation
+- Token leakage via `Referer`
+- Scope escalation
+- PKCE bypass
+
+## JWT attacks
+
+`scan_auth` covers:
+
+- `alg: "none"` bypass
+- RS256 → HS256 key confusion
+- Claim tampering (`user`, `role`, `exp`)
+- Signature verification bypass
+- Expiration bypass
+
+## Session / MFA
+
+- `scan_auth` — session timeout, fixation, hijacking, concurrent session testing
+- `scan_mfa_bypass` — direct endpoint access skipping 2FA, OTP brute force,
+  backup code abuse, race conditions on code validation

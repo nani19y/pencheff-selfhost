@@ -1,0 +1,53 @@
+---
+title: PagerDuty
+---
+
+# PagerDuty integration
+
+Pencheff creates PagerDuty incidents via the [Events API v2](https://developer.pagerduty.com/docs/events-api-v2/overview/).
+One incident per critical or high finding, deduplicated by
+`pencheff:<finding_id>` so a re-scan doesn't create duplicate pages.
+
+## Setup
+
+1. In PagerDuty: **Services → (your service) → Integrations → + Add**.
+2. Pick **Events API V2** and copy the Integration (routing) key.
+3. In Pencheff: **Dashboard → Integrations → Connect → PagerDuty**.
+   Paste the routing key, save.
+
+## Via API
+
+```http
+POST /integrations
+{
+  "kind": "pagerduty",
+  "name": "prod-oncall",
+  "severity_filter": "high",
+  "config": { "routing_key": "R01XXXXXXX" }
+}
+```
+
+## Via MCP
+
+```text
+export_to_pagerduty(
+  session_id=sid,
+  routing_key="R01XXXXXXX"
+)
+```
+
+## Severity mapping
+
+| Pencheff severity | PagerDuty severity |
+| --- | --- |
+| critical | `critical` |
+| high | `error` |
+| medium | `warning` |
+| low | `info` |
+| info | `info` |
+
+## Resolving incidents
+
+Pencheff does **not** currently auto-resolve PagerDuty incidents when a
+finding is marked `resolved_at`. Configure your service to auto-resolve
+after N hours, or resolve manually after remediation.

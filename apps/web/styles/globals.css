@@ -1,0 +1,1437 @@
+/* ============================================================================
+ * Pencheff — Sunset Observability
+ * Global tokens + component layer. All app routes inherit from here.
+ * Landing page has its own scoped layer in landing.css (.landing-root).
+ * ========================================================================== */
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,800;1,9..144,300;1,9..144,400;1,9..144,500&family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* ── Foundation — pure neutral grayscale ── */
+  --canvas: #ffffff;
+  --paper: #ffffff;
+  --vellum: #fafafa; /* raised neutral surface */
+  --parchment: #f5f5f5; /* lightest neutral wash */
+  --ink: #000000; /* pure black */
+  --dusk: #0a0a0a; /* deepest, for dark sections */
+  --graphite: #171717; /* body text */
+  --slate: #525252; /* secondary text */
+  --mist: #a3a3a3; /* tertiary, placeholders */
+  --hairline: #e5e5e5; /* neutral rule color */
+
+  /* ── Orange / ember scale ── */
+  --orange-50: #fff6ee;
+  --orange-100: #ffe6d1;
+  --orange-200: #ffc79a;
+  --orange-300: #ffa158;
+  --orange-400: #fb7a1c; /* primary action */
+  --orange-500: #e85a06; /* primary hover / strong */
+  --orange-600: #c44805; /* pressed */
+  --orange-700: #9a3604;
+  --orange-800: #6b2302;
+  --orange-900: #3d1201;
+
+  --ember: var(--orange-400);
+  --ember-deep: var(--orange-500);
+  --ember-dark: var(--orange-700);
+  --ember-light: var(--orange-300);
+  --ember-wash: var(--orange-50);
+
+  /* ── Gold / gilt scale ── */
+  --gold-50: #fffbed;
+  --gold-100: #fff2c7;
+  --gold-200: #f8dd85;
+  --gold-300: #e5bd63;
+  --gold-400: #c9a24e; /* primary gilt */
+  --gold-500: #a8843a;
+  --gold-600: #8a6a2a;
+  --gold-700: #665022;
+  --gold-800: #473814;
+
+  --gilt: var(--gold-400);
+  --gilt-bright: var(--gold-300);
+  --gilt-pale: var(--gold-100);
+  --gilt-wash: var(--gold-50);
+  --gilt-deep: var(--gold-600);
+  --gilt-dark: var(--gold-700);
+
+  /* ── Sunset accents ── */
+  --oxblood: #7a1f1f;
+  --forest: #2f5d3b;
+  /* RGB channels — used by Tailwind color utilities so dark mode can lift
+   * accent colors without redefining the entire palette. Keep in sync with
+   * the hex values they mirror (light mode). */
+  --oxblood-rgb: 122 31 31; /* #7A1F1F */
+  --forest-rgb: 47 93 59; /* #2F5D3B */
+  --sev-critical-rgb: 122 31 31; /* #7A1F1F */
+  --gilt-rgb: 201 162 78; /* #C9A24E (gold-400) */
+  --coral: #f5c2a6;
+  --coral-ink: #5a2410;
+  --lime: #d9e27a;
+  --lime-ink: #3a4213;
+  --sky: #9db7c9;
+
+  /* ── Motion vocabulary ── */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ── Shadows (warm sunset-tinted) ── */
+  --shadow-subtle: 0 1px 2px rgba(60, 30, 8, 0.05);
+  --shadow-elev:
+    0 8px 24px -12px rgba(60, 30, 8, 0.18), 0 2px 6px -2px rgba(60, 30, 8, 0.06);
+  --shadow-report: 0 24px 60px -30px rgba(60, 30, 8, 0.28);
+  --shadow-ember: 0 18px 60px -24px rgba(232, 90, 6, 0.32);
+
+  /* ── Custom cursor — ember arrow w/ ink outline. Hotspot (3,3). ── */
+  --cursor-default:
+    url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='30' viewBox='0 0 26 30'%3E%3Cpath d='M3 3 L3 22 L8.6 18.4 L12.6 26 L16.4 24 L12.4 16.5 L20 16.5 Z' fill='%23FB7A1C' stroke='%23150F0A' stroke-width='1.5' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E")
+      3 3,
+    auto;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html,
+body {
+  background: var(--canvas);
+  color: var(--graphite);
+  font-family: "Satoshi", "Söhne", "Inter", system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11", "tnum";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Global cursor */
+html,
+body,
+a,
+button,
+[role="button"],
+input,
+select,
+textarea,
+label,
+.brutal-btn,
+.brutal-btn-pink,
+.brutal-btn-lime,
+.brutal-btn-cyan,
+.brutal-btn-danger,
+.brutal-btn-ink,
+.lp-btn {
+  cursor: var(--cursor-default);
+}
+
+::selection {
+  background: var(--orange-400);
+  color: var(--paper);
+}
+
+/* Headings inherit Fraunces; body stays Geist */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: "Clash Display", "PP Neue Montreal", system-ui, sans-serif;
+  font-variation-settings: normal;
+  letter-spacing: -0.022em;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+@layer components {
+  /* ─────────────────────────── Surfaces ─────────────────────────── */
+
+  .brutal-card {
+    @apply bg-paper border border-hairline rounded-lg shadow-subtle;
+    background-image: var(--paper-grain, none);
+  }
+
+  .formal-surface {
+    @apply bg-paper border border-hairline rounded-lg;
+  }
+
+  .formal-surface-elev {
+    @apply bg-paper border border-hairline rounded-lg shadow-elev;
+  }
+
+  /* Warm raised tile, ideal for dashboard metric cards */
+  .ember-card {
+    @apply relative bg-paper border border-hairline rounded-lg shadow-elev p-6
+           transition-all duration-300;
+    background-image: linear-gradient(
+      180deg,
+      var(--parchment) 0%,
+      var(--paper) 35%
+    );
+  }
+  .ember-card:hover {
+    border-color: var(--gold-300);
+    box-shadow:
+      var(--shadow-elev),
+      0 0 0 1px rgba(201, 162, 78, 0.18);
+    transform: translateY(-1px);
+  }
+  .ember-card::before {
+    /* gilt top hairline */
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 1.25rem;
+    right: 1.25rem;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--gold-400),
+      transparent
+    );
+    opacity: 0;
+    transition: opacity 0.35s var(--ease-out);
+  }
+  .ember-card:hover::before {
+    opacity: 1;
+  }
+
+  /* Dashboard tile w/ sunset gradient header strip */
+  .sunset-tile {
+    @apply relative overflow-hidden bg-paper border border-hairline rounded-xl
+           shadow-elev transition-all duration-300;
+  }
+  .sunset-tile::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(
+      90deg,
+      var(--orange-300) 0%,
+      var(--orange-500) 50%,
+      var(--gold-400) 100%
+    );
+  }
+  .sunset-tile:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-report);
+  }
+
+  /* ─────────────────────────── Buttons ──────────────────────────── */
+
+  /* Default — paper, neutral */
+  .brutal-btn {
+    @apply inline-flex items-center justify-center gap-2 bg-paper text-graphite
+           border border-hairline rounded-md
+           font-body text-sm font-medium tracking-[0.01em] px-4 py-2.5
+           shadow-subtle
+           transition-all duration-200
+           hover:border-ink hover:text-ink hover:shadow-elev
+           active:translate-y-px active:shadow-subtle
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-hairline disabled:hover:text-graphite;
+  }
+
+  /* Primary — ember fill */
+  .brutal-btn-pink {
+    @apply relative inline-flex items-center justify-center gap-2 bg-orange-400 text-paper
+           border border-orange-500 rounded-md
+           font-body text-sm font-semibold tracking-[0.005em] px-5 py-2.5
+           transition-all duration-200
+           hover:bg-orange-500 hover:border-orange-600
+           active:translate-y-px
+           disabled:opacity-50 disabled:cursor-not-allowed;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.4) inset,
+      0 8px 20px -8px rgba(232, 90, 6, 0.45);
+  }
+  .brutal-btn-pink:hover {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.4) inset,
+      0 14px 30px -10px rgba(232, 90, 6, 0.55);
+  }
+
+  /* Ghost / tertiary */
+  .brutal-btn-cyan {
+    @apply inline-flex items-center justify-center gap-2 bg-transparent text-graphite
+           border border-transparent rounded-md
+           font-body text-sm font-medium tracking-[0.01em] px-4 py-2.5
+           transition-colors duration-200
+           hover:text-ink hover:underline underline-offset-[6px] decoration-gilt decoration-2
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Secondary — outline ink */
+  .brutal-btn-lime {
+    @apply inline-flex items-center justify-center gap-2 bg-paper text-ink
+           border border-ink rounded-md
+           font-body text-sm font-semibold tracking-[0.005em] px-5 py-2.5
+           shadow-subtle
+           transition-all duration-200
+           hover:bg-ink hover:text-paper hover:shadow-elev
+           active:translate-y-px
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Danger — oxblood */
+  .brutal-btn-danger {
+    @apply inline-flex items-center justify-center gap-2 bg-paper text-oxblood
+           border border-oxblood rounded-md
+           font-body text-sm font-medium tracking-[0.005em] px-4 py-2.5
+           transition-colors duration-200
+           hover:bg-oxblood hover:text-paper
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Solid ink */
+  .brutal-btn-ink {
+    @apply inline-flex items-center justify-center gap-2 bg-ink text-paper
+           border border-ink rounded-md
+           font-body text-sm font-semibold tracking-[0.005em] px-5 py-2.5
+           shadow-subtle
+           transition-all duration-200
+           hover:bg-dusk
+           active:translate-y-px
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Gilt accent CTA — for premium / "upgrade" moments */
+  .brutal-btn-gilt {
+    @apply inline-flex items-center justify-center gap-2 bg-gold-400 text-ink
+           border border-gold-500 rounded-md
+           font-body text-sm font-semibold tracking-[0.005em] px-5 py-2.5
+           shadow-subtle
+           transition-all duration-200
+           hover:bg-gold-300 hover:border-gold-400
+           active:translate-y-px;
+  }
+
+  /* ─────────────────────────── Inputs ───────────────────────────── */
+
+  .brutal-input {
+    @apply bg-paper border border-hairline rounded-md px-3.5 py-2.5
+           font-body text-[15px] text-graphite w-full
+           placeholder:text-mist
+           focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-200
+           transition-all duration-200;
+  }
+
+  .brutal-input-error {
+    @apply border-oxblood focus:border-oxblood focus:ring-oxblood/20;
+  }
+
+  /* ─────────────────────────── Badges / pills ──────────────────── */
+
+  .brutal-badge {
+    @apply inline-flex items-center gap-1 border border-hairline bg-paper text-slate
+           rounded-sm px-2 py-0.5 font-mono text-[10.5px] font-medium
+           uppercase tracking-[0.16em];
+  }
+  .brutal-badge-ember {
+    @apply border-orange-300 bg-orange-50 text-orange-700;
+  }
+  .brutal-badge-gilt {
+    @apply border-gold-300 bg-gold-50 text-gold-700;
+  }
+  .brutal-badge-ink {
+    @apply border-ink bg-ink text-paper;
+  }
+  .brutal-badge-success {
+    @apply border-forest/30 bg-forest/5 text-forest;
+  }
+  .brutal-badge-danger {
+    @apply border-oxblood/40 bg-oxblood/5 text-oxblood;
+  }
+
+  .brutal-pill {
+    @apply inline-flex items-center gap-1.5 border border-hairline bg-paper text-slate
+           rounded-full px-3 py-1 font-mono text-[10.5px] font-medium
+           uppercase tracking-[0.16em];
+  }
+  .brutal-pill-live {
+    @apply border-orange-300 bg-orange-50 text-orange-700;
+  }
+  .brutal-pill-live::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    background: var(--orange-500);
+    border-radius: 9999px;
+    box-shadow: 0 0 0 3px rgba(232, 90, 6, 0.22);
+    animation: ember-pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes ember-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.55;
+      transform: scale(1.18);
+    }
+  }
+
+  /* ─────────────────────────── Tables ──────────────────────────── */
+
+  .brutal-table {
+    @apply w-full border-collapse text-[14px];
+  }
+  .brutal-table thead tr {
+    @apply border-t border-b border-ink;
+  }
+  .brutal-table th {
+    @apply text-left px-4 py-3 font-mono font-medium text-[10.5px] tracking-[0.18em]
+           uppercase text-slate bg-transparent;
+  }
+  .brutal-table tbody tr {
+    @apply border-b border-hairline transition-colors duration-150;
+  }
+  .brutal-table tbody tr:hover {
+    background: linear-gradient(90deg, var(--orange-50) 0%, transparent 100%);
+  }
+  .brutal-table td {
+    @apply px-4 py-3 align-middle;
+  }
+  .brutal-table tbody tr:last-child {
+    @apply border-b border-ink;
+  }
+
+  /* ─────────────────────────── Editorial motifs ─────────────────── */
+
+  .eyebrow {
+    @apply font-mono font-medium text-[11px] text-slate uppercase tracking-[0.18em]
+           inline-flex items-center gap-2.5;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 18px;
+    height: 1px;
+    background: var(--gilt);
+    display: inline-block;
+  }
+  .eyebrow-gilt {
+    @apply font-mono font-medium text-[11px] uppercase tracking-[0.18em]
+           inline-flex items-center gap-2.5;
+    color: var(--gilt-deep);
+  }
+  .eyebrow-gilt::before {
+    content: "";
+    width: 18px;
+    height: 1px;
+    background: var(--gilt);
+    display: inline-block;
+  }
+  .eyebrow-ember {
+    @apply font-mono font-medium text-[11px] uppercase tracking-[0.18em]
+           inline-flex items-center gap-2.5;
+    color: var(--ember-deep);
+  }
+  .eyebrow-ember::before {
+    content: "";
+    width: 18px;
+    height: 1px;
+    background: var(--ember);
+    display: inline-block;
+  }
+
+  .serif {
+    @apply font-display;
+  }
+
+  .rule {
+    @apply border-0 border-t border-hairline;
+  }
+
+  .rule-gilt {
+    border: 0;
+    height: 1px;
+    background: var(
+      --gilt-rule,
+      linear-gradient(
+        90deg,
+        transparent,
+        var(--gilt) 30%,
+        var(--gilt) 70%,
+        transparent
+      )
+    );
+  }
+
+  .rule-section {
+    @apply relative flex items-center justify-center my-16;
+  }
+  .rule-section::before,
+  .rule-section::after {
+    content: "";
+    @apply flex-1 border-t border-hairline;
+  }
+  .rule-section > span {
+    @apply px-4 text-gold-600 font-display text-lg italic;
+  }
+
+  .gilt-ribbon {
+    @apply absolute top-0 left-0 right-0 h-[3px] rounded-t-lg;
+    background: linear-gradient(
+      90deg,
+      var(--orange-300),
+      var(--orange-500),
+      var(--gold-400)
+    );
+  }
+
+  /* Segmented control */
+  .segmented {
+    @apply inline-flex items-stretch border border-hairline rounded-md overflow-x-auto max-w-full min-w-0 bg-paper;
+  }
+  .segmented > button {
+    @apply shrink-0 px-3.5 py-2 font-mono text-[11px] text-slate tracking-[0.14em] uppercase
+           border-r border-hairline transition-colors duration-150
+           hover:bg-vellum hover:text-ink;
+  }
+  .segmented > button:last-child {
+    @apply border-r-0;
+  }
+  .segmented > button[aria-pressed="true"],
+  .segmented > button[data-active="true"] {
+    @apply bg-ink text-paper;
+  }
+
+  /* Advisories / callouts */
+  .advisory {
+    @apply bg-vellum border border-hairline rounded-md p-6;
+    border-left: 3px solid var(--forest);
+  }
+  .advisory-warn {
+    @apply bg-orange-50 border border-orange-200 rounded-md p-4 text-orange-700;
+    border-left: 3px solid var(--orange-500);
+  }
+  .advisory-danger {
+    @apply bg-oxblood/[0.04] border border-oxblood/30 rounded-md p-4 text-oxblood;
+    border-left: 3px solid var(--oxblood);
+  }
+  .advisory-gilt {
+    @apply bg-gold-50 border border-gold-200 rounded-md p-4 text-gold-700;
+    border-left: 3px solid var(--gilt);
+  }
+
+  /* ─────────────────────────── Layout primitives ──────────────────── */
+
+  .container-broadsheet {
+    @apply mx-auto px-6 md:px-10 lg:px-16;
+    max-width: 1440px;
+  }
+
+  /* Section heading with eyebrow + serif title + lead */
+  .section-head {
+    @apply flex flex-col gap-4 max-w-3xl;
+  }
+  .section-head .section-title {
+    @apply font-display text-display-3 text-ink;
+    font-variation-settings: "opsz" 72;
+  }
+  .section-head .section-lead {
+    @apply text-[17px] leading-[1.55] text-graphite max-w-[56ch];
+  }
+
+  /* Numeric KPI used in dashboard tiles */
+  .kpi {
+    @apply font-display text-ink leading-none;
+    font-size: clamp(36px, 4vw, 56px);
+    font-variation-settings: "opsz" 72;
+    letter-spacing: -0.022em;
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi-mono {
+    @apply font-mono text-ink leading-none;
+    font-size: clamp(28px, 3.2vw, 42px);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.015em;
+    font-weight: 500;
+  }
+  .kpi-label {
+    @apply font-mono text-[10.5px] text-slate uppercase tracking-[0.18em];
+  }
+  .kpi-delta-up {
+    @apply text-forest;
+  }
+  .kpi-delta-down {
+    @apply text-oxblood;
+  }
+  .kpi-delta-flat {
+    @apply text-slate;
+  }
+
+  /* Severity dots / chips for findings */
+  .sev-dot {
+    @apply inline-block w-2 h-2 rounded-full;
+  }
+  .sev-dot-critical {
+    background: #7a1f1f;
+    box-shadow: 0 0 0 3px rgba(122, 31, 31, 0.18);
+  }
+  .sev-dot-high {
+    background: var(--orange-600);
+    box-shadow: 0 0 0 3px rgba(196, 72, 5, 0.22);
+  }
+  .sev-dot-medium {
+    background: var(--gold-500);
+    box-shadow: 0 0 0 3px rgba(168, 132, 58, 0.22);
+  }
+  .sev-dot-low {
+    background: var(--sky);
+    box-shadow: 0 0 0 3px rgba(157, 183, 201, 0.28);
+  }
+  .sev-dot-info {
+    background: var(--slate);
+    box-shadow: 0 0 0 3px rgba(107, 94, 71, 0.22);
+  }
+
+  /* Marker text underline w/ gilt */
+  .mark-gilt {
+    background-image: linear-gradient(
+      180deg,
+      transparent 62%,
+      rgba(201, 162, 78, 0.45) 62%,
+      rgba(201, 162, 78, 0.45) 95%,
+      transparent 95%
+    );
+    padding: 0 0.06em;
+  }
+
+  /* Mono-styled callout span */
+  .ord {
+    @apply font-mono text-[11px] text-gold-600 tracking-[0.18em] uppercase;
+  }
+
+  /* ──────────────────────────── Backgrounds ───────────────────────── */
+
+  .bg-horizon-soft {
+    background:
+      radial-gradient(
+        ellipse at 50% 100%,
+        rgba(251, 122, 28, 0.1) 0%,
+        rgba(251, 122, 28, 0) 55%
+      ),
+      radial-gradient(
+        ellipse at 0% 0%,
+        rgba(201, 162, 78, 0.08) 0%,
+        rgba(201, 162, 78, 0) 50%
+      );
+  }
+
+  .bg-paper-grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: var(--paper-grain);
+    background-size: 220px 220px;
+    opacity: 0.04;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+  }
+
+  /* Decorative sunset "horizon line" — gilt rule with ember dot */
+  .horizon-line {
+    @apply relative h-px w-full;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--gold-400) 18%,
+      var(--gold-400) 82%,
+      transparent
+    );
+  }
+  .horizon-line::after {
+    content: "";
+    position: absolute;
+    top: -3px;
+    left: 50%;
+    width: 7px;
+    height: 7px;
+    background: var(--orange-500);
+    border-radius: 9999px;
+    transform: translateX(-50%);
+    box-shadow: 0 0 0 4px rgba(232, 90, 6, 0.18);
+  }
+}
+
+/* ─────────────────────────── Utility helpers ─────────────────────── */
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+
+  .grain {
+    position: relative;
+    isolation: isolate;
+  }
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: var(--paper-grain);
+    background-size: 220px 220px;
+    opacity: 0.05;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+    z-index: 1;
+  }
+
+  .text-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--orange-500) 0%,
+      var(--gold-400) 50%,
+      var(--orange-500) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shimmer 6s linear infinite;
+  }
+  @keyframes shimmer {
+    from {
+      background-position: 0% 50%;
+    }
+    to {
+      background-position: 200% 50%;
+    }
+  }
+}
+
+/* ============================================================================
+ * DARK MODE — "Sunset Observability — Night"
+ * Activates from either OS preference (`prefers-color-scheme: dark`) or an
+ * explicit `data-theme="dark"` attribute on <html>. Ember + gilt accents stay
+ * the same — they read as sunset still glowing on a night sky.
+ * ========================================================================== */
+
+:root[data-theme="dark"],
+:root.dark {
+  --canvas: #000000; /* true black */
+  --paper: #0a0a0a; /* raised surface 1 */
+  --vellum: #141414; /* raised surface 2 */
+  --parchment: #0f0f0f; /* subtle wash */
+  --dusk: #000000;
+  --ink: #ffffff; /* pure white text */
+  --graphite: #e5e5e5; /* body text */
+  --slate: #a3a3a3; /* secondary */
+  --mist: #525252; /* tertiary, captions */
+  --hairline: #262626; /* neutral dark border */
+
+  /* Ember scale stays the same — but the visible "primary" is slightly
+   * lighter so ember CTAs glow on dark instead of darkening. */
+  --ember: var(--orange-400);
+  --ember-deep: var(--orange-500);
+  --ember-light: var(--orange-300);
+  --ember-wash: rgba(251, 122, 28, 0.1);
+
+  /* Gilt — use a brighter band so highlights still glint on dark */
+  --gilt: var(--gold-300);
+  --gilt-bright: var(--gold-200);
+  --gilt-pale: rgba(201, 162, 78, 0.12);
+  --gilt-wash: rgba(201, 162, 78, 0.06);
+  --gilt-deep: var(--gold-400);
+  --gilt-dark: var(--gold-500);
+
+  /* Reds/greens — lift to vivid coral and sage so critical numbers and
+   * success states glow on true black instead of disappearing into burgundy.
+   * Gold lifts to champagne so gilt accents glint instead of muddying. */
+  --oxblood: #f26b6b;
+  --forest: #4fb672;
+  --sev-critical: #f26b6b;
+  --oxblood-rgb: 242 107 107; /* #F26B6B */
+  --forest-rgb: 79 182 114; /* #4FB672 */
+  --sev-critical-rgb: 242 107 107; /* #F26B6B */
+  --gilt-rgb: 248 221 133; /* #F8DD85 (gold-200) */
+
+  /* Shadows — go black, denser */
+  --shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-elev:
+    0 8px 24px -10px rgba(0, 0, 0, 0.6), 0 2px 6px -2px rgba(0, 0, 0, 0.3);
+  --shadow-report: 0 28px 70px -28px rgba(0, 0, 0, 0.7);
+  --shadow-ember: 0 18px 60px -18px rgba(232, 90, 6, 0.45);
+
+  /* Cursor — gilt arrow with ember outline (more visible on dark) */
+  --cursor-default:
+    url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='30' viewBox='0 0 26 30'%3E%3Cpath d='M3 3 L3 22 L8.6 18.4 L12.6 26 L16.4 24 L12.4 16.5 L20 16.5 Z' fill='%23E5BD63' stroke='%23150F0A' stroke-width='1.5' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E")
+      3 3,
+    auto;
+
+  color-scheme: dark;
+}
+
+/* Auto via OS preference — same overrides */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #000000;
+    --paper: #0a0a0a;
+    --vellum: #141414;
+    --parchment: #0f0f0f;
+    --dusk: #000000;
+    --ink: #ffffff;
+    --graphite: #e5e5e5;
+    --slate: #a3a3a3;
+    --mist: #525252;
+    --hairline: #262626;
+
+    --ember: var(--orange-400);
+    --ember-deep: var(--orange-500);
+    --ember-light: var(--orange-300);
+    --ember-wash: rgba(251, 122, 28, 0.1);
+
+    --gilt: var(--gold-300);
+    --gilt-bright: var(--gold-200);
+    --gilt-pale: rgba(201, 162, 78, 0.12);
+    --gilt-wash: rgba(201, 162, 78, 0.06);
+    --gilt-deep: var(--gold-400);
+    --gilt-dark: var(--gold-500);
+
+    --oxblood: #f26b6b;
+    --forest: #4fb672;
+    --sev-critical: #f26b6b;
+    --oxblood-rgb: 242 107 107; /* #F26B6B */
+    --forest-rgb: 79 182 114; /* #4FB672 */
+    --sev-critical-rgb: 242 107 107; /* #F26B6B */
+    --gilt-rgb: 248 221 133; /* #F8DD85 (gold-200) */
+
+    --shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.45);
+    --shadow-elev:
+      0 8px 24px -10px rgba(0, 0, 0, 0.6), 0 2px 6px -2px rgba(0, 0, 0, 0.3);
+    --shadow-report: 0 28px 70px -28px rgba(0, 0, 0, 0.7);
+    --shadow-ember: 0 18px 60px -18px rgba(232, 90, 6, 0.45);
+
+    --cursor-default:
+      url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='30' viewBox='0 0 26 30'%3E%3Cpath d='M3 3 L3 22 L8.6 18.4 L12.6 26 L16.4 24 L12.4 16.5 L20 16.5 Z' fill='%23E5BD63' stroke='%23150F0A' stroke-width='1.5' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E")
+        3 3,
+      auto;
+
+    color-scheme: dark;
+  }
+}
+
+/* ── Dark-mode component fine-tuning ───────────────────────────────────── */
+
+:root[data-theme="dark"] body,
+:root.dark body {
+  background: var(--canvas);
+  color: var(--graphite);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) body {
+    background: var(--canvas);
+    color: var(--graphite);
+  }
+}
+
+/* Cards lose the parchment top-gradient (would look like a fog smear on dark);
+ * gain a subtle radial highlight at the top instead. */
+:root[data-theme="dark"] .ember-card,
+:root.dark .ember-card,
+:root[data-theme="dark"] .formal-surface-elev,
+:root.dark .formal-surface-elev {
+  background-image: radial-gradient(
+    ellipse at 50% 0%,
+    rgba(251, 122, 28, 0.06) 0%,
+    transparent 60%
+  );
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ember-card,
+  :root:not([data-theme="light"]) .formal-surface-elev {
+    background-image: radial-gradient(
+      ellipse at 50% 0%,
+      rgba(251, 122, 28, 0.06) 0%,
+      transparent 60%
+    );
+  }
+}
+
+/* Selection — dark + ember */
+:root[data-theme="dark"] ::selection,
+:root.dark ::selection {
+  background: var(--orange-500);
+  color: var(--paper);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) ::selection {
+    background: var(--orange-500);
+    color: var(--paper);
+  }
+}
+
+/* Sunset-tile top gradient — keep but slightly more vibrant on dark */
+:root[data-theme="dark"] .sunset-tile::before,
+:root.dark .sunset-tile::before {
+  opacity: 0.9;
+}
+
+/* Table row hover — ember wash on dark instead of light orange */
+:root[data-theme="dark"] .brutal-table tbody tr:hover,
+:root.dark .brutal-table tbody tr:hover {
+  background: linear-gradient(
+    90deg,
+    rgba(251, 122, 28, 0.08) 0%,
+    transparent 100%
+  );
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .brutal-table tbody tr:hover {
+    background: linear-gradient(
+      90deg,
+      rgba(251, 122, 28, 0.08) 0%,
+      transparent 100%
+    );
+  }
+}
+
+/* Badge variants — re-tune for legibility on dark */
+:root[data-theme="dark"] .brutal-badge-ember,
+:root.dark .brutal-badge-ember {
+  background: rgba(251, 122, 28, 0.1);
+  border-color: rgba(251, 122, 28, 0.45);
+  color: var(--orange-200);
+}
+:root[data-theme="dark"] .brutal-badge-gilt,
+:root.dark .brutal-badge-gilt {
+  background: rgba(201, 162, 78, 0.08);
+  border-color: rgba(201, 162, 78, 0.4);
+  color: var(--gold-200);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .brutal-badge-ember {
+    background: rgba(251, 122, 28, 0.1);
+    border-color: rgba(251, 122, 28, 0.45);
+    color: var(--orange-200);
+  }
+  :root:not([data-theme="light"]) .brutal-badge-gilt {
+    background: rgba(201, 162, 78, 0.08);
+    border-color: rgba(201, 162, 78, 0.4);
+    color: var(--gold-200);
+  }
+}
+
+/* Advisory variants */
+:root[data-theme="dark"] .advisory-warn,
+:root.dark .advisory-warn {
+  background: rgba(251, 122, 28, 0.08);
+  border-color: rgba(251, 122, 28, 0.3);
+  color: var(--orange-200);
+}
+:root[data-theme="dark"] .advisory-gilt,
+:root.dark .advisory-gilt {
+  background: rgba(201, 162, 78, 0.08);
+  border-color: rgba(201, 162, 78, 0.3);
+  color: var(--gold-200);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .advisory-warn {
+    background: rgba(251, 122, 28, 0.08);
+    border-color: rgba(251, 122, 28, 0.3);
+    color: var(--orange-200);
+  }
+  :root:not([data-theme="light"]) .advisory-gilt {
+    background: rgba(201, 162, 78, 0.08);
+    border-color: rgba(201, 162, 78, 0.3);
+    color: var(--gold-200);
+  }
+}
+
+/* Inputs — dark surface, ember focus stays the same */
+:root[data-theme="dark"] .brutal-input,
+:root.dark .brutal-input {
+  background: var(--paper);
+  color: var(--graphite);
+  border-color: var(--hairline);
+}
+:root[data-theme="dark"] .brutal-input:focus,
+:root.dark .brutal-input:focus {
+  background: var(--vellum);
+  box-shadow: 0 0 0 2px rgba(251, 122, 28, 0.28);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .brutal-input {
+    background: var(--paper);
+    color: var(--graphite);
+    border-color: var(--hairline);
+  }
+  :root:not([data-theme="light"]) .brutal-input:focus {
+    background: var(--vellum);
+    box-shadow: 0 0 0 2px rgba(251, 122, 28, 0.28);
+  }
+}
+
+/* Ghost button — keep underline accent on dark */
+:root[data-theme="dark"] .brutal-btn-cyan,
+:root.dark .brutal-btn-cyan {
+  color: var(--graphite);
+}
+:root[data-theme="dark"] .brutal-btn-cyan:hover,
+:root.dark .brutal-btn-cyan:hover {
+  color: var(--orange-300);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .brutal-btn-cyan {
+    color: var(--graphite);
+  }
+  :root:not([data-theme="light"]) .brutal-btn-cyan:hover {
+    color: var(--orange-300);
+  }
+}
+
+/* Secondary outline button — invert (paper border on dark looks like ink) */
+:root[data-theme="dark"] .brutal-btn-lime,
+:root.dark .brutal-btn-lime,
+:root[data-theme="dark"] .brutal-btn,
+:root.dark .brutal-btn {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--hairline);
+}
+:root[data-theme="dark"] .brutal-btn-lime:hover,
+:root.dark .brutal-btn-lime:hover {
+  background: var(--vellum);
+  border-color: var(--gold-300);
+  color: var(--ink);
+}
+:root[data-theme="dark"] .brutal-btn:hover,
+:root.dark .brutal-btn:hover {
+  background: var(--vellum);
+  border-color: var(--gold-300);
+  color: var(--ink);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .brutal-btn-lime,
+  :root:not([data-theme="light"]) .brutal-btn {
+    background: var(--paper);
+    color: var(--ink);
+    border-color: var(--hairline);
+  }
+  :root:not([data-theme="light"]) .brutal-btn-lime:hover,
+  :root:not([data-theme="light"]) .brutal-btn:hover {
+    background: var(--vellum);
+    border-color: var(--gold-300);
+    color: var(--ink);
+  }
+}
+
+/* Solid-ink button — invert to gilt-fill on dark for visibility */
+:root[data-theme="dark"] .brutal-btn-ink,
+:root.dark .brutal-btn-ink {
+  background: var(--gold-300);
+  color: var(--dusk);
+  border-color: var(--gold-400);
+}
+:root[data-theme="dark"] .brutal-btn-ink:hover,
+:root.dark .brutal-btn-ink:hover {
+  background: var(--gold-200);
+  border-color: var(--gold-300);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .brutal-btn-ink {
+    background: var(--gold-300);
+    color: var(--dusk);
+    border-color: var(--gold-400);
+  }
+  :root:not([data-theme="light"]) .brutal-btn-ink:hover {
+    background: var(--gold-200);
+    border-color: var(--gold-300);
+  }
+}
+
+/* Horizon line — gold rule glows brighter on dark */
+:root[data-theme="dark"] .horizon-line::after,
+:root.dark .horizon-line::after {
+  box-shadow:
+    0 0 0 4px rgba(232, 90, 6, 0.28),
+    0 0 24px rgba(251, 122, 28, 0.55);
+}
+
+/* ── Tailwind utility-class dark overrides ──────────────────────────────
+ * Tailwind compiles `bg-paper`, `text-graphite`, etc. into literal hex
+ * colors at build time, so my CSS-variable flip doesn't reach them. Force
+ * the chrome surfaces (sidebar / app header / right-rail / app cards) to
+ * the dark palette when the theme attribute is set. Targets only the
+ * specific classes the app shell actually uses. */
+
+/* Backgrounds — surfaces (TRUE BLACK in dark mode) */
+:root[data-theme="dark"] .bg-paper,
+:root.dark .bg-paper {
+  background-color: #0a0a0a !important;
+}
+:root[data-theme="dark"] .bg-paper\/90,
+:root.dark .bg-paper\/90 {
+  background-color: rgba(10, 10, 10, 0.9) !important;
+}
+:root[data-theme="dark"] .bg-paper\/95,
+:root.dark .bg-paper\/95 {
+  background-color: rgba(10, 10, 10, 0.95) !important;
+}
+:root[data-theme="dark"] .bg-canvas,
+:root.dark .bg-canvas {
+  background-color: #000000 !important;
+}
+:root[data-theme="dark"] .bg-vellum,
+:root.dark .bg-vellum {
+  background-color: #141414 !important;
+}
+/* Fenced code blocks (<Markdown>): atom-one-light is a light-bg syntax theme,
+ * so its default token color (#383a42) goes invisible once the <pre> surface
+ * flips dark. Lift the base text color in dark mode; the mid-tone token colors
+ * (keyword/string/number) already read fine on the dark surface. The
+ * two-class selector outranks atom-one-light's single-class `.hljs` regardless
+ * of stylesheet import order. */
+:root[data-theme="dark"] .hljs,
+:root.dark .hljs {
+  color: #e5e5e5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .hljs {
+    color: #e5e5e5;
+  }
+}
+:root[data-theme="dark"] .bg-vellum\/20,
+:root.dark .bg-vellum\/20 {
+  background-color: rgba(20, 20, 20, 0.5) !important;
+}
+:root[data-theme="dark"] .bg-vellum\/30,
+:root.dark .bg-vellum\/30 {
+  background-color: rgba(20, 20, 20, 0.55) !important;
+}
+:root[data-theme="dark"] .bg-vellum\/40,
+:root.dark .bg-vellum\/40 {
+  background-color: rgba(20, 20, 20, 0.6) !important;
+}
+:root[data-theme="dark"] .bg-vellum\/70,
+:root.dark .bg-vellum\/70 {
+  background-color: rgba(20, 20, 20, 0.75) !important;
+}
+:root[data-theme="dark"] .bg-parchment,
+:root.dark .bg-parchment {
+  background-color: #0f0f0f !important;
+}
+
+/* Backgrounds — solid ink (inverts to cream/white) */
+:root[data-theme="dark"] .bg-ink,
+:root.dark .bg-ink {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+/* Text */
+:root[data-theme="dark"] .text-ink,
+:root.dark .text-ink {
+  color: #ffffff !important;
+}
+:root[data-theme="dark"] .text-graphite,
+:root.dark .text-graphite {
+  color: #e5e5e5 !important;
+}
+:root[data-theme="dark"] .text-slate,
+:root.dark .text-slate {
+  color: #a3a3a3 !important;
+}
+:root[data-theme="dark"] .text-mist,
+:root.dark .text-mist {
+  color: #525252 !important;
+}
+:root[data-theme="dark"] .text-paper,
+:root.dark .text-paper {
+  color: #000000 !important;
+} /* on ink-inverted bg */
+
+/* Borders — neutral dark gray */
+:root[data-theme="dark"] .border-hairline,
+:root.dark .border-hairline {
+  border-color: #262626 !important;
+}
+:root[data-theme="dark"] .border-ink,
+:root.dark .border-ink {
+  border-color: #fbf6ec !important;
+}
+
+/* Placeholder text in inputs */
+:root[data-theme="dark"] .placeholder\:text-mist::placeholder,
+:root.dark .placeholder\:text-mist::placeholder {
+  color: #6b5e47 !important;
+}
+:root[data-theme="dark"] .placeholder\:text-slate::placeholder,
+:root.dark .placeholder\:text-slate::placeholder {
+  color: #b5a993 !important;
+}
+
+/* Divider colors — common ones */
+:root[data-theme="dark"] .divide-hairline > * + *,
+:root.dark .divide-hairline > * + * {
+  border-color: #262626 !important;
+}
+
+/* Hover variants used in nav */
+:root[data-theme="dark"] .hover\:bg-vellum:hover,
+:root.dark .hover\:bg-vellum:hover {
+  background-color: #141414 !important;
+}
+:root[data-theme="dark"] .hover\:bg-vellum\/70:hover,
+:root.dark .hover\:bg-vellum\/70:hover {
+  background-color: rgba(20, 20, 20, 0.75) !important;
+}
+:root[data-theme="dark"] .hover\:border-ink:hover,
+:root.dark .hover\:border-ink:hover {
+  border-color: #fbf6ec !important;
+}
+:root[data-theme="dark"] .hover\:text-ink:hover,
+:root.dark .hover\:text-ink:hover {
+  color: #fbf6ec !important;
+}
+:root[data-theme="dark"] .hover\:bg-ink:hover,
+:root.dark .hover\:bg-ink:hover {
+  background-color: #fbf6ec !important;
+  color: #150f0a !important;
+}
+
+/* Auto via OS pref — same chrome overrides (neutral black) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .bg-paper {
+    background-color: #0a0a0a !important;
+  }
+  :root:not([data-theme="light"]) .bg-paper\/90 {
+    background-color: rgba(10, 10, 10, 0.9) !important;
+  }
+  :root:not([data-theme="light"]) .bg-paper\/95 {
+    background-color: rgba(10, 10, 10, 0.95) !important;
+  }
+  :root:not([data-theme="light"]) .bg-canvas {
+    background-color: #000000 !important;
+  }
+  :root:not([data-theme="light"]) .bg-vellum {
+    background-color: #141414 !important;
+  }
+  :root:not([data-theme="light"]) .bg-vellum\/20 {
+    background-color: rgba(20, 20, 20, 0.5) !important;
+  }
+  :root:not([data-theme="light"]) .bg-vellum\/30 {
+    background-color: rgba(20, 20, 20, 0.55) !important;
+  }
+  :root:not([data-theme="light"]) .bg-vellum\/40 {
+    background-color: rgba(20, 20, 20, 0.6) !important;
+  }
+  :root:not([data-theme="light"]) .bg-vellum\/70 {
+    background-color: rgba(20, 20, 20, 0.75) !important;
+  }
+  :root:not([data-theme="light"]) .bg-parchment {
+    background-color: #0f0f0f !important;
+  }
+  :root:not([data-theme="light"]) .bg-ink {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+  :root:not([data-theme="light"]) .text-ink {
+    color: #ffffff !important;
+  }
+  :root:not([data-theme="light"]) .text-graphite {
+    color: #e5e5e5 !important;
+  }
+  :root:not([data-theme="light"]) .text-slate {
+    color: #a3a3a3 !important;
+  }
+  :root:not([data-theme="light"]) .text-mist {
+    color: #525252 !important;
+  }
+  :root:not([data-theme="light"]) .text-paper {
+    color: #000000 !important;
+  }
+  :root:not([data-theme="light"]) .border-hairline {
+    border-color: #262626 !important;
+  }
+  :root:not([data-theme="light"]) .border-ink {
+    border-color: #fbf6ec !important;
+  }
+  :root:not([data-theme="light"]) .placeholder\:text-mist::placeholder {
+    color: #6b5e47 !important;
+  }
+  :root:not([data-theme="light"]) .placeholder\:text-slate::placeholder {
+    color: #b5a993 !important;
+  }
+  :root:not([data-theme="light"]) .divide-hairline > * + * {
+    border-color: #262626 !important;
+  }
+  :root:not([data-theme="light"]) .hover\:bg-vellum:hover {
+    background-color: #141414 !important;
+  }
+  :root:not([data-theme="light"]) .hover\:bg-vellum\/70:hover {
+    background-color: rgba(20, 20, 20, 0.75) !important;
+  }
+  :root:not([data-theme="light"]) .hover\:border-ink:hover {
+    border-color: #fbf6ec !important;
+  }
+  :root:not([data-theme="light"]) .hover\:text-ink:hover {
+    color: #fbf6ec !important;
+  }
+  :root:not([data-theme="light"]) .hover\:bg-ink:hover {
+    background-color: #fbf6ec !important;
+    color: #150f0a !important;
+  }
+}
+
+/* ── Sidebar collapsed tooltip — instant, no delay ─────────────────────── */
+.sidebar-link[data-tooltip] {
+  position: relative;
+}
+.sidebar-link[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: #000000;
+  color: #ffffff;
+  font-family: "Satoshi", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.12s ease-out,
+    visibility 0s linear 0.12s;
+  z-index: 100;
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.25);
+}
+.sidebar-link[data-tooltip]::before {
+  content: "";
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: #000000;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.12s ease-out,
+    visibility 0s linear 0.12s;
+  z-index: 99;
+}
+.sidebar-link[data-tooltip]:hover::after,
+.sidebar-link[data-tooltip]:hover::before,
+.sidebar-link[data-tooltip]:focus-visible::after,
+.sidebar-link[data-tooltip]:focus-visible::before {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.12s ease-out;
+}
+:root[data-theme="dark"] .sidebar-link[data-tooltip]::after,
+:root.dark .sidebar-link[data-tooltip]::after {
+  background: #ffffff;
+  color: #000000;
+}
+:root[data-theme="dark"] .sidebar-link[data-tooltip]::before,
+:root.dark .sidebar-link[data-tooltip]::before {
+  background: #ffffff;
+}
+
+/* App theme toggle — square, flex-shrink-proof */
+.app-theme-toggle {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  min-height: 40px !important;
+  flex-shrink: 0 !important;
+  flex-grow: 0 !important;
+  border-radius: 10px !important;
+  aspect-ratio: 1 / 1 !important;
+  padding: 0 !important;
+}
+
+/* ── Clerk form Continue button — force orange in all states ─────────────
+ * Clerk emits structural CSS at high specificity that can override the
+ * appearance prop. Force the look with class-level !important rules. */
+.cl-formButtonPrimary,
+button.cl-formButtonPrimary,
+[class*="cl-formButtonPrimary"] {
+  background: linear-gradient(180deg, #fb7a1c 0%, #e85a06 100%) !important;
+  background-color: #fb7a1c !important;
+  background-image: linear-gradient(
+    180deg,
+    #fb7a1c 0%,
+    #e85a06 100%
+  ) !important;
+  border: 1px solid #e85a06 !important;
+  color: #ffffff !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 8px 20px -8px rgba(232, 90, 6, 0.45) !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+}
+.cl-formButtonPrimary:hover,
+button.cl-formButtonPrimary:hover,
+[class*="cl-formButtonPrimary"]:hover {
+  background: linear-gradient(180deg, #e85a06 0%, #c44805 100%) !important;
+  background-color: #e85a06 !important;
+  background-image: linear-gradient(
+    180deg,
+    #e85a06 0%,
+    #c44805 100%
+  ) !important;
+  border-color: #c44805 !important;
+  color: #ffffff !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 14px 30px -10px rgba(232, 90, 6, 0.6) !important;
+}
+/* Continue button arrow icon — white */
+.cl-formButtonPrimary svg,
+[class*="cl-formButtonPrimary"] svg {
+  color: #ffffff !important;
+  fill: currentColor !important;
+}
+
+/* Remove Clerk's "Secured by Clerk" branding badge. Targets the branding
+   element + its clerk.com link wherever it renders (cards, UserButton popover,
+   UserProfile/webhook modals) without touching footer actions like the
+   sign-up link, which live in .cl-footerAction. */
+.cl-internal-uioek3,
+.cl-footer__branding,
+.cl-logoBox,
+[class*="cl-"] a[href*="clerk.com"],
+[class*="cl-"] a[href*="clerk.dev"] {
+  display: none !important;
+}
+/* Hide the whole badge wrapper, not just the link — otherwise the orphaned
+   "Secured by" text lingers once the clerk.com logo link above is hidden.
+   Match ONLY the badge's immediate wrapper via `:has(> a)` (direct child).
+   Do NOT use a descendant `:has(a…)` here: the UserButton popover card also
+   contains the branding link deep inside, and a descendant match would hide
+   the entire profile dropdown. */
+[class*="cl-"]:has(> a[href*="clerk.com"]),
+[class*="cl-"]:has(> a[href*="clerk.dev"]) {
+  display: none !important;
+}
+
+/* Landing sign-in link — keep on one line */
+.landing-root .lp-nav-signin {
+  white-space: nowrap !important;
+}
+.landing-root .lp-btn {
+  white-space: nowrap !important;
+}

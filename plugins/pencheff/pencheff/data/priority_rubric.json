@@ -1,0 +1,6 @@
+{
+  "severity_weight": {"critical": 10, "high": 7, "medium": 4, "low": 2, "info": 1},
+  "exploitability_weight": {"public_exploit": 10, "tooling_available": 7, "skilled_attacker": 4, "theoretical": 2},
+  "blast_radius_weight": {"all_users": 10, "many_users": 7, "few_users": 4, "self": 1},
+  "formula": "severity_weight * exploitability_weight * blast_radius_weight"
+}

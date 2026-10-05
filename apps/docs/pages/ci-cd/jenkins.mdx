@@ -1,0 +1,39 @@
+---
+title: Jenkins
+---
+
+# Jenkins
+
+```groovy
+pipeline {
+  agent any
+  environment {
+    TARGET_URL = 'https://staging.example.com'
+  }
+  stages {
+    stage('Pencheff scan') {
+      steps {
+        sh '''
+          python3 -m pip install pencheff
+          pencheff scan \
+            --target "$TARGET_URL" \
+            --profile cicd \
+            --fail-on high \
+            --format json,docx \
+            --output ./reports/
+        '''
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'reports/**', allowEmptyArchive: true
+          publishHTML target: [
+            allowMissing: false, alwaysLinkToLastBuild: true,
+            keepAll: true, reportDir: 'reports',
+            reportFiles: 'report.html', reportName: 'Pencheff Report'
+          ]
+        }
+      }
+    }
+  }
+}
+```

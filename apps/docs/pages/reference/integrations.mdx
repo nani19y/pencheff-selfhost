@@ -1,0 +1,88 @@
+---
+title: Integrations API
+---
+
+# Integrations API
+
+## `POST /integrations`
+
+Create an integration. See per-kind config shapes in the
+[integrations overview](/integrations/overview).
+
+```json
+{
+  "kind": "slack",
+  "name": "#security",
+  "severity_filter": "high",
+  "enabled": true,
+  "config": { "webhook_url": "https://hooks.slack.com/..." },
+  "target_ids": ["uuid-of-target-1", "uuid-of-target-2"],
+  "events": ["scan_done", "finding_new", "finding_changed"]
+}
+```
+
+### Fields
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `kind` | enum | `slack` · `teams` · `google_chat` · `discord` · `pagerduty` · `opsgenie` · `splunk` · `webhook` · `github` · `jira` |
+| `name` | string | Display name; not used for routing |
+| `severity_filter` | enum | `info` · `low` · `medium` · `high` · `critical`. Gates `finding_new` / `finding_changed` only |
+| `enabled` | boolean | Disabled integrations are skipped without removing them |
+| `config` | object | Per-kind credentials / URLs. Stored Fernet-encrypted; never returned via `GET` |
+| `target_ids` | `string[]` \| `null` | **v0.4.0** — empty / null fires for every target in the workspace. Populated → only scans against those targets fire events. Accepts both DAST URL target ids and repo-mirror target ids. |
+| `events` | `string[]` \| `null` | **v0.4.0** — empty / null fires every lifecycle event. Possible values: `scan_started`, `scan_done`, `scan_failed`, `finding_new`, `finding_changed`. |
+
+## `GET /integrations`
+
+List integrations. Config values are **not** returned — they stay
+encrypted at rest. `target_ids` and `events` ARE returned so the UI
+can render the scope and event subscriptions.
+
+## `PATCH /integrations/{id}`
+
+Update name / enabled / severity / config / `target_ids` / `events`.
+Empty arrays normalise to `null` server-side ("all").
+
+## `POST /integrations/{id}/test`
+
+Fire a test payload through the integration. Returns
+`{ ok, status, response }`. The Jira `test` creates a real issue under
+the configured `project_key` and immediately deletes it (best-effort
+cleanup) so the connectivity check confirms both auth and write access.
+
+## `DELETE /integrations/{id}`
+
+Remove the integration.
+
+## Lifecycle events
+
+The Celery `notify_event(scan_id, event_type, finding_id?, change_summary?, error?)`
+task is the single dispatch surface. It's enqueued from:
+
+| Hook | Event | Source |
+| --- | --- | --- |
+| Scan accepted | `scan_started` | `scan_runner.run_scan` immediately after status flips to `running` |
+| Scan finishes | `scan_done` + per-finding `finding_new` | `notify_scan_findings.delay(scan_id)` end-of-success — a single Celery task fans both events out |
+| Scan crashes | `scan_failed` | `scan_runner` exception handler with the truncated error string |
+| Verification updated | `finding_changed` | `POST /findings/{id}/status`, `change_summary = "verification_status: <prev> → <new>"` |
+| Suppressed | `finding_changed` | `POST /findings/{id}/suppress`, `change_summary = "suppressed (reason: <reason>)"` |
+| Unsuppressed | `finding_changed` | `POST /findings/{id}/unsuppress`, `change_summary = "unsuppressed"` |
+| Recheck queued | `finding_changed` | `POST /findings/{id}/recheck`, `change_summary = "recheck queued"` |
+
+The matcher applies all three filters (target scope, event subscription,
+severity) before each integration's per-kind formatter renders the
+payload — see
+[Three-stage filter](/integrations/overview#three-stage-filter).
+
+## Per-kind config shapes
+
+| Kind | `config` keys |
+| --- | --- |
+| `slack` / `teams` / `google_chat` / `discord` | `{ webhook_url }` |
+| `pagerduty` | `{ routing_key }` |
+| `opsgenie` | `{ api_key }` |
+| `splunk` | `{ hec_url, token }` |
+| `webhook` | `{ webhook_url, hmac_secret? }` |
+| `jira` | `{ base_url, email, api_token, project_key, issue_type? }` |
+| `github` | `{ repo, token }` |

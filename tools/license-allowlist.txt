@@ -1,0 +1,80 @@
+# Pencheff license allowlist.
+#
+# Format: one entry per line. Lines starting with ``#`` are comments.
+#
+#   <license-spdx-id>
+#
+# Any license listed here is automatically accepted by
+# tools/license_audit.py. Anything not listed (and not on the per-package
+# override list below) blocks the PR.
+#
+# Update this file in the same PR that adds a new dependency. Don't add
+# a license here just to make CI green — if you're unsure, ask the
+# maintainer.
+
+# ─── Permissively licensed (always OK as imports) ─────────────────
+MIT
+MIT License
+MIT-0
+MIT-CMU
+MIT-feh
+Apache 2.0
+Apache-2.0
+Apache License 2.0
+Apache License, Version 2.0
+BSD-2-Clause
+BSD 2-Clause
+BSD-3-Clause
+BSD 3-Clause
+BSD 3-Clause "New" or "Revised" License
+BSD
+ISC
+ISC License
+0BSD
+BSD-Zero-Clause
+CC0-1.0
+CC0
+Public Domain
+Public-Domain
+Unlicense
+PSF-2.0
+Python-2.0
+Python Software Foundation License
+PSFL
+PSF
+Zlib
+
+# ─── CC-BY family — OK with attribution preserved ───────────────
+CC-BY-4.0
+CC-BY-3.0
+CC-BY-SA-4.0           # Allowed for *data* (vuln feeds), not for code
+CC-BY
+
+# ─── LGPL — *subprocess-only*. Treat as warning, not error. ─────
+# (License-audit CI emits these as a manual-review queue, never as
+# auto-merge blockers, so a maintainer reviews each LGPL surface.)
+LGPL-2.1
+LGPL-2.1-only
+LGPL-2.1-or-later
+LGPL-3.0
+LGPL-3.0-only
+LGPL-3.0-or-later
+LGPL
+
+# ─── Mozilla Public License — OK with file-level isolation ──────
+MPL-2.0
+Mozilla Public License 2.0
+
+# ─── Strictly forbidden (block PR) ──────────────────────────────
+# These are listed for explicit clarity. Listing them here as
+# "denied" is currently informational; the CI script defaults to
+# "deny anything not on the allowlist."
+#
+#   GPL-2.0           — copyleft, blocks linking
+#   GPL-3.0           — copyleft, blocks linking
+#   AGPL-3.0          — strongest copyleft, would force Pencheff itself open
+#   SSPL              — Mongo's source-available, not OSS
+#   BSL               — Sentry/CockroachDB business-source, not OSS
+#   Commercial        — paid commercial license terms
+#   Proprietary       — same
+#   Custom            — needs case-by-case review; not auto-allowed

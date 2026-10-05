@@ -1,0 +1,88 @@
+# Pencheff Security Scan — Azure DevOps pipeline template.
+# Reference from your azure-pipelines.yml:
+#
+#   extends:
+#     template: apps/azure-devops/azure-pipelines.yml
+#     parameters:
+#       target: 'https://your-app.example.com'
+#
+# Or include the steps inline by copying the steps: section below.
+
+parameters:
+  - name: target
+    type: string
+    displayName: "Target URL or HOST:PORT"
+  - name: profile
+    type: string
+    default: "cicd"
+    displayName: "Scan profile (quick|standard|deep|api-only|compliance|cicd)"
+  - name: failOn
+    type: string
+    default: "high"
+    displayName: "Minimum severity to fail the build"
+  - name: apiBase
+    type: string
+    default: ""
+    displayName: "Pencheff API base URL (optional)"
+  - name: engagementId
+    type: string
+    default: ""
+    displayName: "Engagement ID to scope the scan (optional)"
+  - name: artifactName
+    type: string
+    default: "pencheff-report"
+    displayName: "Name of the published artifact"
+
+stages:
+  - stage: Security
+    displayName: "Pencheff Security Scan"
+    jobs:
+      - job: PencheffScan
+        displayName: "Run Pencheff"
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: "3.12"
+            displayName: "Set up Python 3.12"
+
+          - script: |
+              python -m pip install --upgrade pip
+              pip install pencheff
+            displayName: "Install Pencheff"
+
+          - script: |
+              mkdir -p "$(Build.ArtifactStagingDirectory)/pencheff-report"
+              EXTRA=""
+              if [ -n "${{ parameters.engagementId }}" ]; then
+                EXTRA="--engagement-id ${{ parameters.engagementId }}"
+              fi
+              set +e
+              pencheff scan \
+                --target "${{ parameters.target }}" \
+                --profile "${{ parameters.profile }}" \
+                --fail-on "${{ parameters.failOn }}" \
+                --output "$(Build.ArtifactStagingDirectory)/pencheff-report" \
+                --format json,markdown $EXTRA
+              RC=$?
+              set -e
+              case "$RC" in
+                0) echo "##vso[task.setvariable variable=worstSeverity]none" ;;
+                2) echo "##vso[task.setvariable variable=worstSeverity]${{ parameters.failOn }}" ;;
+                *) echo "##vso[task.setvariable variable=worstSeverity]error" ;;
+              esac
+              exit $RC
+            displayName: "Run Pencheff scan"
+            env:
+              PENCHEFF_API_BASE: ${{ parameters.apiBase }}
+              PENCHEFF_API_TOKEN: $(PENCHEFF_API_TOKEN)
+            continueOnError: false
+
+          - task: PublishBuildArtifacts@1
+            condition: always()
+            inputs:
+              PathtoPublish: "$(Build.ArtifactStagingDirectory)/pencheff-report"
+              ArtifactName: "${{ parameters.artifactName }}"
+              publishLocation: "Container"
+            displayName: "Upload Pencheff report"

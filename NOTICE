@@ -1,0 +1,53 @@
+Pencheff Community Edition
+==========================
+
+Copyright 2026 Bala Sriharsha
+
+This product is released under the GNU Affero General Public License,
+Version 3 (see ``LICENSE``).
+
+This product invokes a number of third-party security tools as
+subprocesses and ingests data from a number of public vulnerability
+feeds. None of those tools' source code is bundled or statically
+linked. Per-component licenses, sources, and redistribution posture
+are documented in:
+
+* ``THIRD_PARTY_NOTICES.md`` — root: Python deps, hosted services, the
+  optional toolchain image, and the SAST scanner pack.
+* ``plugins/pencheff/THIRD_PARTY_NOTICES.md`` — MCP plugin: external
+  binary tools invoked by the orchestrator.
+
+Notable acknowledgments
+-----------------------
+
+* OSV.dev — Apache 2.0 — vulnerability data
+* NVD (National Vulnerability Database) — U.S. public domain
+* GitHub Security Advisories — CC-BY-4.0
+* CISA Known Exploited Vulnerabilities catalogue — U.S. public domain
+* FIRST EPSS — CC-BY-4.0
+* Llama Guard 3 © Meta Platforms, Inc. — Llama 3 Community License
+  (commercial use ≤700M MAU; attribution required) — opt-in only via
+  ``PENCHEFF_LLAMA_GUARD_ENABLED=1``.
+* IBM Granite Guardian 3.x — Apache 2.0
+* Semgrep CLI — LGPL-2.1 (subprocess-only)
+* ProjectDiscovery Nuclei templates — MIT (when imported into the
+  Pencheff Pulse template format with attribution)
+
+Trademarks
+----------
+
+CodeQL, GitHub, GitHub Advanced Security, Copilot, and Copilot Autofix
+are trademarks of GitHub, Inc. Burp Suite and bChecks are trademarks
+of PortSwigger Ltd. Snyk is a trademark of Snyk Ltd. Checkmarx is a
+trademark of Checkmarx Ltd. Veracode is a trademark of Veracode, Inc.
+Promptfoo is a trademark of Promptfoo, Inc. None of those marks are
+used to imply affiliation, endorsement, or partnership with the
+Pencheff project; references in documentation are descriptive only.
+
+Reporting an IP issue
+---------------------
+
+If you believe Pencheff is using third-party material in a way that
+violates a license or trademark, please email the maintainer at the
+address listed in the README or open a private security advisory on
+GitHub. We will respond within 7 days.

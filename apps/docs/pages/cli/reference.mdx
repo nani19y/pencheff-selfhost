@@ -1,0 +1,197 @@
+---
+title: CLI command reference
+---
+
+# `pencheff` CLI reference
+
+```bash
+pencheff [command] [options]
+```
+
+## `serve` (default)
+
+Start the MCP server over stdio. This is how MCP hosts (Cursor,
+Continue, Cline, Zed, custom hosts) launch the agent.
+
+```bash
+pencheff            # defaults to `serve`
+pencheff serve
+```
+
+No options — configure via env:
+
+- `OAST_HOST` — interactsh host for blind callbacks
+- `PENCHEFF_ENABLE_CUSTOM_MODULES=1` — auto-load custom modules
+
+## `scan`
+
+Run a headless scan without the MCP.
+
+```bash
+pencheff scan \
+  --target https://example.com \
+  --profile standard \
+  [--username admin] [--password secret] [--token TOKEN] \
+  [--api-key KEY] [--cookie "sid=abc"] \
+  [--scope /api,/app] [--exclude-paths /logout,/health] \
+  [--depth quick|standard|deep] \
+  [--format json,csv,docx] \
+  [--output ./reports/] \
+  [--fail-on critical|high|medium|low|info] \
+  [--save-history]
+```
+
+### Options
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--target` | _(required)_ | Target URL |
+| `--profile` | `standard` | Named scan profile |
+| `--depth` | _(from profile)_ | Override depth |
+| `--scope` | empty | Comma-separated include paths |
+| `--exclude-paths` | empty | Comma-separated exclude paths |
+| `--format` | `json` | Comma-separated export formats |
+| `--output` | `./reports` | Output directory |
+| `--fail-on` | `none` | Fail gate severity threshold |
+| `--save-history` | off | Persist the session to `~/.pencheff/history/` |
+
+## `run-policy`
+
+Run a YAML ScanPolicy end-to-end.
+
+```bash
+pencheff run-policy policies/examples/owasp_top10.yaml
+```
+
+Supports `-` to read the policy from stdin. Returns 0 on pass, 1 on
+assertion/threshold failure, 2 on setup error.
+
+## `history`
+
+List sessions previously saved with `--save-history`.
+
+```bash
+pencheff history               # all sessions
+pencheff history --target URL  # filter by target
+```
+
+## `compare`
+
+Diff two sessions (useful for regression detection across deploys).
+
+```bash
+pencheff compare SESSION_A SESSION_B
+```
+
+Prints a table: new findings, resolved findings, regressed findings.
+
+## `llm-redteam`
+
+Run an OWASP LLM Top 10 red-team scan against a chat-completions
+endpoint, headlessly. Suitable for CI gates and ad-hoc local probing.
+
+```bash
+pencheff llm-redteam \
+  --target https://your-llm.example.com/v1/chat/completions \
+  --provider openai-chat \
+  --model your-model-id \
+  --header "Authorization=Bearer your-token" \
+  --profile standard \
+  [--system-prompt "..."] \
+  [--strategies base64,jailbreak,crescendo,leetspeak] \
+  [--datasets donotanswer,harmbench,beavertails] \
+  [--guardrails pii,secrets,unsafe-code,tool-authz] \
+  [--judge-provider openai-moderation] \
+  [--judge-endpoint https://api.openai.com/v1/moderations] \
+  [--judge-model omni-moderation-latest] \
+  [--max-rps 0.3] \
+  [--max-cost-usd 5] \
+  [--retries 3] \
+  [--timeout-s 30] \
+  [--concurrency 3] \
+  [--max-payloads 250] \
+  [--fail-on critical|high|medium|low|info] \
+  [--output-format markdown|json|junit|csv|html|prometheus] \
+  [--output-file PATH] \
+  [--compare-to PATH_TO_PRIOR_JSON]
+```
+
+### Options
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--target` | _(required)_ | Chat completions URL — *not* a model info page |
+| `--provider` | `openai-chat` | One of `openai-chat`, `custom`, `executable`, `websocket`, `bedrock`, `vertex`, `azure-openai`, `browser` |
+| `--model` | _(none)_ | Model id — passed verbatim into the request body |
+| `--system-prompt` | _(none)_ | Deployed system prompt baseline so probes exercise the *deployed* configuration |
+| `--header KEY=VALUE` | _(repeatable)_ | Auth + routing headers; `Authorization=Bearer sk-...` is typical |
+| `--profile` | `standard` | `quick` (25 payloads) / `standard` (75) / `deep` (250) |
+| `--strategies` | _(none)_ | Comma-separated. See [feature page](/features/llm-redteam#strategies-and-composite-stacking) for the full list including `crescendo` (multi-turn) |
+| `--datasets` | _(none)_ | Comma-separated; built-ins: `donotanswer`, `harmbench`, `beavertails`, `cyberseceval`, `toxic-chat` |
+| `--guardrails` | _(none)_ | Comma-separated; built-ins: `pii`, `secrets`, `unsafe-code`, `tool-authz` |
+| `--judge-provider` | `openai-chat` | `openai-chat` / `executable` / `llama-guard` / `granite-guardian` / `openai-moderation` |
+| `--judge-endpoint` | _(none)_ | Required when judge provider needs HTTP |
+| `--judge-model` | _(none)_ | e.g. `omni-moderation-latest`, `Llama-Guard-3-8B` |
+| `--max-cost-usd` | _(none)_ | Per-scan kill switch |
+| `--max-rps` | _(none)_ | Per-key rate cap (shared across all OWASP modules in this scan) |
+| `--retries` | `1` | Retried on 429 / 5xx; honours upstream `Retry-After` |
+| `--timeout-s` | `30` | Per-call timeout |
+| `--concurrency` | `5` | In-flight requests |
+| `--max-payloads` | _(profile)_ | Override the profile's payload cap |
+| `--fail-on` | _(none)_ | Exit non-zero when any finding meets or exceeds the severity |
+| `--output-format` | `markdown` | `markdown` / `json` / `junit` / `csv` / `html` / `prometheus` |
+| `--output-file` | stdout | Path to write the rendered output |
+| `--compare-to` | _(none)_ | JSON file from a prior `--output-format json` run; computes regressions / fixes / unchanged before exit |
+
+The CLI exits **0** on success, **1** when `--fail-on` is set and any
+finding meets the threshold, **2** on `--compare-to` parse failure.
+For attacker / embedder / factuality config that doesn't fit on the
+command line, register the target via the API or web UI instead and
+commission scans through `POST /scans` — the CLI is a convenience
+surface, not a full superset.
+
+### CI example (GitHub Actions)
+
+```yaml
+- name: Pencheff LLM red team
+  run: |
+    pencheff llm-redteam \
+      --target ${{ secrets.LLM_ENDPOINT }} \
+      --header "Authorization=Bearer ${{ secrets.LLM_KEY }}" \
+      --profile standard \
+      --judge-provider openai-moderation \
+      --judge-endpoint https://api.openai.com/v1/moderations \
+      --judge-model omni-moderation-latest \
+      --output-format junit \
+      --output-file pencheff-llm-redteam.xml \
+      --compare-to baseline-redteam.json \
+      --fail-on high
+
+- name: Publish JUnit
+  if: always()
+  uses: mikepenz/action-junit-report@v4
+  with:
+    report_paths: pencheff-llm-redteam.xml
+```
+
+## `init-module`
+
+Scaffold a new custom module.
+
+```bash
+pencheff init-module my_check --category misconfiguration
+```
+
+Creates `~/.pencheff/custom_modules/my_check.py` with a working
+`BaseTestModule` skeleton.
+
+## Environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `OAST_HOST` | Custom OAST collaborator for blind XSS / SSRF / SQLi |
+| `PENCHEFF_ENABLE_CUSTOM_MODULES` | Set to `1` to auto-load modules from `~/.pencheff/custom_modules/` |
+| `SHODAN_API_KEY` | Enable Shodan-backed asset discovery |
+| `CENSYS_API_ID` / `CENSYS_API_SECRET` | Enable Censys-backed asset discovery |
+| `GITHUB_TOKEN` | For GitHub Issues export without `gh auth login` |
+| `JIRA_URL` / `JIRA_EMAIL` / `JIRA_TOKEN` / `JIRA_PROJECT` | For Jira export |

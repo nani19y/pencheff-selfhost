@@ -1,0 +1,56 @@
+# Pencheff Security Scan — reusable GitLab CI template.
+# Include this file in your project's .gitlab-ci.yml:
+#
+#   include:
+#     - project: 'your-org/pencheff'
+#       file: 'apps/gitlab-ci/.gitlab-ci.yml'
+#
+# Or copy it directly and set the variables below.
+
+variables:
+  PENCHEFF_TARGET: ""           # Required: target URL or HOST:PORT
+  PENCHEFF_PROFILE: "cicd"      # quick | standard | deep | api-only | compliance | cicd
+  PENCHEFF_FAIL_ON: "high"      # info | low | medium | high | critical
+  PENCHEFF_API_BASE: ""         # Hosted Pencheff API base URL (optional)
+  PENCHEFF_API_TOKEN: ""        # Bearer token for hosted backend (optional)
+  PENCHEFF_ENGAGEMENT_ID: ""    # Scope scan to an engagement (optional)
+  PENCHEFF_ARTIFACT_NAME: "pencheff-report"
+
+pencheff-security-scan:
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    - pip install --quiet pencheff
+  script:
+    - mkdir -p "$CI_PROJECT_DIR/pencheff-report"
+    - |
+      EXTRA=""
+      if [ -n "$PENCHEFF_ENGAGEMENT_ID" ]; then
+        EXTRA="--engagement-id $PENCHEFF_ENGAGEMENT_ID"
+      fi
+      set +e
+      pencheff scan \
+        --target "$PENCHEFF_TARGET" \
+        --profile "$PENCHEFF_PROFILE" \
+        --fail-on "$PENCHEFF_FAIL_ON" \
+        --output "$CI_PROJECT_DIR/pencheff-report" \
+        --format json,markdown $EXTRA
+      RC=$?
+      set -e
+      case "$RC" in
+        0) echo "PENCHEFF_WORST_SEVERITY=none" >> pencheff.env ;;
+        2) echo "PENCHEFF_WORST_SEVERITY=$PENCHEFF_FAIL_ON" >> pencheff.env ;;
+        *) echo "PENCHEFF_WORST_SEVERITY=error" >> pencheff.env ;;
+      esac
+      exit $RC
+  artifacts:
+    when: always
+    name: "$PENCHEFF_ARTIFACT_NAME"
+    paths:
+      - pencheff-report/
+    reports:
+      dotenv: pencheff.env
+    expire_in: 30 days
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

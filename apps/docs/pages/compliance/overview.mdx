@@ -1,0 +1,94 @@
+---
+title: Compliance overview
+---
+
+# Compliance mapping
+
+Every finding Pencheff produces is automatically mapped to up to ten
+compliance frameworks so that a single scan becomes a single piece of
+audit evidence across your entire security programme.
+
+### Web / cloud / data frameworks
+
+| Framework | Scope | Controls covered |
+| --- | --- | --- |
+| [OWASP Top 10 (2021)](/compliance/owasp) | Web / API | A01–A10 |
+| [PCI-DSS 4.0](/compliance/pci-dss) | Card data environments | 2.2, 4.1, 6.2, 6.5.x, 7.x, 8.x |
+| [NIST 800-53 Rev 5](/compliance/nist) | US federal / FedRAMP | AC, AU, CM, IA, SC, SI |
+| [SOC 2](/compliance/soc2) | Service orgs | CC6.x, CC7.x, A1.x |
+| [ISO 27001:2022](/compliance/iso-27001) | International ISMS | Annex A.5.x, A.8.x |
+| [HIPAA](/compliance/hipaa) | Healthcare (US) | 164.308, 164.312 |
+| OWASP Mobile Top 10 (2024) | Mobile apps | M1–M10 |
+
+### AI / LLM frameworks
+
+[LLM red-team findings](/features/llm-redteam) automatically attach
+mappings for the AI-specific governance frameworks. Each finding's
+`compliance.MITRE ATLAS` / `NIST AI RMF` / `EU AI Act` keys map the
+underlying OWASP LLM category onto the relevant controls.
+
+| Framework | Scope | Mapping |
+| --- | --- | --- |
+| OWASP LLM Top 10 (2025) | LLM applications | LLM01–LLM10 |
+| MITRE ATLAS | Adversarial ML threat model | AML.T0010–AML.T0058 |
+| NIST AI Risk Management Framework | US guidance | MAP / MEASURE / MANAGE functions |
+| EU AI Act | EU regulation | Articles 10, 13, 14, 15, 17, 50, 55 |
+
+Example LLM01 finding (prompt injection) maps to:
+
+```json
+{
+  "owasp": "LLM01: Prompt Injection",
+  "compliance": {
+    "OWASP":      ["LLM01: Prompt Injection"],
+    "MITRE ATLAS": ["AML.T0051", "AML.T0054"],
+    "NIST AI RMF": ["MAP 1.5", "MEASURE 2.7", "MANAGE 2.3"],
+    "EU AI Act":   ["Article 15", "Article 55"]
+  }
+}
+```
+
+## How the mapping works
+
+Each finding carries a `category` (e.g. `injection`, `auth`, `crypto`,
+`components`) and an `owasp_category`. The reporting layer in
+[`reporting/compliance.py`](https://github.com/Magadha-IG/pencheff/blob/main/plugins/pencheff/pencheff/reporting/compliance.py)
+maps those onto control identifiers for every framework.
+
+Example (a SQL injection finding):
+
+```json
+{
+  "owasp": "A03: Injection",
+  "compliance": {
+    "OWASP":      ["A03: Injection"],
+    "PCI-DSS":    ["6.5.1"],
+    "NIST-800-53": ["SI-10", "SI-16"],
+    "SOC2":       ["CC6.1", "CC6.6"],
+    "ISO27001":   ["A.8.24", "A.8.28"],
+    "HIPAA":      ["164.312(a)(2)(iv)", "164.312(c)(1)"]
+  }
+}
+```
+
+## Focused profiles
+
+Use targeted profiles when an audit asks for a specific framework:
+
+- `compliance` — 5-framework breadth, OWASP-first
+- `compliance-full` — every module + SCA + IaC, all six frameworks
+- `pci-dss` / `soc2` — single-framework policy YAML
+
+## Report exports
+
+Compliance mappings appear in:
+
+- **DOCX reports** — per-finding table + framework summary appendices
+- **JSON exports** — `compliance: { FRAMEWORK: [controls] }` on every finding
+- **CSV exports** — one column per framework, comma-separated controls
+- **SBOMs** — declared license + PURL for A06 (Vulnerable Components) support
+
+## Custom mappings
+
+Add additional frameworks (e.g. CIS Controls, NERC-CIP) by extending
+the maps in `plugins/pencheff/pencheff/config.py` — PRs welcome.

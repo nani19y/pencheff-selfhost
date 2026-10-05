@@ -1,0 +1,75 @@
+---
+title: Custom LLM Providers
+---
+
+# Custom LLM Providers
+
+Org owners and admins can register their own LLM provider from
+**Settings → AI → LLM Providers**. The active provider powers every
+Pencheff AI feature: false-positive triage, severity grading, AI-Triage-2.0
+walkthroughs, fix proposals, the agentic fixer, and the scan agent. When a
+BYO provider is active, Pencheff's AI quotas are bypassed — you pay your own
+LLM spend directly.
+
+## Supported provider kinds
+
+| Kind | Notes |
+| ---- | ----- |
+| OpenAI (native) | Standard OpenAI chat-completions endpoint. |
+| Anthropic (native) | Anthropic Messages API. |
+| Google Gemini (native) | Google `generativelanguage` API. |
+| Azure OpenAI | Azure-hosted OpenAI with deployment URL and API version. |
+| OpenAI-compatible | Any endpoint that speaks the OpenAI chat-completions schema (Ollama, Together, Groq, etc.). |
+
+## Adding and managing providers
+
+- Only **org owners** and **admins** can create, edit, or delete providers.
+- An org can have multiple provider records but exactly **one active provider**
+  at a time. All AI features read from the active provider.
+- API keys are encrypted at rest (Fernet). The key is **never returned** by the
+  API — responses carry only a `key_set: true` flag and the last-4 characters
+  of the key for identification.
+- Use the **Test** action to run a live credential check before activating.
+  The test sends a minimal request to the provider endpoint and reports whether
+  the key is valid and the model is reachable.
+
+## Fail-closed behavior
+
+If the active provider returns an error or is unreachable, the AI feature is
+treated as unavailable for that request. Pencheff **never silently falls back**
+to its own API key when a BYO provider is configured. An operator-visible error
+is surfaced instead.
+
+## Deactivating / reverting to Pencheff defaults
+
+Toggle **Use Pencheff defaults** in Settings, or call
+`POST /llm-providers/deactivate`. This clears the active provider and reverts
+all AI features to Pencheff's built-in models. Your provider records are
+retained and can be reactivated at any time.
+
+## Tool-calling agents
+
+The **scan agent** and **agentic fixer** use tool-calling APIs. These agents
+honor BYO providers only for **OpenAI-compatible** provider kinds
+(OpenAI native, Azure OpenAI, and any OpenAI-compatible endpoint). Anthropic
+and Google Gemini providers are supported for the non-agentic AI features
+(triage, grading, fix proposals) but not for the tool-calling agents.
+
+## API
+
+- `GET /llm-providers` — List all provider records for the org. API keys are
+  never included.
+- `POST /llm-providers` — Create a new provider. Required fields: `kind`,
+  `name`, `model`, `api_key`. Azure requires `endpoint` and `api_version`.
+- `PATCH /llm-providers/{id}` — Update provider fields. Key can be rotated by
+  passing a new `api_key`.
+- `DELETE /llm-providers/{id}` — Delete a provider. Returns `409` if it is
+  currently active.
+- `POST /llm-providers/{id}/activate` — Set this provider as the org-active
+  one. Runs a live credential check; returns `422` on failure.
+- `POST /llm-providers/deactivate` — Deactivate the current provider and
+  revert to Pencheff defaults.
+- `POST /llm-providers/{id}/test` — Run a standalone credential check without
+  activating. Returns `{ ok: true }` or an error message.
+- `GET /llm-providers/catalog` — List supported provider kinds, required
+  fields, and example model names for each kind.

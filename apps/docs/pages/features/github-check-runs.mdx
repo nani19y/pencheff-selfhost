@@ -1,0 +1,83 @@
+---
+title: GitHub Check Run + SARIF + Pencheff Suggest
+---
+
+# GitHub Check Run + SARIF + Pencheff Suggest
+
+When the Pencheff GitHub App is installed on a repo, every PR scan
+posts a **Pencheff** Check Run on the head commit with inline
+annotations on the diff, and uploads a SARIF v2.1.0 document to
+*Security → Code scanning*.
+
+A separate bot — **Pencheff Suggest** — reads PR comments and
+acts on `pencheff: suppress …` directives so reviewers can mark
+findings noise without leaving GitHub.
+
+(The bot name is provisional pending the
+[Phase 0.6 trademark search](/release-notes#phase-06-trademark-searches);
+final name TBD.)
+
+## Check Run surface
+
+| Layer | What you see |
+| --- | --- |
+| Per-commit check | `Pencheff` check appears alongside `lint` / `test` / `build` on every PR. Conclusion is `success` when no critical/high; `failure` otherwise. |
+| Inline annotations | One annotation per finding, anchored at `(file_path, line_start..line_end)` with severity → `failure` / `warning` / `notice`. GitHub caps at 50 per Check-Run POST; Pencheff pages remaining annotations via PATCH. |
+| Summary | Count strip — *N critical · N high · N medium · N low · N info* — rendered in the check's `output.summary`. |
+
+## SARIF upload
+
+A separate path uploads the same findings as a SARIF v2.1.0 document
+to GitHub's Code Scanning ingest endpoint. The findings then show up
+under the repo's **Security → Code scanning alerts** tab and inherit
+the standard GitHub triage UI (dismiss, mark resolved, alert routing).
+
+```http
+POST /repos/{owner}/{repo}/code-scanning/sarifs
+Authorization: Bearer <installation-token>
+Content-Type: application/json
+
+{ "commit_sha": "...", "ref": "refs/heads/main",
+  "sarif": "<base64-gzip>", "tool_name": "Pencheff",
+  "checkout_uri": "https://github.com/owner/repo" }
+```
+
+The Pencheff GitHub App requires the `security_events` permission
+(write) for SARIF upload. Customers using the PAT path need a token
+scoped to `security_events`.
+
+## Pencheff Suggest — PR-comment suppression
+
+Reviewers can suppress a finding directly from a PR comment:
+
+```
+Looks fine to me — running on staging only.
+
+pencheff: suppress 47bf3c92 reason="accepted_risk" notes="staging-only test fixture"
+```
+
+The bot parses the directive, validates the reason against the
+allowlist, and calls
+[`POST /findings/{id}/suppress`](/reference/findings#post-suppress)
+on your behalf. Valid reasons: `accepted_risk`, `wont_fix`,
+`false_positive`, `duplicate`, `out_of_scope`. Anything else is
+rejected silently — there's no way to inject a custom reason via
+the comment surface.
+
+## How to enable
+
+1. Install the Pencheff GitHub App on the org or specific repos
+   (see [Connect a repo](/repos/connect)).
+2. Grant the `Checks` permission (write) and `security_events`
+   permission (write) when the app installer prompts.
+3. The next push or PR triggers an automatic Check Run + SARIF
+   upload alongside the existing scan.
+
+For repos connected via PAT (no GitHub App), the Check Run / SARIF
+features require a PAT with `security_events` write — the standard
+fine-grained PAT path doesn't expose this scope, so most PAT-only
+deployments use the unified findings stream + DOCX report instead.
+
+## Source
+
+[`apps/api/pencheff_api/services/github_check_runs.py`](https://github.com/Magadha-IG/pencheff/blob/main/apps/api/pencheff_api/services/github_check_runs.py)

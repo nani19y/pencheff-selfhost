@@ -1,0 +1,107 @@
+---
+title: Tutorial — CI gate (PR-blocking)
+description: Block merges on HIGH+ findings, post a Markdown summary on the diff.
+---
+
+# Tutorial: CI gate (PR-blocking)
+
+The `pencheff-action` composite GitHub Action wraps the same engine
+as the CLI and SaaS dashboard, fail-on threshold included. This
+tutorial wires it into a typical web-app repo so every PR fails
+fast on HIGH+ findings without slowing the team down.
+
+## Scenario
+
+* **Repo.** A web app with a fast iteration cadence.
+* **Constraint.** Most PRs touch one file; we don&rsquo;t want to
+  pay for a deep scan on every push.
+* **Goal.** A `cicd` scan on every PR, a `standard` scan on push
+  to `main`, a Markdown summary on the diff, and a hard merge
+  block on HIGH+ findings.
+
+## 1. Wire the action
+
+```yaml
+# .github/workflows/pencheff.yml
+name: pencheff
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write   # to post the Markdown summary
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - uses: Magadha-IG/pencheff-action@v1
+        with:
+          target: https://stage.acme.com
+          profile: ${{ github.event_name == 'pull_request' && 'cicd' || 'standard' }}
+          fail-on: high
+          api-base: ${{ secrets.PENCHEFF_API_BASE }}
+          api-token: ${{ secrets.PENCHEFF_API_TOKEN }}
+          pr-comment: "true"
+          artifact-name: "pencheff-report"
+```
+
+Documented inputs:
+
+| Input | Default | Notes |
+| --- | --- | --- |
+| `target` | _(required)_ | URL or `HOST:PORT` |
+| `profile` | `cicd` | `quick` &middot; `standard` &middot; `deep` &middot; `cicd` &middot; `compliance` &middot; `api-only` |
+| `fail-on` | `high` | `info` &middot; `low` &middot; `medium` &middot; `high` &middot; `critical` |
+| `api-base` | unset | Hosted backend base URL |
+| `api-token` | unset | Sets `PENCHEFF_API_TOKEN` |
+| `engagement-id` | unset | Tie scans to a Pencheff engagement |
+| `pr-comment` | `true` | Post a Markdown summary on the triggering PR |
+| `artifact-name` | `pencheff-report` | Workflow artifact name |
+
+The action uploads the JSON report under `artifact-name` and exposes
+two outputs: `report-path` and `worst-severity`.
+
+## 2. Repo scans on push
+
+If the repo is connected via the Pencheff GitHub App, push events
+already auto-trigger a repo scan against the cloned commit &mdash;
+no extra workflow needed. The unified findings stream surfaces the
+result on the connected repo&rsquo;s page; combine it with a
+required-status-check on the equivalent
+`Pencheff / repo-scan` check name to block merges from the GitHub
+side.
+
+## 3. Compliance evidence on every gate
+
+The PR-comment Markdown is generated server-side from the same
+shape the [compliance rollup](/features/compliance-mapping) returns.
+Each comment includes the per-severity counts and a top-three list
+of mapped controls (OWASP / PCI-DSS / NIST), so reviewers see the
+framework framing inline.
+
+## 4. LLM A/B as a separate workflow
+
+If the PR ships a model upgrade, gate it on the [LLM A/B regression
+diff](/tutorials/llm-ab-regression) rather than on a URL scan.
+That tutorial uses `pencheff llm-redteam --compare-to baseline.json`
+&mdash; drop it into a separate job that only runs when
+`config/llm.yaml` changes.
+
+## Deliverable
+
+* A merge-blocking gate that fails on HIGH+ findings.
+* A Markdown summary on the PR diff with compliance framing.
+* JSON artefacts on every run.
+* A separate model-A/B job that gates LLM upgrades.
+
+## Next
+
+* [GitHub Actions reference](/ci-cd/github-actions).
+* [Tutorial: Audit-ready bundle](/tutorials/audit-ready-bundle).
+* [Compliance mapping](/features/compliance-mapping).

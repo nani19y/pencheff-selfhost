@@ -1,0 +1,95 @@
+[project]
+name = "pencheff"
+version = "0.7.0"
+description = "AI Penetration Testing Agent - MCP Server"
+readme = "README.md"
+license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "Magadha Intelligence Private Limited" }]
+keywords = ["penetration-testing", "security", "mcp", "pentest", "hacking", "vulnerability-scanning"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
+requires-python = ">=3.12"
+dependencies = [
+    # Pinned exactly: mcp 1.23.2/1.23.3 ship a broken experimental.tasks that
+    # imports TASK_STATUS_COMPLETED (absent from their mcp.types) → ImportError
+    # at `import mcp`, and 2.x drops mcp.server.fastmcp. 1.28.1 is verified
+    # consistent (constant present + fastmcp intact). Do not loosen without
+    # re-verifying a clean PyPI install of the new version.
+    "mcp[cli]==1.28.1",
+    "httpx[http2]>=0.27.0",
+    "pydantic>=2.0.0",
+    "pyjwt>=2.0.0",
+    "cryptography>=40.0.0",
+    "pyyaml>=6.0",
+    "dnspython>=2.4.0",
+    "python-docx>=1.0.0",
+    "websockets>=12.0",
+    "playwright>=1.44.0",
+    "defusedxml>=0.7.1",
+    # mitmdump CLI is the consumer; the Python package ships the binary.
+    # Pin off Windows because mitmproxy depends on libs that don't ship for win.
+    "mitmproxy>=10.0.0; platform_system != 'Windows'",
+    # OpenTelemetry — feeds the SaaS observability pipeline when the user
+    # sets ``PENCHEFF_OBSERVABILITY_ENABLED=true`` and points
+    # ``PENCHEFF_OBSERVABILITY_OTLP_URL`` at an authed API endpoint. With
+    # no URL set, spans land in ``~/.pencheff/logs/otel-YYYYMMDD.jsonl``
+    # (file exporter is always-on when enabled). Httpx auto-instrument
+    # is intentionally NOT installed — PencheffHTTPClient is manually
+    # instrumented with pencheff-specific attributes that auto would
+    # duplicate.
+    "opentelemetry-sdk>=1.27.0",
+    "opentelemetry-api>=1.27.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.27.0",
+    "opentelemetry-semantic-conventions>=0.48b0",
+    "numpy>=2.4.6",
+]
+
+[project.optional-dependencies]
+# These SCA/IaC CLIs are best installed separately (they are each multi-hundred-MB
+# binaries), but the Python side works without them via native parsers.
+extras = [
+    "impacket>=0.11.0",
+]
+# Cloud SDKs used to derive kubeconfig + registry tokens at scan time for
+# AWS EKS / Azure AKS / GCP GKE k8s targets and AWS ECR container_image targets.
+# Imports inside hybrid_tools.py / artifact_tools.py are guarded; the worker
+# returns a clear error if a customer registers a cloud target without the
+# matching SDK installed. ~30 MB of wheels.
+cloud = [
+    "boto3>=1.34",
+    "azure-identity>=1.16",
+    "azure-mgmt-containerservice>=29.0",
+    "google-cloud-container>=2.40",
+    "google-auth>=2.30",
+]
+
+[project.urls]
+Homepage = "https://github.com/Magadha-IG/pencheff"
+Repository = "https://github.com/Magadha-IG/pencheff"
+"Bug Tracker" = "https://github.com/Magadha-IG/pencheff/issues"
+
+[project.scripts]
+pencheff = "pencheff.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pencheff"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

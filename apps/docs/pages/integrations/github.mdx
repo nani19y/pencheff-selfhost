@@ -1,0 +1,68 @@
+---
+title: GitHub Issues
+---
+
+# GitHub Issues integration
+
+Pencheff can open a GitHub Issue per critical/high finding, with severity
+labels, CWE / OWASP tags, and a reproducer including the PoC evidence.
+
+## Setup
+
+The plugin uses the `gh` CLI — authenticate once:
+
+```bash
+gh auth login
+```
+
+Or provide a fine-grained PAT with **issues:write** and **repo** scope
+via `GITHUB_TOKEN`.
+
+## Via MCP
+
+```text
+export_to_github(
+  session_id=sid,
+  repo="your-org/your-repo",
+  severity_filter="high",
+  labels=["security", "pencheff"]
+)
+```
+
+## Issue template
+
+```
+Title: [HIGH] Reflected XSS on /search?q=
+
+Body:
+- **Severity:** HIGH · CVSS 7.4 · CWE-79
+- **OWASP:** A03 — Injection
+- **Endpoint:** https://example.com/search?q=…
+- **Parameter:** `q`
+
+### Description
+…
+
+### Reproduce
+```http
+GET /search?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E HTTP/1.1
+Host: example.com
+```
+Response reflects the payload at offset 1427 without escaping.
+
+### Remediation
+- Encode `q` on output using `DOMPurify` / `escape-html`.
+- Add a strict `Content-Security-Policy` with `script-src 'self'`.
+
+### Evidence
+- Request / response snippet
+- Verification: `true_positive` on 2026-04-21 via `test_endpoint`
+
+---
+Tracked by Pencheff · session a8f4...c2
+```
+
+## GitHub Actions recipe
+
+See [CI/CD → GitHub Actions](/ci-cd/github-actions) for a full workflow
+that runs Pencheff on every PR and comments a summary table.

@@ -1,0 +1,111 @@
+---
+title: Install Pencheff Studio
+description: Download, install, and sign in to the Pencheff Studio desktop app for macOS.
+---
+
+# Install Pencheff Studio
+
+**Pencheff Studio** is the native macOS client for Pencheff. It signs in to
+the same workspace as the web app, mirrors every assessment locally, and
+adds three things the browser can't do: **on-device repository scanning**,
+**Downloads-folder + system posture monitoring**, and an
+**on-device agentic remediation runner** that keeps your source on your
+machine.
+
+## System requirements
+
+| Requirement | Detail |
+| --- | --- |
+| macOS | 14.0 (Sonoma) or later — Apple Silicon and Intel both supported |
+| Disk | ~80 MB for the app + scratch space for cloned repos |
+| Network | Outbound HTTPS to `api.pencheff.com` and your Clerk tenant |
+| Sandbox | **Off** by design — the local scanners (`semgrep`, `gitleaks`, `trivy`, `osv-scanner`) shell out to Homebrew-installed binaries. See [Local repository scanning](/desktop/local-scanning#sandbox) for the security rationale |
+| Code signing | Signed by `Developer ID Application: BalaSriharsha Cheeday (827B3VSKHU)` with Hardened Runtime and notarised by Apple |
+
+## Download
+
+{/* TODO: replace with the actual CDN / S3 / GitHub Release URL once hosting is decided.
+    The DMG artifact ships as `Pencheff-Studio.dmg` (~9 MB, signed + notarised + stapled). */}
+
+[**Download Pencheff Studio (Apple Silicon + Intel)**](https://app.pencheff.com/download/Pencheff-Studio.dmg)
+
+Verify the download before installing:
+
+```bash
+$ shasum -a 256 ~/Downloads/Pencheff-Studio.dmg
+# Compare against the published checksum on the release page
+
+$ spctl --assess -t open --context context:primary-signature -v ~/Downloads/Pencheff-Studio.dmg
+~/Downloads/Pencheff-Studio.dmg: accepted
+source=Notarized Developer ID
+```
+
+`accepted / source=Notarized Developer ID` is the only output you should
+trust — anything else (including `accepted / source=Unnotarized Developer ID`)
+means the binary on disk is not the one Pencheff published.
+
+## Install
+
+1. Double-click the DMG to mount it.
+2. Drag **Pencheff Studio.app** onto the **Applications** folder symlink.
+3. Eject the DMG.
+4. Launch **Pencheff Studio** from Applications or Spotlight.
+
+The first launch will prompt for one capability:
+
+- **Automation → Finder**, requested only if you use the *Open in Finder*
+  shortcut from a scan finding. Skip this if you never use that menu item —
+  nothing else in the app needs Finder Automation.
+
+## Sign in
+
+Studio uses the same identity as the web app, but exchanges your Clerk
+session for long-lived native tokens so the desktop client doesn't have
+to keep a browser open.
+
+1. Click **Sign in** on the Studio welcome screen.
+2. Your default browser opens
+   `https://app.pencheff.com/oauth/desktop-bridge?redirect=http://127.0.0.1:<port>/callback&state=<csrf>`.
+3. Authenticate with Clerk (Google, GitHub, magic link, etc).
+4. The web page completes a token exchange against
+   `POST /api/auth/desktop-bridge` and redirects to a loopback URL on your
+   Mac (`http://127.0.0.1:<port>/callback`). Studio captures the tokens,
+   closes the loopback listener, and continues.
+5. Pick your active workspace from the title-bar workspace picker.
+
+The loopback redirect is rate-limited and CSRF-checked — only the local
+process that initiated the flow can pick up the tokens. Tokens are
+stored in the macOS Keychain under the service name `com.pencheff.studio`
+and never written to disk in plaintext.
+
+## What's next
+
+- [Local repository scanning →](/desktop/local-scanning) — scan a folder on your Mac without uploading source
+- [File + device monitors →](/desktop/monitors) — Downloads-folder quarantine + macOS posture
+- [On-device agentic runner →](/desktop/agentic-runner) — keep agent-driven fixes on your machine
+- [How desktop sits next to the web app →](/getting-started/concepts#deployment-modes)
+
+## Updating
+
+The current release does not auto-update. To upgrade, re-download the DMG
+from the link above and drag the new app onto Applications — macOS will
+replace the existing copy. Settings, workspace selection, and the
+keychain-stored auth tokens are preserved across upgrades.
+
+## Uninstall
+
+```bash
+# Move the app
+rm -rf /Applications/Pencheff\ Studio.app
+
+# Remove cached scans + observability mirror
+rm -rf ~/Library/Application\ Support/com.pencheff.studio
+
+# Remove keychain tokens
+security delete-generic-password -s com.pencheff.studio 2>/dev/null
+
+# Forget the appearance preference (optional)
+defaults delete com.pencheff.pencheff-studio 2>/dev/null
+```
+
+Your cloud workspace is untouched.

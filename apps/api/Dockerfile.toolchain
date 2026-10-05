@@ -1,0 +1,297 @@
+# syntax=docker/dockerfile:1.7
+#
+# Optional scanner-toolchain image (Semgrep + Bandit + gosec + Brakeman
+# + ESLint-security + Trivy + Checkov + auxiliary CLIs on top of the
+# lean API/worker base). Review THIRD_PARTY_NOTICES.md and each
+# upstream's license before publishing this image.
+#
+# CodeQL was removed in v0.7 (Phase 0.1 of the IP-clean plan): CodeQL
+# CLI is not licensed for commercial use on third-party code, and
+# Pencheff scans customer code. The SAST role is now filled by
+# Semgrep OSS packs + Bandit (Python) + gosec (Go) + Brakeman (Ruby) +
+# ESLint-security (JS/TS), all under permissive licenses.
+#
+# Multi-stage layout:
+#   builder  — installs Python deps with build-essential + dev headers,
+#              installs Semgrep + Bandit + Checkov.
+#   runtime  — slim base + only the runtime shared libs, copies the
+#              installed Python tree from builder, fetches Trivy + gosec
+#              + Brakeman + ESLint + the CLI tools that need to be
+#              present at runtime.
+
+# ────────────────────── Stage 1 — builder ──────────────────────
+FROM python:3.12-slim AS builder
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential curl ca-certificates git \
+      libpq-dev libffi-dev libssl-dev \
+      libxml2-dev libxslt1-dev libjpeg-dev zlib1g-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY plugins/pencheff /build/plugins/pencheff
+COPY apps/api /build/apps/api
+COPY README.md /build/README.md
+
+# Pencheff plugin + API + Semgrep + Bandit + Checkov + Playwright into
+# an isolated prefix so we can move the whole tree to the runtime stage.
+# (CodeQL removed in v0.7 — see header comment.)
+RUN pip install --prefix=/opt/pkgs "/build/plugins/pencheff[cloud]" \
+ && pip install --prefix=/opt/pkgs /build/apps/api \
+ && pip install --prefix=/opt/pkgs semgrep bandit checkov playwright
+
+RUN find /opt/pkgs -type d -name "__pycache__" -exec rm -rf {} + \
+ && find /opt/pkgs -type d -name "tests" -exec rm -rf {} + \
+ && find /opt/pkgs -type d -name "test" -exec rm -rf {} + \
+ && find /opt/pkgs -name "*.pyc" -delete \
+ && find /opt/pkgs -name "*.pyo" -delete
+
+# ────────────────────── Stage 2 — runtime ──────────────────────
+FROM python:3.12-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Runtime libraries + auxiliary scanner CLIs that ship as distro
+# packages (no compilation needed). Build deps stay in the builder.
+# Brakeman ships as a Ruby gem; install it from rubygems below.
+# Node.js is needed for the eslint-security runner (`npx eslint`).
+ARG TARGETARCH
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl \
+      libpq5 libffi8 libssl3 \
+      libcairo2 libpango-1.0-0 libpangoft2-1.0-0 \
+      libxml2 libxslt1.1 libjpeg62-turbo zlib1g \
+      fonts-liberation fonts-dejavu-core \
+      wfuzz whatweb wafw00f sslscan \
+      dnsrecon dirb gobuster \
+      perl libnet-ssleay-perl \
+      git yara \
+      skopeo \
+      ruby ruby-dev \
+      nodejs npm \
+ && rm -rf /var/lib/apt/lists/*
+
+# Brakeman (MIT) — Ruby on Rails SAST. Subprocess-only.
+RUN gem install --no-document brakeman
+
+# eslint + eslint-plugin-security (both MIT) — JS/TS SAST. Subprocess-only.
+# Installed system-wide so ``npx --no-install eslint`` finds them
+# regardless of the target repo's own node_modules.
+RUN npm install -g --no-audit --no-fund eslint@^9 eslint-plugin-security@^3
+
+# Bundle a default wordlist under a stable path.
+RUN mkdir -p /usr/share/pencheff-wordlists \
+ && cp /usr/share/dirb/wordlists/common.txt /usr/share/pencheff-wordlists/common.txt
+
+# Curl flags used by every external-tool download below. Tuned for
+# small VPS hosts (Hostinger, OVH, etc.) where Docker BuildKit defaults
+# to IPv6 and the host's IPv6 routing is broken — without ``--ipv4`` and
+# explicit timeouts the build hangs for >135s on a single connect()
+# before failing the layer. ``--retry`` smooths over transient blips.
+ARG NET_TOOLS_OPTIONAL=true
+ENV CURL_TOOL_FLAGS="--ipv4 --connect-timeout 10 --max-time 120 --retry 3 --retry-delay 5 --retry-connrefused"
+
+# Trivy — IaC + container scanner. Static binary; install at runtime
+# stage so the upstream installer's curl needs the runtime curl, not
+# build-essential. ~50 MB.
+RUN set -eux; \
+    if curl ${CURL_TOOL_FLAGS} -fsSL \
+       https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+       | sh -s -- -b /usr/local/bin; then \
+      trivy --version; \
+    elif [ "${NET_TOOLS_OPTIONAL}" = "true" ]; then \
+      echo "WARN: trivy install failed (network unreachable). The image will boot, IaC scans will mark trivy as skipped." >&2; \
+      _stub_tool() { printf '#!/bin/sh\necho "%s is not installed in this image" >&2\nexit 127\n' "$1" > "/usr/local/bin/$1" && chmod +x "/usr/local/bin/$1"; }; \
+      _stub_tool trivy; \
+    else \
+      exit 1; \
+    fi
+
+# grpcurl (MIT) — gRPC reflection enumeration + method invocation, used by
+# run_grpcurl / scan_grpc. Per-arch Go binary from GitHub releases; stub fallback.
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) grpcurl_arch='linux_x86_64' ;; \
+      arm64) grpcurl_arch='linux_arm64' ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    install_grpcurl() { \
+      export ASSET_RE="grpcurl_.*_${grpcurl_arch}\\.tar\\.gz$"; \
+      curl ${CURL_TOOL_FLAGS} -fsSL \
+        https://api.github.com/repos/fullstorydev/grpcurl/releases/latest \
+        -o /tmp/grpcurl-release.json || return 1; \
+      python -c 'import json, os, re; data=json.load(open("/tmp/grpcurl-release.json", encoding="utf-8")); pat=re.compile(os.environ["ASSET_RE"]); matches=[a["browser_download_url"] for a in data.get("assets", []) if pat.search(a.get("name", ""))]; print(matches[0] if matches else (_ for _ in ()).throw(SystemExit("no matching grpcurl release asset")))' > /tmp/grpcurl-url || return 1; \
+      curl ${CURL_TOOL_FLAGS} -fsSL "$(cat /tmp/grpcurl-url)" -o /tmp/grpcurl.tar.gz || return 1; \
+      tar -xzf /tmp/grpcurl.tar.gz -C /usr/local/bin grpcurl || return 1; \
+      chmod +x /usr/local/bin/grpcurl; \
+      grpcurl --version; \
+    }; \
+    if install_grpcurl; then \
+      echo "grpcurl installed"; \
+    elif [ "${NET_TOOLS_OPTIONAL}" = "true" ]; then \
+      echo "WARN: grpcurl install failed (network unreachable). gRPC reflection scans will mark grpcurl as skipped." >&2; \
+      printf '#!/bin/sh\necho "grpcurl is not installed in this image" >&2\nexit 127\n' > /usr/local/bin/grpcurl; \
+      chmod +x /usr/local/bin/grpcurl; \
+    else exit 1; fi; \
+    rm -f /tmp/grpcurl-release.json /tmp/grpcurl-url /tmp/grpcurl.tar.gz
+
+# grype (Apache-2.0) — container-image + SBOM CVE scanner, the second opinion
+# alongside trivy for container_image scans. Static Go binary; stub fallback.
+RUN set -eux; \
+    if curl ${CURL_TOOL_FLAGS} -fsSL \
+       https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+       | sh -s -- -b /usr/local/bin; then \
+      grype version; \
+    elif [ "${NET_TOOLS_OPTIONAL}" = "true" ]; then \
+      echo "WARN: grype install failed (network unreachable). Container CVE scans fall back to trivy only." >&2; \
+      printf '#!/bin/sh\necho "grype is not installed in this image" >&2\nexit 127\n' > /usr/local/bin/grype && chmod +x /usr/local/bin/grype; \
+    else exit 1; fi
+
+# hadolint (GPL-3.0) — Dockerfile misconfiguration linter. Per-arch static binary.
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) hadolint_arch='x86_64' ;; \
+      arm64) hadolint_arch='arm64' ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    if curl ${CURL_TOOL_FLAGS} -fsSL \
+       "https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-${hadolint_arch}" \
+       -o /usr/local/bin/hadolint && chmod +x /usr/local/bin/hadolint && hadolint --version; then \
+      echo "hadolint installed"; \
+    elif [ "${NET_TOOLS_OPTIONAL}" = "true" ]; then \
+      echo "WARN: hadolint install failed (network unreachable). Dockerfile lint will be skipped." >&2; \
+      printf '#!/bin/sh\necho "hadolint is not installed in this image" >&2\nexit 127\n' > /usr/local/bin/hadolint && chmod +x /usr/local/bin/hadolint; \
+    else exit 1; fi
+
+# kube-linter (Apache-2.0) — k8s manifest production-readiness/security lint.
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) kl_asset='kube-linter-linux.tar.gz' ;; \
+      arm64) kl_asset='kube-linter-linux-arm64.tar.gz' ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    if curl ${CURL_TOOL_FLAGS} -fsSL \
+       "https://github.com/stackrox/kube-linter/releases/latest/download/${kl_asset}" \
+       -o /tmp/kube-linter.tar.gz \
+       && tar -xzf /tmp/kube-linter.tar.gz -C /usr/local/bin kube-linter \
+       && chmod +x /usr/local/bin/kube-linter && kube-linter version; then \
+      echo "kube-linter installed"; \
+    elif [ "${NET_TOOLS_OPTIONAL}" = "true" ]; then \
+      echo "WARN: kube-linter install failed (network unreachable). k8s lint will be skipped." >&2; \
+      printf '#!/bin/sh\necho "kube-linter is not installed in this image" >&2\nexit 127\n' > /usr/local/bin/kube-linter && chmod +x /usr/local/bin/kube-linter; \
+    else exit 1; fi; \
+    rm -f /tmp/kube-linter.tar.gz
+
+# kubescape (Apache-2.0) — k8s NSA-CISA / MITRE ATT&CK / CIS framework scanning.
+RUN set -eux; \
+    if curl ${CURL_TOOL_FLAGS} -fsSL \
+       https://raw.githubusercontent.com/kubescape/kubescape/master/install.sh | /bin/bash \
+       && command -v kubescape; then \
+      echo "kubescape installed"; \
+    elif [ "${NET_TOOLS_OPTIONAL}" = "true" ]; then \
+      echo "WARN: kubescape install failed (network unreachable). Framework scan will be skipped." >&2; \
+      printf '#!/bin/sh\necho "kubescape is not installed in this image" >&2\nexit 127\n' > /usr/local/bin/kubescape && chmod +x /usr/local/bin/kubescape; \
+    else exit 1; fi
+
+# Gitleaks + OSV-Scanner are Go binaries published as GitHub release
+# assets. Resolve the current asset names via the GitHub API so both
+# amd64 and arm64 builds stay working as upstream versions move.
+#
+# Wrapped in a single ``if`` so the whole gitleaks+osv-scanner step
+# either succeeds atomically or installs stub binaries that print a
+# clear "not installed" message at runtime — this is the most common
+# build-time network failure spot on small VPS hosts.
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) gitleaks_arch='linux_x64'; osv_arch='linux_amd64' ;; \
+      arm64) gitleaks_arch='linux_arm64'; osv_arch='linux_arm64' ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    install_tools() { \
+      export ASSET_RE="gitleaks_.*_${gitleaks_arch}\\.tar\\.gz$"; \
+      curl ${CURL_TOOL_FLAGS} -fsSL \
+        https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
+        -o /tmp/gitleaks-release.json || return 1; \
+      python -c 'import json, os, re; data=json.load(open("/tmp/gitleaks-release.json", encoding="utf-8")); pat=re.compile(os.environ["ASSET_RE"]); matches=[a["browser_download_url"] for a in data.get("assets", []) if pat.search(a.get("name", ""))]; print(matches[0] if matches else (_ for _ in ()).throw(SystemExit("no matching gitleaks release asset")))' > /tmp/gitleaks-url || return 1; \
+      curl ${CURL_TOOL_FLAGS} -fsSL "$(cat /tmp/gitleaks-url)" -o /tmp/gitleaks.tar.gz || return 1; \
+      tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks || return 1; \
+      chmod +x /usr/local/bin/gitleaks; \
+      export ASSET_RE="osv-scanner_${osv_arch}$"; \
+      curl ${CURL_TOOL_FLAGS} -fsSL \
+        https://api.github.com/repos/google/osv-scanner/releases/latest \
+        -o /tmp/osv-release.json || return 1; \
+      python -c 'import json, os, re; data=json.load(open("/tmp/osv-release.json", encoding="utf-8")); pat=re.compile(os.environ["ASSET_RE"]); matches=[a["browser_download_url"] for a in data.get("assets", []) if pat.search(a.get("name", ""))]; print(matches[0] if matches else (_ for _ in ()).throw(SystemExit("no matching osv-scanner release asset")))' > /tmp/osv-url || return 1; \
+      curl ${CURL_TOOL_FLAGS} -fsSL "$(cat /tmp/osv-url)" -o /usr/local/bin/osv-scanner || return 1; \
+      chmod +x /usr/local/bin/osv-scanner; \
+      gitleaks version && osv-scanner --version; \
+    }; \
+    if install_tools; then \
+      echo "gitleaks + osv-scanner installed"; \
+    elif [ "${NET_TOOLS_OPTIONAL}" = "true" ]; then \
+      echo "WARN: gitleaks/osv-scanner install failed (network unreachable). Image will boot; secret + redundant SCA scans will mark these scanners as skipped. Pencheff's Python-native OSV.dev queries continue to work." >&2; \
+      _stub() { printf '#!/bin/sh\necho "%s is not installed in this image (build-time download failed)" >&2\nexit 127\n' "$1" > "/usr/local/bin/$1" && chmod +x "/usr/local/bin/$1"; }; \
+      _stub gitleaks; \
+      _stub osv-scanner; \
+    else \
+      exit 1; \
+    fi; \
+    rm -f /tmp/gitleaks-release.json /tmp/gitleaks-url /tmp/gitleaks.tar.gz /tmp/osv-release.json /tmp/osv-url
+
+# Bring across the pre-built Python tree (pencheff plugin + API +
+# Semgrep + Bandit + Checkov + Playwright) from the builder stage.
+COPY --from=builder /opt/pkgs /usr/local
+
+# gosec (Apache-2.0) — Go SAST. Static binary, install at runtime
+# stage so the upstream installer's curl uses the runtime curl.
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) gosec_arch='linux_amd64' ;; \
+      arm64) gosec_arch='linux_arm64' ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    install_gosec() { \
+      export ASSET_RE="gosec_.*_${gosec_arch}\\.tar\\.gz$"; \
+      curl ${CURL_TOOL_FLAGS} -fsSL \
+        https://api.github.com/repos/securego/gosec/releases/latest \
+        -o /tmp/gosec-release.json || return 1; \
+      python -c 'import json, os, re; data=json.load(open("/tmp/gosec-release.json", encoding="utf-8")); pat=re.compile(os.environ["ASSET_RE"]); matches=[a["browser_download_url"] for a in data.get("assets", []) if pat.search(a.get("name", ""))]; print(matches[0] if matches else (_ for _ in ()).throw(SystemExit("no matching gosec release asset")))' > /tmp/gosec-url || return 1; \
+      curl ${CURL_TOOL_FLAGS} -fsSL "$(cat /tmp/gosec-url)" -o /tmp/gosec.tar.gz || return 1; \
+      tar -xzf /tmp/gosec.tar.gz -C /usr/local/bin gosec || return 1; \
+      chmod +x /usr/local/bin/gosec; \
+      gosec --version; \
+    }; \
+    if install_gosec; then \
+      echo "gosec installed"; \
+    elif [ "${NET_TOOLS_OPTIONAL}" = "true" ]; then \
+      echo "WARN: gosec install failed (network unreachable). Image will boot; Go SAST scans will mark gosec as skipped." >&2; \
+      printf '#!/bin/sh\necho "gosec is not installed in this image (build-time download failed)" >&2\nexit 127\n' > /usr/local/bin/gosec; \
+      chmod +x /usr/local/bin/gosec; \
+    else \
+      exit 1; \
+    fi; \
+    rm -f /tmp/gosec-release.json /tmp/gosec-url /tmp/gosec.tar.gz
+
+# Source COPY for the editable plugin install + bench/ runners.
+WORKDIR /app
+COPY plugins/pencheff /app/plugins/pencheff
+COPY apps/api /app/apps/api
+COPY README.md /app/README.md
+COPY bench /app/bench
+RUN pip install --no-deps -e /app/plugins/pencheff
+
+# Playwright browser binaries last (rarely change, keep cache hot).
+ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
+RUN playwright install --with-deps chromium \
+ && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+WORKDIR /app/apps/api
+ENV PYTHONPATH=/app/apps/api
+EXPOSE 8000
+CMD ["uvicorn", "pencheff_api.main:app", "--host", "0.0.0.0", "--port", "8000"]

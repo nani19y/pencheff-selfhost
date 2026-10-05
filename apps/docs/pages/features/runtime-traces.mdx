@@ -1,0 +1,69 @@
+---
+title: Runtime traces — observability for your LLM traffic
+---
+
+# Runtime traces
+
+Every request through a target's [guardrail proxy](/features/sentry) is
+recorded as a **trace**: what the model was asked, the detector verdict, the
+[firewall](/features/agent-firewall) decision, the LLM call, and token counts.
+Traces are workspace-scoped and OpenTelemetry-style (a `trace_id` with parent →
+child spans).
+
+## Span kinds
+
+| Kind | Span | Captures |
+| --- | --- | --- |
+| `request` | `proxy.request` | the enclosing request (model, status, duration) |
+| `llm` | `llm.chat` | the upstream model call + prompt/completion tokens |
+| `detector` | `detector.block` | a guardrail block (OWASP-LLM category + reason) |
+| `firewall` | `firewall.block` | a blocked / approval-gated tool call (rule id) |
+| `tool` | — | tool spans submitted by the SDK |
+
+## View
+
+Open **Targets → (your LLM target) → Runtime traces**. Each row links to the
+span tree for that request. Status is `ok`, `blocked`, or `error`.
+
+## Performance
+
+Gateway tracing is **fire-and-forget** — spans are built synchronously (cheap)
+and persisted on a background task with an isolated DB session, so tracing adds
+**zero latency** to the proxied response and a trace-write failure can never
+break a request. (Trade-off: a few in-flight spans may be lost on a worker
+restart.) Streaming (SSE) responses are not traced today.
+
+## API
+
+```bash
+# list a target's traces
+curl "https://api.pencheff.com/traces?target_id=<TARGET_ID>&limit=50" \
+  -H "Authorization: Bearer <PENCHEFF_API_KEY>"     # scope: proxy:read
+
+# one trace's spans
+curl "https://api.pencheff.com/traces/<TRACE_ID>" \
+  -H "Authorization: Bearer <PENCHEFF_API_KEY>"     # scope: proxy:read
+```
+
+### Ingest your own spans (SDK)
+
+Send a span tree from your own agent runtime to correlate it alongside the
+gateway traces:
+
+```bash
+curl -X POST https://api.pencheff.com/v1/traces \
+  -H "Authorization: Bearer <PENCHEFF_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "trace_id": "t-abc",
+    "spans": [
+      {"span_id": "s1", "name": "agent.run", "kind": "request",
+       "start_time": "2026-06-08T10:00:00Z", "end_time": "2026-06-08T10:00:02Z"},
+      {"span_id": "s2", "parent_span_id": "s1", "name": "tool.search",
+       "kind": "tool", "duration_ms": 120, "attributes": {"query": "…"}}
+    ]
+  }'
+```
+
+Up to 500 spans per request; `kind` is one of `request·llm·tool·firewall·detector·other`.
+Scope: `proxy:write`.

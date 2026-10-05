@@ -1,0 +1,47 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+*.egg
+.eggs/
+
+# IDE / agent tooling state (don't commit local IDE caches)
+.claude/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.turbo/
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.local.example
+
+# Reports
+/tmp/pencheff-reports/
+pencheff-reports/
+.gstack/
+
+# Xcode — user-specific UI/scheme state
+xcuserdata/
+*.xcuserstate
+
+# OS / editor cruft
+.DS_Store
+
+# Build artifacts (regenerated; never source)
+*.tsbuildinfo
+.wrangler/
+docs/design/
+
+# Desktop apps live in their own repos
+# (MagadhaApps/pencheff-studio, MagadhaApps/pencheff-studio-windows).
+# Any local copies here are build output, not monorepo source.
+/pencheff-studio/
+/pencheff-studio-windows/

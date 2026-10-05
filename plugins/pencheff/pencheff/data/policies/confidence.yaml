@@ -1,0 +1,43 @@
+# Pencheff finding-confidence policy.
+#
+# Confidence is computed as a weighted sum of binary signals, capped at 1.0,
+# then mapped to a label. Runs the same way every invocation — no model.
+#
+# Sources:
+# - OWASP "Confidence levels" §3 of WSTG.
+# - PortSwigger Burp Scanner classification scheme (used for label cutoffs).
+
+version: 1
+
+# Each signal contributes its weight to the confidence score IFF the
+# corresponding boolean attribute is True on the Finding.
+signals:
+  oast_callback_received:        0.45  # blind exploit confirmed out of band
+  exact_payload_reflected:       0.30
+  error_string_match:            0.20  # known vendor error like "ORA-00933"
+  status_code_match:             0.10
+  timing_side_channel_consistent: 0.20  # sleep payload consistently delays
+  multi_tool_corroboration:      0.15
+  manual_replay_succeeded:       0.30
+  evidence_attached:             0.05
+
+# Negative signals subtract from the score.
+negative_signals:
+  payload_in_input_only:        -0.20  # echo without escape probably not actual sink
+  identical_response_off_payload: -0.30  # control matches → unreliable
+  tool_known_high_fp:           -0.15  # nikto, blanket signature scanners
+
+# Map final score → label.
+labels:
+  # Cutoffs are inclusive lower-bounds.
+  - { min: 0.85, label: confirmed,       verification: true_positive }
+  - { min: 0.60, label: high_confidence, verification: unverified }
+  - { min: 0.40, label: probable,        verification: unverified }
+  - { min: 0.20, label: possible,        verification: unverified }
+  - { min: 0.00, label: noise,           verification: false_positive }
+
+# Severity adjusters: when confidence is below this floor, downgrade severity
+# by N levels in the report (does not mutate Finding.severity).
+report_overrides:
+  - { confidence_below: 0.40, downgrade_severity_by: 1 }
+  - { confidence_below: 0.20, downgrade_severity_by: 2 }

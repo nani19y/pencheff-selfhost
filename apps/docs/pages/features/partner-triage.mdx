@@ -1,0 +1,70 @@
+---
+title: Partner pentest triage (HackerOne / Bugcrowd / Cobalt)
+---
+
+# Partner pentest triage
+
+Pencheff integrates with HackerOne, Bugcrowd, and Cobalt as **partner
+pentest platforms** — every `finding_new` event can be auto-submitted
+as a draft report on the upstream platform, and the triager's verdict
+flows back through a callback that flips Pencheff's
+`verification_status`.
+
+The integration sidesteps the multi-year build-out of a researcher
+network: instead of operating one ourselves, we route findings to the
+platform whose researcher community already triages your engagements.
+
+## What it does
+
+| Stage | Direction | Surface |
+| --- | --- | --- |
+| **Submit for triage** | Pencheff → partner | Click **Verify with humans →** on a finding card; the finding is forwarded as a `finding_new` event through the configured integration. |
+| **Triager verdict** | Partner → Pencheff | The partner's webhook calls back into `POST /findings/{id}/verify-callback` with one of: `confirmed` / `informative` / `duplicate` / `not-applicable`. |
+| **State flip** | Pencheff side | `confirmed` → `verification_status = true_positive`. `informative` → `false_positive`. `duplicate` / `not-applicable` → suppressed with reason. |
+
+## Configure an integration
+
+| Platform | Config fields |
+| --- | --- |
+| HackerOne | `api_username`, `api_token` |
+| Bugcrowd | `api_token`, `program_uuid` |
+| Cobalt | `api_token`, `pentest_id` |
+
+Add via **Settings → Integrations → Add integration**. Each platform
+has a one-click "test" round-trip:
+
+* HackerOne — `GET /v1/me`
+* Bugcrowd — `GET /me` (Crowdcontrol API v4)
+* Cobalt — `GET /orgs` (Cobalt API v3, X-Api-Key auth)
+
+The test verifies the credentials before any real submission, so a
+bad token doesn't show up only when a real finding routes.
+
+## Per-finding triage button
+
+Every finding card on `/scans/{id}/findings/{fid}` exposes a
+**Verify with humans →** button under the action row (next to
+*Re-examine*, *Mark fixed*, *Confirm*). Clicking it shows three
+buttons — one per configured partner kind — and the chosen platform
+gets the finding as a draft report.
+
+## Webhook signing
+
+The Phase 1.2 HMAC primitive
+(`pencheff_api.services.integration_dispatch.sign_webhook_body`) is
+used for the **generic webhook** integration's outbound signature.
+Partner integrations rely on the partner's own signed-callback
+mechanism (HackerOne hash signature header, Bugcrowd JWT, Cobalt
+shared secret).
+
+For inbound `verify-callback` requests, validate the partner's
+signature in front of the endpoint — Pencheff doesn't perform that
+step itself today (next iteration; tracked under Phase 4 follow-up).
+
+## Source
+
+* Formatters — [`apps/api/.../services/integration_dispatch.py`](https://github.com/Magadha-IG/pencheff/blob/main/apps/api/pencheff_api/services/integration_dispatch.py)
+  (`_hackerone_payload`, `_bugcrowd_payload`, `_cobalt_payload`)
+* Verify-with-humans endpoint — `POST /findings/{id}/verify-with-humans`
+* Verify callback — `POST /findings/{id}/verify-callback`
+* UI button — [`apps/web/components/verify-with-humans-button.tsx`](https://github.com/Magadha-IG/pencheff/blob/main/apps/web/components/verify-with-humans-button.tsx)

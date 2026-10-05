@@ -1,0 +1,66 @@
+---
+title: Intercepting proxy
+---
+
+# Intercepting proxy
+
+Pencheff ships an intercepting proxy that captures browser/app
+traffic and runs passive scanners over every flow — no active requests, no
+new load on your target.
+
+## Backends
+
+- **mitmproxy** (preferred) — spawned via `mitmdump`. Supports HTTPS
+  interception when you install the mitmproxy CA cert on your
+  device/browser.
+- **HTTP fallback** — a minimal async forward proxy built into
+  Pencheff. No CONNECT / no TLS decryption, but works without any extra
+  dependencies.
+
+## Start a proxy
+
+```text
+start_proxy(session_id=sid, port=8888)
+→ { port: 8888, mode: "mitmproxy", pid: 12543 }
+```
+
+Configure your browser / app to use `localhost:8888` as an HTTP proxy.
+For HTTPS capture, install the CA cert from
+`http://mitm.it` while your browser is routed through the proxy.
+
+## Retrieve traffic
+
+```text
+get_proxy_traffic(session_id=sid, since=1729510000, include_passive_findings=True)
+→ {
+    count: 123,
+    flows: [{ method: "GET", url: "...", status: 200, timestamp: ... }, …],
+    passive_findings_added: 4
+  }
+```
+
+Setting `include_passive_findings=True` runs the
+[passive scanner](/features/passive-scan) over every flow and adds any
+new findings to the session.
+
+## Stop the proxy
+
+```text
+stop_proxy(session_id=sid)
+→ { stopped: true }
+```
+
+## What the passive scanner catches
+
+See [passive scanner](/features/passive-scan) for the full rule list.
+Every rule runs on observed traffic only — zero outbound requests.
+
+## Security notes
+
+- Traffic captured by mitmproxy is decrypted and stored in the session
+  memory; don't run the proxy against sensitive production traffic
+  unless you understand the risk.
+- The HTTP fallback cannot intercept HTTPS — use it for local dev and
+  plain-HTTP services.
+- On macOS/Linux the process runs with your user's privileges; it does
+  not need root.

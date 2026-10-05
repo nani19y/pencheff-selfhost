@@ -1,0 +1,105 @@
+---
+title: FAQ
+---
+
+# Frequently asked questions
+
+## How does Pencheff fit with existing security tools?
+
+Pencheff produces DAST, SCA/SBOM, host vulnerability assessment, proxy,
+fuzzer, continuous scanning, and ASM outputs that can complement existing
+security tools. Teams with existing security platforms can run Pencheff
+alongside them; exports via signed webhook / Splunk HEC integrate cleanly.
+
+Third-party product names are used only for identification. Pencheff is not
+affiliated with, endorsed by, or sponsored by those owners.
+
+## Does it scan production safely?
+
+Yes, with a few caveats:
+
+- **`quick` and `cicd` profiles** are explicitly non-destructive — no
+  SQLi data extraction, no fuzzer, no exploit chains.
+- **`standard` / `deep` profiles** send active exploit payloads; only
+  run them against systems you own or have written authorisation to
+  test.
+- Rate-limiting is enforced by default (10 req/s); tune down via
+  `MAX_REQUESTS_PER_SECOND` when targeting production systems.
+
+## Does Pencheff scan desktop applications?
+
+Not today. Pencheff's scanners cover **web** (DAST), **source code**
+(SAST via Semgrep / Bandit / gosec / Brakeman / ESLint, SCA via GHSA),
+and **infrastructure** (containers,
+Dockerfiles, Kubernetes, Terraform, Helm, CloudFormation). There is no
+built-in scanner for compiled desktop binaries (`.exe`, `.app`, `.dmg`,
+`.msi`, `.deb`, `.rpm`), Electron `asar` bundles, or native ELF / Mach-O
+files.
+
+If desktop coverage matters for your engagement, the realistic options:
+
+- **SBOM + CVE the binary**: pipe it through [`syft`](https://github.com/anchore/syft)
+  to extract an SBOM, then [`grype`](https://github.com/anchore/grype)
+  for CVE matching. Both happily accept `.deb` / `.rpm` / `.tar.gz`
+  archives and many native binaries.
+- **Electron**: [`electronegativity`](https://github.com/doyensec/electronegativity)
+  finds nodeIntegration / contextIsolation / IPC misuse in the bundled
+  asar.
+- **Code signing & entitlements**: `codesign -dvvv`, `security cms -D`
+  on macOS; `signtool verify` on Windows.
+
+If you'd like one of these wrapped as a first-class scanner with the
+same `Finding` model as everything else, [open an issue](https://github.com/Magadha-IG/pencheff/issues)
+or contact us about a Team plan.
+
+## How does it compare to AI-assisted code review?
+
+Pencheff is a _runtime_ pentest tool — it exercises live web
+applications, network services, and running containers. Static code
+review tools are complementary; run Pencheff against the deployed
+artifact, not the source.
+
+## Can I run it air-gapped?
+
+Yes. All the native scan modules (injection, auth, authz, IaC rules,
+passive scan, fuzzer) work offline. The CVE feed uses OSV.dev over the
+internet; once cached to `~/.pencheff/cve_cache.db`, subsequent scans
+are offline. Refresh with `refresh_cve_feed` when you're back online.
+
+## How much does hosted SaaS cost?
+
+Pencheff is in **open beta**. The **Free** tier has every feature unlocked
+at $0 — DAST, SAST (Semgrep + Bandit + gosec + Brakeman + ESLint +
+tree-sitter), IaC, container scanning, compliance reporting, the lot.
+**Pro** (coming soon) adds automated remediation that *fixes* what it
+finds: a fix-PR pipeline, DAST exploitation that verifies impact, and
+a SAST auto-patcher driven by Semgrep autofix + LLM patch synthesis.
+**Team** is
+for organisations needing unlimited scale, SSO, dedicated support, and
+custom deployment — see [pencheff.com/#pricing](https://pencheff.com/#pricing)
+or email `hello@pencheff.com`.
+
+The CLI and MCP plugin are MIT-licensed and free for any use.
+
+## My scan is taking too long
+
+- Use a lighter profile (`quick` or `cicd` instead of `deep`).
+- Narrow `scope` / widen `exclude_paths`.
+- Cap `max_pages` in the profile.
+- For SCA, use `annotate_reachability=False` to skip the source grep.
+
+## Where are credentials stored?
+
+- **CLI:** in-process only; `MaskedSecret`-wrapped so they never
+  leak to logs or `repr`.
+- **SaaS:** Fernet-encrypted blobs in Postgres; the encryption key is
+  in env (`FERNET_KEY`) and never written to disk in plaintext.
+- **Custom modules:** whatever you write — we recommend
+  `MaskedSecret` for anything sensitive.
+
+## How do I report a vulnerability in Pencheff itself?
+
+Email `security@pencheff.com`. We respond within 24 hours. All
+disclosures are triaged publicly in our
+[security advisory](https://github.com/Magadha-IG/pencheff/security/advisories)
+feed once patched.

@@ -1,0 +1,227 @@
+---
+title: Observability API
+---
+
+# Observability API
+
+Read endpoints power the `/observability/*` dashboard pages. Write
+endpoints (`POST /v1/{traces,logs,metrics}`) are the OTLP/HTTP
+receivers used by the MCP plugin when shipping traces over the
+network.
+
+All endpoints return `503 Service Unavailable` when
+`PENCHEFF_OBSERVABILITY_ENABLED=false`. See the
+[Observability feature page](/features/observability) for setup.
+
+---
+
+## `GET /observability/scans/{scan_id}/trace`
+
+Return the full span tree for a single scan. Used by the trace
+waterfall viewer at `/observability/traces/[scanId]`.
+
+**Auth**: session (Clerk) or `PENCHEFF_API_KEY` with `scans:read`.
+
+**Response**:
+
+```json
+{
+  "scan_id": "11111111-2222-...",
+  "span_count": 1842,
+  "tree": [
+    {
+      "span_id": "ab12...",
+      "parent_span_id": null,
+      "trace_id": "ff01...",
+      "name": "scan.execute",
+      "kind": 0,
+      "service_name": "pencheff-celery-worker",
+      "started_at": "2026-05-08T03:00:01.123Z",
+      "ended_at":   "2026-05-08T03:14:22.456Z",
+      "duration_ns": 861333000000,
+      "status_code": 1,
+      "status_message": null,
+      "attributes": { "pencheff.scan_id": "...", "pencheff.scan_kind": "full" },
+      "children": [ /* nested spans */ ]
+    }
+  ]
+}
+```
+
+---
+
+## `GET /observability/slo`
+
+RED + USE summary cards for an arbitrary recent window.
+
+**Query params**:
+
+| Param | Default | Range |
+| --- | --- | --- |
+| `window_minutes` | 60 | 5 – 1440 |
+
+**Response**:
+
+```json
+{
+  "window_minutes": 60,
+  "request_count": 4218,
+  "error_count":   12,
+  "error_rate":    0.00284,
+  "p50_ms":  18.3,
+  "p95_ms":  74.1,
+  "p99_ms": 211.5,
+  "active_scans": 3,
+  "queued_scans": 1
+}
+```
+
+The numbers come from FastAPI server spans (`kind = 1`) over the
+window. `error_count` is spans with `status_code = 2`. Active and
+queued scan counts are read live from the `scans` table.
+
+---
+
+## `GET /observability/audit`
+
+Paginated audit-log table.
+
+**Query params**:
+
+| Param | Default | Notes |
+| --- | --- | --- |
+| `limit` | 100 | Max 1000 |
+| `offset` | 0 | |
+| `actor` | — | Match `user_id` exactly |
+| `action_prefix` | — | Case-insensitive `ILIKE`, e.g. `POST /scans` |
+
+**Response**:
+
+```json
+{
+  "items": [
+    {
+      "id": "5e9...",
+      "user_id": "ad4...",
+      "org_id": "00f...",
+      "workspace_id": "9b1...",
+      "action": "POST /scans",
+      "entity_type": null,
+      "entity_id": null,
+      "meta": { "status_code": 201, "auth_kind": "session", "api_key_id": null },
+      "created_at": "2026-05-08T03:00:00.123Z",
+      "trace_id": "ff01ab...",
+      "request_ip": "203.0.113.4",
+      "user_agent": "Mozilla/5.0 ...",
+      "hashed": true
+    }
+  ],
+  "limit": 100,
+  "offset": 0
+}
+```
+
+Older rows written before the hash-chain migration have
+`hashed: false` and are skipped by the verifier.
+
+---
+
+## `GET /observability/audit/verify`
+
+Walk the audit-log sha256 chain and report integrity.
+
+**Query params**:
+
+| Param | Default | Range |
+| --- | --- | --- |
+| `limit` | 10000 | 1 – 100000 |
+
+**Response (intact chain)**:
+
+```json
+{ "ok": true, "checked": 4217, "broken_at": null }
+```
+
+**Response (tamper detected)**:
+
+```json
+{ "ok": false, "checked": 318, "broken_at": "5e9..." }
+```
+
+`broken_at` is the `audit_logs.id` of the first row whose recomputed
+hash doesn't match its stored `row_hash`.
+
+The verifier uses `_compute_hash(prev_hash, payload)` from
+`middleware/audit.py` and walks rows in `created_at ASC` order.
+
+---
+
+## `GET /observability/cost`
+
+LLM token spend grouped by model over a recent window. Reads
+`gen_ai.completion` spans emitted by the swarm orchestrator.
+
+**Query params**:
+
+| Param | Default | Range |
+| --- | --- | --- |
+| `window_hours` | 168 (7 days) | 1 – 720 |
+
+**Response**:
+
+```json
+{
+  "window_hours": 168,
+  "by_model": [
+    { "model": "kimi-k2.6:cloud",          "input_tokens": 1842033, "output_tokens": 287114, "calls": 412 },
+    { "model": "claude-haiku-4-5-20251001", "input_tokens":  211884, "output_tokens":  43091, "calls":  87 }
+  ]
+}
+```
+
+---
+
+## `POST /v1/traces`, `POST /v1/logs`, `POST /v1/metrics`
+
+OTLP/HTTP ingest endpoints used by the MCP plugin's
+`OTLPSpanExporter` when `PENCHEFF_OBSERVABILITY_OTLP_URL` is set.
+
+**Headers**:
+
+| Header | Required |
+| --- | --- |
+| `Authorization: Bearer <token>` | Yes — token sha256 must match `engagement_ingest_tokens.token_hash`, and the row must not be revoked |
+| `Content-Type: application/x-protobuf` | Yes — protobuf shape per OpenTelemetry spec |
+
+**Response**: `204 No Content` on success.
+
+**Errors**:
+
+| Status | Reason |
+| --- | --- |
+| 401 | Missing / empty / invalid / revoked bearer token |
+| 400 | Protobuf decode failure |
+| 503 | Observability disabled at the deployment level |
+
+The receivers are explicitly excluded from FastAPI auto-instrumentation
+via `OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=/health,/v1/traces,/v1/logs,/v1/metrics`
+so each ingest doesn't itself create a server span.
+
+---
+
+## Database tables
+
+| Table | Partition strategy | Retention knob |
+| --- | --- | --- |
+| `otel_spans` | Day partition by `started_at` | `PENCHEFF_OBSERVABILITY_RETENTION_DAYS` |
+| `otel_logs` | Day partition by `ts` | `PENCHEFF_OBSERVABILITY_RETENTION_DAYS` |
+| `otel_metrics` | Day partition by `ts` | `PENCHEFF_OBSERVABILITY_RETENTION_DAYS` |
+| `audit_logs` | Single table (low volume) | `PENCHEFF_AUDIT_RETENTION_DAYS` |
+
+Migrations: `0041_otel_partitioned_tables`, `0042_audit_log_hash_chain`.
+
+The retention task `pencheff.observability.prune_partitions` runs
+every hour: pre-creates today + 7 future-day partitions, drops
+expired partitions, deletes expired audit rows. Runs even when
+observability is disabled (the task short-circuits internally) so
+flipping the kill-switch on doesn't require restarting the beat.

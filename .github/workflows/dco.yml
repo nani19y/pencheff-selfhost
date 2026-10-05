@@ -1,0 +1,49 @@
+name: DCO
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify Signed-off-by trailer on every PR commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          missing=0
+          # Walk only the commits added by this PR (vs. the merge base).
+          range="${BASE_SHA}..${HEAD_SHA}"
+          # ``%H %ae`` per commit, body separately so we can grep its trailer.
+          while IFS= read -r commit; do
+            [[ -z "$commit" ]] && continue
+            sha="${commit%% *}"
+            author_email="${commit#* }"
+            body="$(git show --no-patch --format=%B "$sha")"
+            if ! grep -qE "^Signed-off-by: .* <.+@.+>" <<<"$body"; then
+              echo "::error::Commit $sha is missing a Signed-off-by trailer."
+              echo "  Author: $author_email"
+              missing=$((missing + 1))
+            fi
+          done < <(git log --format='%H %ae' "$range")
+
+          if (( missing > 0 )); then
+            echo ""
+            echo "::error::$missing commit(s) lack DCO sign-off."
+            echo "Re-commit with ``git commit --amend --signoff`` or"
+            echo "rebase with ``git rebase --signoff $BASE_SHA``."
+            exit 1
+          fi
+          echo "All commits in this PR carry a Signed-off-by trailer."

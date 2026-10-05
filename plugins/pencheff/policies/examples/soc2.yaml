@@ -1,0 +1,21 @@
+apiVersion: pencheff/v1
+kind: ScanPolicy
+metadata:
+  name: soc2
+  description: SOC 2 Type II — logical access, change mgmt, monitoring controls.
+spec:
+  targets:
+    - url: ${TARGET_URL}
+  modules:
+    - { name: scan_infrastructure, depth: standard }
+    - { name: scan_auth,           depth: standard }
+    - { name: scan_authz,          depth: standard }
+    - { name: scan_cloud,          depth: standard }
+    - { name: scan_dependencies,   params: { path: "./" } }
+    - { name: generate_sbom,       params: { path: "./", format: spdx } }
+  assertions:
+    - { id: no_critical, condition: "critical == 0" }
+  thresholds:
+    fail_on: high
+  reports:
+    - { format: docx, path: "./reports/soc2/" }

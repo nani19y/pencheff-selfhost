@@ -1,0 +1,47 @@
+---
+title: OWASP Top 10 (2021)
+---
+
+# OWASP Top 10 — 2021
+
+Pencheff maps every finding to one of the [2021 OWASP Top 10](https://owasp.org/www-project-top-ten/) categories.
+
+| OWASP | Name | Pencheff modules |
+| --- | --- | --- |
+| A01 | Broken Access Control | `scan_authz`, `scan_oauth`, IDOR + mass assignment in `scan_api` |
+| A02 | Cryptographic Failures | `scan_infrastructure` (SSL/TLS, weak ciphers, cert validation) |
+| A03 | Injection | `scan_injection`, `scan_client_side` |
+| A04 | Insecure Design | `scan_business_logic`, `scan_websocket`, chain suggestions |
+| A05 | Security Misconfiguration | `scan_infrastructure`, `scan_dockerfile`, `scan_kubernetes`, `scan_terraform`, `scan_network_misconfig` |
+| A06 | Vulnerable & Outdated Components | `scan_dependencies`, `scan_container_image`, `scan_host_vulns`, `missing_patches` |
+| A07 | Identification & Authentication Failures | `scan_auth`, `scan_mfa_bypass`, `scan_oauth` |
+| A08 | Software & Data Integrity Failures | `scan_advanced` (deserialization, prototype pollution), SBOM generation |
+| A09 | Security Logging & Monitoring Failures | Passive scanner (debug leakage) + business-logic audit |
+| A10 | Server-Side Request Forgery | `scan_injection` (SSRF), cloud metadata via `scan_cloud` |
+
+## Policy example
+
+```yaml
+apiVersion: pencheff/v1
+kind: ScanPolicy
+metadata: { name: owasp-top-10 }
+spec:
+  targets: [{ url: https://example.com }]
+  modules:
+    - { name: scan_waf }
+    - { name: scan_injection,      depth: standard }
+    - { name: scan_client_side,    depth: standard }
+    - { name: scan_auth,           depth: standard }
+    - { name: scan_authz,          depth: standard }
+    - { name: scan_infrastructure, depth: standard }
+    - { name: scan_api,            depth: standard }
+    - { name: scan_business_logic, depth: standard }
+    - { name: scan_advanced,       depth: standard }
+  thresholds: { fail_on: high }
+```
+
+## Reporting
+
+The default DOCX report includes an **OWASP Top 10 summary** table
+counting findings per category, highlighting any category with
+unsuppressed findings at or above `HIGH`.

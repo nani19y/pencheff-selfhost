@@ -1,0 +1,90 @@
+---
+title: Tutorial — Desktop app static scanning
+description: Static analysis of Electron, Java/JAR, .NET, and Qt/native desktop apps — insecure Electron config, dangerous calls, outdated runtimes, and embedded secrets. Never executed.
+---
+
+import { Callout } from "nextra/components";
+
+# Tutorial: Desktop app static scanning
+
+Statically analyze a desktop application bundle. Pencheff identifies the
+type (Electron, Java, .NET, native), unpacks archive-based apps, and
+inspects configuration and dependencies — the binary is never run.
+
+## Scenario
+
+* **Artifact.** A desktop build — an Electron `.zip`/`.asar`, a Java
+  `.jar`, a packaged `.exe`, or a native bundle — hosted at a URL you
+  control.
+* **Goal.** Config and dependency risk: insecure Electron sandboxing,
+  dangerous calls, outdated runtimes, and embedded secrets.
+
+## Inputs you need
+
+| Item | Where it goes |
+| --- | --- |
+| Artifact URL (`.zip` / `.jar` / binary) | **Artifact URL** field |
+| SHA-256 of the file | **SHA-256** field — integrity gate |
+
+```bash
+shasum -a 256 acme-desktop.zip
+```
+
+## Time budget
+
+| Phase | Wall time |
+| --- | --- |
+| Fetch + verify + unpack | 1–2 min |
+| Static analysis | 1–2 min |
+| **Total** | **~3–4 min** |
+
+## Steps
+
+### 1. Register the target
+
+[`app.pencheff.com`](https://app.pencheff.com) → **Register target** →
+**Mobile & Client Security** → **Desktop Application**:
+
+* **Name** — `Acme Desktop — 4.1`
+* **Artifact URL** — `https://builds.acme.com/acme-desktop.zip`
+* **SHA-256** — the digest from above
+
+### 2. Run the scan
+
+**Commission scan**. Pencheff verifies the download, classifies the
+artifact, and analyzes accordingly:
+
+* **Electron** (archive or `app.asar`) — insecure `webPreferences`:
+  `nodeIntegration:true`, `contextIsolation:false`, `sandbox:false`,
+  `webSecurity:false`, `allowRunningInsecureContent`; dangerous calls
+  (`eval`, `child_process`, `shell.openExternal`); and outdated Electron
+  versions. Aligned to the
+  [Electron Security Checklist](https://www.electronjs.org/docs/latest/tutorial/security).
+* **Java / .NET / archive** — embedded secrets and dangerous patterns
+  across the unpacked tree.
+* **Native binary (PE/ELF/Mach-O)** — printable-string extraction and a
+  secrets sweep.
+
+<Callout type="warning">
+  **Honest scope.** Archive-based apps (Electron, JAR) get full config +
+  dependency analysis. Opaque native binaries get a strings-based secret
+  sweep; decompiler-grade depth (checksec hardening, capa capabilities,
+  .NET/Java decompilation) is beyond this static pass. The report says so
+  per artifact.
+</Callout>
+
+The binary is **never executed** — no detonation, no sandbox needed.
+
+### 3. Read the findings
+
+Findings are tagged `desktop_misconfig` and `desktop_secrets`, each with
+severity, CWE, the file/setting, and remediation.
+
+## Deliverable
+
+A desktop app risk register exportable to DOCX/JSON/CSV.
+
+## Next
+
+* [Tutorial: Browser extension scanning](/tutorials/browser-extension-scanning)
+* [Desktop App Security](/features/desktop-app) — feature reference.

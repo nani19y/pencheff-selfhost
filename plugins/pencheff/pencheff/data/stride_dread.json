@@ -1,0 +1,59 @@
+{
+  "stride": {
+    "webapp": {
+      "Spoofing": ["Stolen session cookie", "Forged JWT", "Open OAuth redirect", "Phishing for SSO"],
+      "Tampering": ["Mass assignment", "Parameter pollution", "Cache poisoning", "Request smuggling"],
+      "Repudiation": ["Missing audit log", "Log tampering", "No request correlation IDs"],
+      "Information Disclosure": ["Verbose errors", "Directory listing", "Backup files exposed", "Source map leaks"],
+      "Denial of Service": ["Algorithmic complexity", "ReDoS", "Resource exhaustion", "Slowloris"],
+      "Elevation of Privilege": ["Broken access control", "IDOR", "JWT alg=none", "Privilege escalation via mass-assignment"]
+    },
+    "api": {
+      "Spoofing": ["API key in URL", "Unsigned webhooks", "Replay attacks"],
+      "Tampering": ["GraphQL field-level abuse", "Mass assignment", "JSON Patch RCE"],
+      "Repudiation": ["No mTLS", "Missing rate-limit logs"],
+      "Information Disclosure": ["Verbose errors", "Excessive data exposure", "BOLA / IDOR"],
+      "Denial of Service": ["Unbounded queries", "GraphQL N+1 / depth attacks"],
+      "Elevation of Privilege": ["Missing auth on admin endpoints", "Function-level authz bypass"]
+    },
+    "network": {
+      "Spoofing": ["ARP spoofing", "DHCP starvation", "DNS poisoning"],
+      "Tampering": ["VLAN hopping", "Routing manipulation"],
+      "Repudiation": ["Unlogged firewall denies"],
+      "Information Disclosure": ["Plaintext protocols (FTP/Telnet)", "SNMP public string"],
+      "Denial of Service": ["TCP RST flood", "ICMP flood"],
+      "Elevation of Privilege": ["Network segmentation bypass", "Pivoting through misconfigured router"]
+    },
+    "cloud": {
+      "Spoofing": ["IAM role assumption abuse", "Cross-account confused deputy"],
+      "Tampering": ["S3 bucket policy modification", "IaC drift"],
+      "Repudiation": ["CloudTrail disabled / suppressed"],
+      "Information Disclosure": ["Public S3 bucket", "EC2 metadata SSRF", "Snapshot exposure"],
+      "Denial of Service": ["Resource exhaustion via cloud quotas"],
+      "Elevation of Privilege": ["IAM privilege escalation paths (PassRole, AssumeRole, iam:CreateAccessKey)"]
+    },
+    "mobile": {
+      "Spoofing": ["Insecure deep-link handler", "WebView ↔ JS bridge abuse"],
+      "Tampering": ["Backup contains secrets", "Insecure WebView", "Tapjacking"],
+      "Repudiation": ["No client integrity check"],
+      "Information Disclosure": ["Hard-coded secrets in APK", "Cleartext logs", "Leaky clipboard"],
+      "Denial of Service": ["Battery-drain abuse"],
+      "Elevation of Privilege": ["Exported activity / service / receiver abuse", "Jailbreak/root detection bypass"]
+    },
+    "wireless": {
+      "Spoofing": ["Evil twin AP", "Karma attack"],
+      "Tampering": ["WPA2 KRACK", "WPS PIN brute"],
+      "Repudiation": ["No 802.1X audit"],
+      "Information Disclosure": ["Open Wi-Fi traffic", "Probe request leaks"],
+      "Denial of Service": ["Deauth flood"],
+      "Elevation of Privilege": ["WPA2-PSK crack → segmented access"]
+    }
+  },
+  "dread_template": {
+    "damage": {"1-3": "Minor", "4-6": "Moderate", "7-10": "Severe"},
+    "reproducibility": {"1-3": "Hard", "4-6": "Moderate", "7-10": "Trivial"},
+    "exploitability": {"1-3": "Skilled attacker", "4-6": "Available tooling", "7-10": "Public exploit"},
+    "affected_users": {"1-3": "Few", "4-6": "Many", "7-10": "All"},
+    "discoverability": {"1-3": "Insider only", "4-6": "Some scanning", "7-10": "Trivial"}
+  }
+}

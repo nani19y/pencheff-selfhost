@@ -1,0 +1,30 @@
+---
+title: HIPAA
+---
+
+# HIPAA Security Rule
+
+Pencheff maps findings to the HIPAA Security Rule safeguards that
+externally-observable controls can cover.
+
+| §CFR | Safeguard | Coverage |
+| --- | --- | --- |
+| 164.308(a)(1) | Security management process | `scan_infrastructure`, `scan_authz` |
+| 164.308(a)(1)(ii)(D) | Information system activity review | Passive scanner (log leakage) |
+| 164.308(a)(4) | Access authorization | `scan_authz` |
+| 164.308(a)(7) | Contingency plan | `scan_cloud` (backup config, metadata) |
+| 164.308(a)(8) | Evaluation (periodic) | Scheduled scans + `compliance-full` |
+| 164.312(a)(1) | Access control (RBAC) | `scan_authz` |
+| 164.312(a)(2)(i) | Unique user identification | `scan_auth` |
+| 164.312(a)(2)(iv) | Encryption / decryption | `scan_infrastructure`, `scan_injection` |
+| 164.312(b) | Audit controls | Passive scanner + monitoring overlap |
+| 164.312(c)(1) | Integrity | `scan_injection`, `scan_advanced` (deserialization, prototype pollution) |
+| 164.312(d) | Person / entity authentication | `scan_auth`, `scan_mfa_bypass` |
+| 164.312(e)(1) | Transmission security | `scan_infrastructure` (TLS) |
+| 164.312(e)(2)(ii) | Encryption in transit | `scan_infrastructure` |
+
+## Policy
+
+The `compliance-full` profile covers the full HIPAA mapping. For
+PHI-specific scope, add `scan_file_handling` to ensure uploads are
+tightly validated.

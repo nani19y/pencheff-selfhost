@@ -1,0 +1,36 @@
+---
+title: Comments & tags API
+---
+
+# Comments, assignments & tags
+
+## Comments
+
+- `POST /findings/{finding_id}/comments` — `{ "body": "markdown" }`
+- `GET /findings/{finding_id}/comments` — list, oldest first
+
+## Assignment
+
+- `POST /findings/{finding_id}/assign` — `{ "assignee_user_id": "..." }`
+
+Upserts — only one assignee per finding. The previous assignee is
+replaced.
+
+## Tags
+
+- `POST /findings/{finding_id}/tags` — `{ "tag": "p0-fix" }`
+- `DELETE /findings/{finding_id}/tags/{tag}` — remove a tag
+
+Tags are free-form strings; the dashboard offers a typeahead using the
+20 most common tags across the org.
+
+## Comment shape
+
+```typescript
+type Comment = {
+  id: string;
+  user_id: string;
+  body: string;
+  created_at: string;
+};
+```

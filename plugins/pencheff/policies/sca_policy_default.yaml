@@ -1,0 +1,25 @@
+# Default SCA policy — thresholds + suppression rules for dependency findings.
+
+# Severity floor: anything at or above this level is emitted.
+min_severity: low
+
+# Fail the scan when any dependency finding hits this severity.
+fail_on: high
+
+# Tag known-noisy CVEs to auto-suppress with reason "false_positive".
+suppressions: []
+
+# Ecosystems to scan; omit any you don't use to speed up large monorepos.
+ecosystems:
+  - npm
+  - PyPI
+  - Go
+  - crates.io
+  - RubyGems
+  - Packagist
+  - Maven
+
+# Reachability heuristic — mark `low_reachability` on findings whose package
+# appears nowhere in the source tree.
+reachability:
+  enabled: true

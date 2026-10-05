@@ -1,0 +1,25 @@
+<idea-plugin>
+  <id>io.pencheff.jetbrains</id>
+  <name>Pencheff</name>
+  <vendor email="balasriharsha.ch@gmail.com" url="https://github.com/BalaSriharsha-Ch/pencheff">
+    Pencheff
+  </vendor>
+
+  <description><![CDATA[
+    Inline security findings from the Pencheff agent — SCA, SAST, DAST,
+    LLM red team — surfaced as IntelliJ inspections via LSP. Run
+    <code>pencheff scan</code> in your terminal (or let CI publish), and
+    findings appear inline in the editor.
+  ]]></description>
+
+  <depends>com.intellij.modules.platform</depends>
+  <depends>com.redhat.devtools.lsp4ij</depends>
+
+  <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
+    <server id="pencheff-lsp"
+            name="Pencheff"
+            factoryClass="io.pencheff.jetbrains.PencheffLanguageServerFactory"/>
+    <languageMapping language="any"
+                     serverId="pencheff-lsp"/>
+  </extensions>
+</idea-plugin>

@@ -1,0 +1,18 @@
+# ml_scan known-vuln advisories. Matched by `format_match` (regex over artifact
+# fmt). Refreshable; sources are dated/primary (spec 2026-06-17 §10).
+- id: keras-safe-mode-bypass
+  title: "Keras safe_mode bypass family (Lambda / H5 / torch fallback code exec)"
+  format_match: "^(hdf5|keras_zip)$"
+  severity: high
+  cwe: CWE-502
+  cve: "CVE-2025-1550"
+  description: >
+    Keras model loading has multiple safe_mode bypasses allowing arbitrary code
+    execution via Lambda layers, legacy H5 deserialization, or torch-backend
+    fallback (CVE-2025-1550 / 8747 / 9905 / 9906 / 49655). H5 does not honor
+    safe_mode at all.
+  remediation: >
+    Upgrade Keras to a patched release, never load untrusted models, prefer
+    safetensors, and avoid legacy H5.
+  reference: "https://nvd.nist.gov/vuln/detail/CVE-2025-1550"
+  cvss: 7.8

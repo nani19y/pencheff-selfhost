@@ -1,0 +1,191 @@
+---
+title: AI target scanning — MCP, Agent, RAG & Voice
+---
+
+# AI target scanning — MCP, Agent, RAG & Voice
+
+The [LLM red team](/features/llm-redteam) treats a chat-completions
+endpoint as the asset. But an AI system is more than its chat endpoint:
+it has MCP servers, autonomous agents, retrieval pipelines, and voice
+front-ends — each with its own attack surface. Pencheff registers these
+as **distinct target kinds**, each with a dedicated scanner rather than
+a one-size-fits-all prompt suite.
+
+In **Register Target → AI & LLM Security** you'll see them as separate
+cards:
+
+| Card | `Target.kind` | What it scans |
+| --- | --- | --- |
+| LLM Endpoint | `llm` | Chat endpoints — see [LLM red team](/features/llm-redteam) |
+| MCP Server | `mcp` | Model Context Protocol servers (HTTP SSE or stdio) |
+| AI Agent | `agent` | An AI agent via HTTP adapter or browser UI |
+| RAG / Vector DB | `rag` | Retrieval systems & vector databases |
+| ML Model / Pipeline | `ml_model` | Model artifacts (static-only) |
+| Voice / Speech AI | `voice` | STT / TTS / voice-bot / voice-auth endpoints |
+| Agent Memory / Vector Store | `memory` | Stored memory items — see [Memory scanner](/features/memory-scanner) |
+
+MCP and AI Agent are **separate kinds**: an MCP server exposes a tool
+manifest you enumerate and analyze statically; an AI agent is a
+conversational endpoint you probe adversarially. Each has its own
+consent action and scanner path.
+
+Every dynamic (live-call) technique below is **consent-gated** — the
+operator's written authorization and the relevant opt-in flag must be
+present before any tool is invoked, document is written, or audio is
+submitted.
+
+## MCP Server (`kind = "mcp"`)
+
+The MCP scanner connects to the server, enumerates its tools / resources
+/ prompts into a normalized manifest, then runs:
+
+**Static analyzers (always-on, manifest-only — no tool calls):**
+
+| Technique | Detects |
+| --- | --- |
+| `mcp:line-jumping` | Imperative/override instructions in tool descriptions (injected at `tools/list`, before any call) |
+| `mcp:hidden-content` | Zero-width / bidi / Unicode-tag characters smuggled into metadata |
+| `mcp:excessive-agency` | Dangerous capabilities (exec/shell/delete/payment) in tool surface |
+| `mcp:tool-shadowing` | Duplicate or privileged-builtin tool names |
+| `mcp:tool-poisoning` | Instruction-override phrasing in descriptions |
+| `mcp:rug-pull` | Embedded/hidden-directive phrasing (mutable instruction content) |
+| `mcp:toxic-flow` | Lethal trifecta — untrusted-input + private-data + egress tools together (CWE-441) |
+| `mcp:secrets-exposure` | API keys / tokens / private-key headers in resource contents or schema examples |
+| `mcp:over-broad-scope` | Wildcarded / dangerously-broad capability scopes |
+| `mcp:sensitive-resource` | `.env`, `id_rsa`, credential-shaped resource URIs |
+
+One analyzer raising never aborts the pass. Findings carry
+`metadata.technique = "mcp:<name>"`.
+
+**Dynamic techniques (gated by `dynamic_invocation`):**
+
+- `mcp:param-injection` — command / traversal / SSRF fuzzing of tool
+  parameters.
+- `mcp:result-injection` — a unique marker that, if reflected back in a
+  tool **result**, would inject the calling LLM.
+- `mcp:destructive-no-consent` — only when `destructive_opt_in`: a
+  benign, clearly-marked call to a destructive-classified tool to detect
+  execution without an elicitation/consent gate. Honors the allow/deny
+  lists and `max_calls` budget.
+
+Plus transport/auth CVE probes and a version fingerprint.
+
+## AI Agent (`kind = "agent"`)
+
+An agent endpoint is an LLM reached through a tool-using harness. Pick a
+source type:
+
+- `agent_http` — JSON request/response (with `request_template` /
+  `response_path` for custom shapes); built-in providers include
+  `sema4_agent` for the conversational create-conversation → post →
+  poll protocol.
+- `agent_browser` — Playwright drives a chat UI via selectors.
+
+The agent scanner runs a **curated OWASP-LLM red-team pass** through the
+shared runner — LLM01, LLM02, LLM04, LLM05, LLM06, LLM07 by default —
+with the `mcp` attack pack and jailbreak + crescendo strategies, plus
+lethal-trifecta (toxic-flow) static analysis over any advertised tools.
+Override the categories / strategies / payload budget per target:
+
+```yaml
+kind_config:
+  kind: agent
+  source_type: agent_http
+  provider: sema4_agent
+  redteam:
+    categories: [LLM01, LLM06]
+    strategies: [jailbreak, crescendo]
+    max_payloads: 36
+```
+
+Consent action: `agent_probe` (adversarial prompt probing — no data is
+modified on the target; only agent responses are captured).
+
+## RAG / Vector DB (`kind = "rag"`)
+
+Source types: `managed_vdb`, `self_hosted_vdb`, `rag_endpoint`,
+`embedding_artifact`.
+
+**Static analyzers (always-on):** unauthenticated-DB exposure,
+missing tenant-isolation (cross-tenant leak), secrets-at-rest,
+vec2text invertibility risk, **indirect-injection-at-rest** (already
+poisoned docs in the KB), **exfil-link-at-rest** (markdown links with
+data-carrying URLs), **retrieval-dominance** (keyword-stuffing /
+PoisonedRAG relevance hijack).
+
+**Dynamic probes (gated by `query_probes`):** datastore-extraction,
+membership-inference, cross-tenant canary. **Poison probes (also gated
+by `poison_injection_opt_in`, self-cleaning):** end-to-end KB-poisoning
+and **retrieval-hijack** (a doc engineered to dominate retrieval for
+unrelated queries). `rag_endpoint` targets additionally run a curated
+red-team pass (LLM01/02/04/09 default, overridable via
+`kind_config.redteam`) with the `rag` attack pack — poisoning,
+exfiltration (incl. markdown-link data-exfil), metadata-filter bypass,
+multi-chunk-split injection, reranker keyword-stuffing, source-attribution.
+
+## Voice / Speech AI (`kind = "voice"`)
+
+Source types: `stt_endpoint`, `voice_bot`, `tts_endpoint`, `voice_auth`.
+
+**Transport probes (always-on, best-effort):** unauthenticated exposure,
+audio-URL SSRF (OAST), oversized/malformed-audio resource abuse.
+
+**Dynamic probes (gated by `audio_probes`):**
+
+- `voice:transcription-injection` — cross-modal (audio) prompt injection,
+  iterated over a curated payload set.
+- `voice:ultrasonic-command` — DolphinAttack-style inaudible commands.
+- `voice:adversarial-audio` — transcription instability under bounded
+  perturbation.
+- `voice:auth-spoof` & `voice:replay-attack` (`voice_auth`) — synthetic
+  speaker acceptance and byte-identical replay without nonce/liveness
+  (CWE-294).
+- `voice:ssml-injection` & `voice:ssml-parse-abuse` (`tts_endpoint`) —
+  external `<audio src>` SSRF and malformed-SSML resource abuse.
+
+> **Note:** the v1 audio transport submits a synthesized carrier, not
+> real speech, so the cross-modal/ultrasonic/adversarial probes fire
+> fully against text-accepting / LLM-backed voice endpoints and are
+> dataset-ready for a real STT/TTS path; they flag fragility, not a
+> proven spoken-word exploit.
+
+## Agentic finding validator
+
+Scanners cast a wide net. After **every** AI scan (`llm` / `mcp` /
+`agent` / `rag` / `voice`) Pencheff automatically re-checks each finding
+and labels it genuine vs false positive — so a model that *refused* the
+attack isn't reported as exploited.
+
+**Standard validation** re-sends the finding's recorded attack to the
+live target and an LLM judge reads the actual response:
+
+- The target performing / disclosing the unsafe action → **genuine**
+  (`true_positive`).
+- The target refusing, deflecting, or not doing the unsafe thing →
+  **false positive**.
+- Unclear / empty → **inconclusive**.
+
+The judge uses the org's configured [LLM provider](/features/custom-llm-providers);
+when an org hasn't set one, it falls back to Pencheff's platform LLM, so
+validation always has a judge. Verdicts (with confidence + rationale +
+model) are recorded under the finding's `ai_triage.validation`.
+
+**Deep Validate** (manual trigger) drives the real-tools pentest agent
+to reproduce impact end-to-end; a working exploit returns `genuine` with
+a PoC, while no exploit is reported honestly as *inconclusive* (never
+"proof of safety").
+
+AI-validated false positives stay **visible in the assessment**, clearly
+labeled `false positive` (not hidden), and are excluded from the grade —
+they neither disappear nor hurt your score. DAST findings re-validate
+through the exploit recheck path instead of the LLM judge.
+
+## See also
+
+- [LLM red team](/features/llm-redteam) — the chat-endpoint scanner and
+  the add-on attack packs (bias / RAG / MCP / coding-agent) that also
+  load into LLM-endpoint scans.
+- [Memory scanner](/features/memory-scanner) — `kind="memory"` stored-item
+  secret + poisoning scan.
+- [Custom LLM providers](/features/custom-llm-providers) — configure the
+  org judge / attacker model.

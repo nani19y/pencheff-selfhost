@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pencheff-admission.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "pencheff-admission.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "pencheff-admission.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "pencheff-admission.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "pencheff-admission.fullname" . }}
+      containers:
+        - name: pencheff-admission
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --addr=:8443
+            - --tls-cert=/etc/pencheff/tls/tls.crt
+            - --tls-key=/etc/pencheff/tls/tls.key
+            - --pencheff-api={{ .Values.pencheffApi.url }}
+            - --fail-open={{ .Values.failOpen }}
+          {{- if .Values.pencheffApi.tokenSecretName }}
+          env:
+            - name: PENCHEFF_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.pencheffApi.tokenSecretName }}
+                  key: {{ .Values.pencheffApi.tokenSecretKey }}
+          {{- end }}
+          ports:
+            - containerPort: 8443
+              name: https
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/pencheff/tls
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8443
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8443
+              scheme: HTTPS
+            initialDelaySeconds: 2
+            periodSeconds: 10
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.secretName }}

@@ -1,0 +1,22 @@
+title: Brute Force / Password Spraying (T1110)
+id: pencheff-t1110-{{rule_uuid}}
+status: experimental
+description: Many failed logons followed by a successful logon — possible brute force or spray.
+references:
+  - https://attack.mitre.org/techniques/T1110/
+tags:
+  - attack.credential_access
+  - attack.t1110
+logsource:
+  product: windows
+  service: security
+detection:
+  failed:
+    EventID: 4625
+  success:
+    EventID: 4624
+  timeframe: 5m
+  condition: '| count(failed) by Account > 20 followed by success by Account'
+falsepositives:
+  - Help-desk reset workflows
+level: high

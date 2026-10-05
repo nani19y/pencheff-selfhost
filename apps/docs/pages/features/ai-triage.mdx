@@ -1,0 +1,80 @@
+---
+title: Triage 2.0
+---
+
+# Triage 2.0
+
+Per-finding walkthrough that explains **why a finding is exploitable**,
+the blast radius, a concrete attack scenario, and a remediation outline.
+Structured JSON output cached on the row.
+
+This is Pro-tier. The deterministic finding, evidence, and remediation
+guidance below it remain free.
+
+## What you get
+
+Each call returns five fields:
+
+| Field | What's inside |
+| --- | --- |
+| `walkthrough` | Markdown narrative — ≤ 300 words explaining how the issue happens, anchored on the prompt's evidence. |
+| `exploit_scenario` | Numbered attack steps a developer can read end-to-end. |
+| `blast_radius` | One paragraph of impact: what an attacker gets if this lands. |
+| `fix_outline` | Prose remediation plan (the actual code patch lives in the [auto-fix](/features/auto-fix) flow). |
+| `confidence` | `low` / `medium` / `high` — self-rated confidence given the evidence. |
+
+The walkthrough is anchored on the **live evidence** Pencheff has
+already collected (DAST request/response, taint trace, EPSS/KEV/SSVC
+priority, reachability classification) — not on generic OWASP
+boilerplate.
+
+## Trigger from the dashboard
+
+Open any finding detail page → scroll to **§ Triage** → click
+**Run triage**. The first call takes ~10–30s and persists the result;
+subsequent reloads serve the cached version. Click **Regenerate** to
+force a fresh call.
+
+## Trigger from the API
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $JWT" \
+  -H "X-Workspace-Id: $WS" \
+  http://localhost:8000/findings/<finding_id>/triage
+```
+
+Add `?force=true` to bust the cache.
+
+## Configuration
+
+The triage backend reuses the same operator-supplied credentials as the
+auto-fix proposer (`FIX_LLM_API_KEY`). See [Auto-fix PRs](/features/auto-fix)
+for setup.
+
+## Tier gating
+
+The endpoint returns `402 Payment Required` for orgs on the free plan.
+Upgrade to Pro to enable. The button on the finding detail page is
+labelled **Pro · Run triage** and disabled when the org is free —
+no surprise charges.
+
+## Failure modes
+
+| Status | Cause | What to do |
+| --- | --- | --- |
+| 402 | Free plan | Upgrade to Pro |
+| 502 | Upstream call failed (rate-limit, network, parse error) | Click **Retry** in the panel |
+| 503 | Triage credentials not configured | Set the key and restart the API |
+
+Failed calls are not cached — only successful walkthroughs land in
+`ai_triage`.
+
+## What's tested
+
+```bash
+cd apps/api && uv run pytest tests/test_triage_llm.py
+```
+
+10 unit tests cover JSON parsing, code-fence stripping, malformed
+responses, and the "disabled when no API key" path.

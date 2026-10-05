@@ -1,0 +1,39 @@
+---
+title: Assets (ASM) API
+---
+
+# Assets API
+
+Backing the [Attack Surface Management](/features/asm) dashboard.
+
+## `GET /assets`
+
+List all assets for the current org. Filter by `?asset_type=subdomain`.
+
+## `POST /assets/discover`
+
+Kick off a passive discovery job for a root domain.
+
+```json
+{ "root_domain": "example.com" }
+```
+
+Returns `{ "status": "queued", "org_id": "...", "root_domain": "..." }`
+and fires a Celery task.
+
+## `DELETE /assets/{id}`
+
+Remove a discovered asset (e.g. decommissioned).
+
+## Asset shape
+
+```typescript
+type Asset = {
+  id: string;
+  type: "domain" | "subdomain" | "ip" | "port" | "url" | "cert" | "tech";
+  value: string;
+  meta: Record<string, unknown> | null;
+  first_seen: string;
+  last_seen: string;
+};
+```

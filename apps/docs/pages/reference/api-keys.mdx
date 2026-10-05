@@ -1,0 +1,328 @@
+---
+title: API keys (PENCHEFF_API_KEY)
+---
+
+# API keys
+
+`PENCHEFF_API_KEY` tokens give scripts, CI pipelines, and scheduled jobs
+programmatic access to the Pencheff API without holding a Clerk session.
+
+Each key is **always pinned to one organisation** and may additionally be
+pinned to a single workspace. Permissions are granted as a list of
+fine-grained `category:action` scopes — a key can only call endpoints
+whose required scope it holds.
+
+## Key format
+
+```
+pcf_live_<43+ url-safe base64 chars>
+```
+
+The first eight characters after `pcf_live_` form the lookup *prefix*
+displayed in the dashboard (`pcf_live_aB3xZ9k1…`). The full secret is
+shown **once** at creation — copy it then; it cannot be recovered.
+
+## Creating a key
+
+In the dashboard: **Settings → API keys → New key**. Programmatically (a
+session-only endpoint — you must be signed in):
+
+```bash
+curl -X POST https://api.pencheff.com/api/v1/api-keys \
+  -H "Authorization: Bearer $CLERK_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "GitHub Actions — production CI",
+    "org_id": "org_01H...",
+    "workspace_id": "ws_01H...",
+    "scopes": ["scans:write", "findings:read", "reports:export"],
+    "expires_at": "2027-05-07T00:00:00Z"
+  }'
+```
+
+Response:
+
+```json
+{
+  "id": "ak_01H...",
+  "name": "GitHub Actions — production CI",
+  "key": "pcf_live_aB3xZ9k1...43chars...",
+  "prefix": "aB3xZ9k1",
+  "org_id": "org_01H...",
+  "workspace_id": "ws_01H...",
+  "scopes": ["findings:read", "reports:export", "scans:write"],
+  "effective_scopes": ["findings:read", "reports:export", "scans:write"],
+  "expires_at": "2027-05-07T00:00:00Z",
+  "created_at": "2026-05-07T22:14:00Z"
+}
+```
+
+The `key` field is **only present in the create response**. Save it now.
+
+## Using a key
+
+Send it as a bearer token. The `Authorization` header is the only
+accepted location — query-string `?token=` is rejected for keys (URLs
+leak into logs and browser history).
+
+```bash
+export PENCHEFF_API_KEY="pcf_live_aB3xZ9k1...43chars..."
+
+curl https://api.pencheff.com/scans \
+  -H "Authorization: Bearer $PENCHEFF_API_KEY"
+```
+
+The active workspace is read from the key's pin. If the key is
+*workspace-scoped*, requests with a conflicting `X-Workspace-Id` header
+are rejected with **403**. If the key is *org-scoped only*
+(`workspace_id: null`), every request must include `X-Workspace-Id` and
+the workspace must belong to the key's org.
+
+## Interactive API explorer (Swagger UI)
+
+Every endpoint is browsable and testable in your browser at
+[`https://api.pencheff.com/docs`](https://api.pencheff.com/docs) (Swagger UI).
+[`/redoc`](https://api.pencheff.com/redoc) and the raw
+[`/openapi.json`](https://api.pencheff.com/openapi.json) are served too.
+
+To exercise calls with your key:
+
+1. Click **Authorize** (top right).
+2. Paste a `pcf_live_…` key into **PencheffApiKey** — it is sent as
+   `Authorization: Bearer <key>`.
+3. For an **org-scoped** key, also set **WorkspaceId** (the `X-Workspace-Id`
+   header). Leave it blank for a workspace-pinned key.
+4. Expand any endpoint → **Try it out** → fill parameters → **Execute**.
+
+### Finding your workspace id
+
+Only org-scoped keys (`workspace_id: null`) need this. Two ways:
+
+- **Pin the key instead.** Create the key against a specific workspace at
+  **Settings → API keys**; then the workspace is forced and you never send
+  `X-Workspace-Id`.
+- **Ask the API.** `GET /workspaces` needs only the key (no workspace
+  header). In Swagger: Authorize, then run **`GET /workspaces` → Try it out**
+  and copy the `id` of the workspace you want.
+
+  ```bash
+  curl https://api.pencheff.com/workspaces \
+    -H "Authorization: Bearer $PENCHEFF_API_KEY"
+  # → [{ "id": "ws_…", "org_id": "org_…", "name": "Default", "slug": "default" }, …]
+  ```
+
+The docs page is public, but every call still requires a valid key, and a key
+only reaches the scopes and workspace it was granted.
+
+## Permission model
+
+### Default-deny
+
+API-keyed requests are rejected by default on every endpoint that does
+not explicitly declare a required scope. There is **no fallback to "all
+permissions"** — even a key with `*:*` cannot reach an endpoint that
+opts out of API-key access.
+
+### Session-only endpoints
+
+A separate set of endpoints rejects API-keyed requests outright (HTTP
+**403**). These never accept a key, regardless of scopes:
+
+| Category    | Reason                                                              |
+| ----------- | ------------------------------------------------------------------- |
+| api-keys    | A leaked key cannot mint more keys                                  |
+| auth        | Sign-in / signup / onboarding                                       |
+| billing     | Stripe customer state, plan changes                                 |
+| branding    | Workspace branding                                                  |
+| orgs        | Member roles, invites, org settings                                 |
+| workspaces  | Workspace creation / rename                                         |
+
+### Org-wide vs. workspace-scoped keys
+
+- **`workspace_id: null`** — the key acts on any workspace in its org.
+  The caller still has to pass `X-Workspace-Id` to pick one per request.
+  **Only org owners and admins** may mint these.
+- **`workspace_id: <id>`** — the key is pinned to that workspace.
+  Any other `X-Workspace-Id` is rejected. Any user (member or above)
+  in the org may mint these for workspaces they belong to.
+
+### Membership re-check
+
+Every request re-validates that the issuing user is still a member of
+the key's org. If an admin removes the user from the org, all of that
+user's keys for that org **stop working immediately** — there is no
+cache.
+
+## Scope catalog
+
+Wildcards are supported when granting:
+
+- `scans:*`        — both read and write on scans
+- `*:read`         — read everything that exposes a read scope
+- `*:*`            — every scope in the catalog (admin-equivalent)
+
+The matcher always normalises the *required* scope to the concrete form
+declared by the endpoint, so `scans:*` will satisfy `scans:write`.
+
+| Scope                    | What it grants                                                     |
+| ------------------------ | ------------------------------------------------------------------ |
+| `assets:read`            | List assets in the inventory                                       |
+| `assets:write`           | Trigger ASM discovery, modify or delete assets                     |
+| `comments:read`          | Read finding comments                                              |
+| `comments:write`         | Create or edit finding comments, assign findings, manage tags      |
+| `dashboard:read`         | Read dashboard metrics: heatmap, trend, KEV exposure, fix conversion |
+| `dependencies:read`      | Read SCA dependency data                                           |
+| `engagements:read`       | Read engagement metadata and unified findings                      |
+| `engagements:write`      | Create, close, or rotate engagement pairing codes                  |
+| `findings:read`          | List and read findings                                             |
+| `findings:write`         | Triage, recheck, suppress, reopen, change status                   |
+| `fix_proposals:read`     | Read fix proposal status, diffs, and usage stats                   |
+| `fix_proposals:write`    | Generate, apply, revert auto-fix proposals; bulk-fix               |
+| `integrations:read`      | Read integration configuration                                     |
+| `integrations:write`     | Create, modify, delete, or test integrations                       |
+| `intruder:read`          | Read intruder payload sets, attacks, and results                   |
+| `intruder:write`         | Create payload sets and run intruder attacks                       |
+| `notes:read`             | Read engagement notes                                              |
+| `notes:write`            | Create, modify, or delete engagement notes                         |
+| `proxy:read`             | Read proxy session state and per-scan history                      |
+| `proxy:write`            | Start or stop proxy sessions                                       |
+| `repeater:read`          | Read repeater tabs and saved responses                             |
+| `repeater:write`         | Create, modify, or send repeater requests                          |
+| `repos:read`             | Read repositories, repo scans, repo findings, repo SBOMs           |
+| `repos:write`            | Connect repos, trigger repo scans, generate SBOMs                  |
+| `reports:export`         | Generate reports (PDF, DOCX, HTML)                                 |
+| `reports:read`           | Read existing reports and download files                           |
+| `scans:read`             | List and read scans, get progress, view findings                   |
+| `scans:write`            | Initiate, configure, cancel, or rerun scans                        |
+| `schedules:read`         | Read scheduled scans                                               |
+| `schedules:write`        | Create, modify, or delete scheduled scans                          |
+| `sboms:read`             | Read SBOMs                                                         |
+| `targets:read`           | Read targets                                                       |
+| `targets:write`          | Create, modify, or delete targets                                  |
+| `traffic:read`           | Read recorded HTTP traffic                                         |
+| `traffic:write`          | Tag or modify traffic rows                                         |
+| `unified_findings:read`  | Read the unified-finding queue                                     |
+
+### Coverage matrix
+
+The default-deny dependency layer rejects API-keyed requests on any
+endpoint that doesn't explicitly declare a required scope. **Every
+scope listed above is wired into at least one HTTP endpoint.** All of
+the following routers participate:
+
+- `/scans/*`, `/findings/*`, `/targets/*`, `/reports/*`, `/assets/*`
+- `/integrations/*`, `/schedules/*`, `/engagements/*`
+- `/repos/*` (except `/repos/install-url` and `/repos/callback`,
+  which are GitHub App handshake endpoints — session-only)
+- `/sboms/*`, `/dependencies/*`
+- `/repeater/*`, `/intruder/*`, `/proxy/*`, `/traffic/*`
+- `/notes/*`, `/comments/*`, `/findings/{id}/assign`, `/findings/{id}/tags`
+- `/fix-proposals/*`, `/fix-tasks/*`, `/scans/{id}/fix-all`,
+  `/repo-scans/{id}/fix-all`, `/findings/{kind}/{id}/propose_fix`,
+  `/findings/{kind}/{id}/fix_proposal`, `/usage/fix-llm`
+- `/dashboard/*`
+- `/unified-findings/*`
+
+The current authoritative list is also available via:
+
+```bash
+curl https://api.pencheff.com/api/v1/api-keys/scopes \
+  -H "Authorization: Bearer $CLERK_JWT"
+```
+
+## Listing, updating, revoking
+
+```bash
+# List all your keys (does NOT return the secret)
+curl /api/v1/api-keys -H "Authorization: Bearer $CLERK_JWT"
+
+# Update name / scopes / expiry (cannot reissue the secret)
+curl -X PATCH /api/v1/api-keys/$ID \
+  -H "Authorization: Bearer $CLERK_JWT" \
+  -d '{"scopes": ["scans:read"]}'
+
+# Revoke (immediate; can't be undone)
+curl -X DELETE /api/v1/api-keys/$ID \
+  -H "Authorization: Bearer $CLERK_JWT"
+```
+
+Every create / update / revoke action is recorded in the `audit_logs`
+table tagged with the key ID for forensic traceability.
+
+## Plan limits
+
+A single user can hold up to **50 active (non-revoked) keys** across all
+their orgs. Revoke keys you no longer use to free a slot.
+
+## Recipes
+
+### CI/CD pipeline (read scans, export reports)
+
+Mint a workspace-pinned key with the minimum needed scopes:
+
+```json
+{
+  "name": "Buildkite — main",
+  "org_id": "org_01H...",
+  "workspace_id": "ws_prod",
+  "scopes": ["scans:write", "scans:read", "findings:read", "reports:export"],
+  "expires_at": "2027-05-07T00:00:00Z"
+}
+```
+
+The GitLab CI and Azure DevOps templates (`apps/gitlab-ci`,
+`apps/azure-devops`) currently run the local `pencheff` CLI, which does
+not call the hosted backend. If your pipeline talks to the hosted
+Pencheff API directly (custom curl steps, a thin internal CI agent,
+etc.), pass the key as the `Authorization: Bearer …` header — that is
+the only thing the API checks.
+
+### Read-only finding sync to a SIEM
+
+```json
+{
+  "name": "Splunk forwarder",
+  "org_id": "org_01H...",
+  "workspace_id": "ws_prod",
+  "scopes": ["findings:read", "unified_findings:read"],
+  "expires_at": null
+}
+```
+
+### One-org-many-workspaces automation
+
+Org admins can mint a single org-scoped key and let the caller pick the
+workspace at request time:
+
+```json
+{
+  "name": "ACME bot — fan-out scanner",
+  "org_id": "org_01H...",
+  "workspace_id": null,
+  "scopes": ["scans:write", "findings:read"]
+}
+```
+
+The script must then send `X-Workspace-Id` on every request:
+
+```bash
+curl https://api.pencheff.com/scans \
+  -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  -H "X-Workspace-Id: ws_staging"
+```
+
+## Security notes
+
+- Keys are stored as **SHA-256** of the full token. The plaintext is
+  shown only once at creation.
+- The full token has 256 bits of entropy from `secrets.token_urlsafe`,
+  so plain SHA-256 (no bcrypt) is sufficient — the comparison is still
+  constant-time (`hmac.compare_digest`).
+- Keys must be sent in the `Authorization` header. Query-string token
+  passing is rejected for `pcf_live_*` to keep secrets out of logs and
+  browser history.
+- A revoked key returns **401** on the very next request — there is no
+  TTL.
+- A leaked key exposes only what its scopes allow on its pinned org /
+  workspace. It cannot mint more keys, change billing, or modify org
+  membership.

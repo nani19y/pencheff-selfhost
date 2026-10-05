@@ -1,0 +1,115 @@
+---
+title: Tutorial — Android APK security scanning
+description: Static security analysis of an Android APK/AAB — manifest, exported components, hardcoded secrets, weak crypto, and cleartext traffic, mapped to OWASP MASVS. No device or emulator.
+---
+
+import { Callout } from "nextra/components";
+
+# Tutorial: Android APK security scanning
+
+Statically analyze a compiled Android app. You upload nothing to a
+device — Pencheff fetches the `.apk`/`.aab`, decompiles it, and inspects
+the bytecode, manifest, and resources, mapping findings to OWASP MASVS.
+
+## Scenario
+
+* **Artifact.** A release build, `app-release.apk`, hosted at a URL you
+  control (an S3 link, CI artifact URL, or internal file server).
+* **No source code.** Pencheff works on the compiled APK.
+* **No device.** Analysis is fully static — no emulator, no root.
+* **Goal.** A findings register (secrets, crypto, manifest misconfig,
+  cleartext) mapped to OWASP MASVS, ready for the dev team.
+
+## Inputs you need
+
+| Item | Where it goes |
+| --- | --- |
+| Artifact URL (`.apk` / `.aab`) | **Artifact URL** field |
+| SHA-256 of the file | **SHA-256** field — integrity gate |
+| MobSF enrichment (optional) | **Enrich with MobSF** toggle (needs a MobSF server on the worker) |
+
+Compute the digest locally before you register:
+
+```bash
+shasum -a 256 app-release.apk
+# 3f1c…  app-release.apk   ← paste the 64-char hex into the SHA-256 field
+```
+
+## Time budget
+
+| Phase | Wall time |
+| --- | --- |
+| Fetch + verify + decompile | 1–3 min |
+| Static modules (manifest, secrets, crypto) | 1–3 min |
+| **Total** | **~5 min** |
+
+## Steps
+
+### 1. Register the target
+
+Open [`app.pencheff.com`](https://app.pencheff.com) → **Register
+target** → **Mobile & Client Security** → **Android Application**, then:
+
+* **Name** — `Acme Android — release`
+* **Artifact URL** — `https://builds.acme.com/app-release.apk`
+* **SHA-256** — the digest from above
+
+<Callout type="info">
+  The download is **rejected** unless the file's SHA-256 matches what you
+  entered. This pins the exact build and stops a moved/replaced URL from
+  silently scanning the wrong artifact.
+</Callout>
+
+The artifact host is auto-allowlisted from the URL you register; the
+file is fetched into an isolated, no-execute working directory.
+
+### 2. Run the scan
+
+From the target page, click **Commission scan** (the `standard`
+profile is fine — mobile static analysis is single-stage). Pencheff:
+
+1. Downloads the APK and verifies its SHA-256.
+2. Decompiles it with `apktool` (resources + manifest) and `jadx` (Java).
+3. Runs the manifest, secrets, and crypto modules.
+
+The app is **never installed or executed**.
+
+### 3. Read the findings
+
+Findings land in the unified stream, tagged by category:
+
+| Category | Examples |
+| --- | --- |
+| `mobile_misconfig` | `android:debuggable="true"`, `allowBackup`, exported components without permissions, cleartext-traffic config |
+| `mobile_secrets` | AWS/Google/Firebase keys, tokens, private keys hardcoded in the bytecode |
+| `mobile_crypto` | DES/RC4/ECB, MD5/SHA-1, hardcoded keys/IVs, `java.util.Random` for security |
+| `mobile_communication` | cleartext `http://` endpoints |
+
+Each finding carries a severity, CWE, CVSS, the manifest key or file it
+came from, and OWASP MASVS-aligned remediation.
+
+### 4. (Optional) Enrich with MobSF
+
+Re-register (or edit) with **Enrich with MobSF** enabled to add a MobSF
+REST pass on top of the first-party sweep — requires a MobSF server and
+`MOBSF_API_KEY` configured on the worker.
+
+## Deliverable
+
+A findings register you can export (DOCX/JSON/CSV) and hand to the
+mobile dev team, with every issue mapped to OWASP MASVS and CWE.
+
+## What static analysis does and doesn't cover
+
+Static analysis fully covers secrets, weak crypto, cleartext, permissions,
+and debuggable/backup flags. The *exploitability* half of some checks
+(cert-pinning bypass, real on-disk data leakage, deeplink exploitation)
+needs runtime instrumentation on a device — out of scope for this static
+pass. See the [Mobile Application Security](/features/mobile-security)
+feature page for the full check matrix.
+
+## Next
+
+* [Tutorial: iOS IPA scanning](/tutorials/ios-ipa-scanning)
+* [Tutorial: Browser extension scanning](/tutorials/browser-extension-scanning)
+* [Mobile Application Security](/features/mobile-security) — the feature reference.

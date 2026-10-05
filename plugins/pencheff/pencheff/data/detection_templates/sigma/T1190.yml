@@ -1,0 +1,27 @@
+title: Possible Exploit of Public-Facing Application (T1190)
+id: pencheff-t1190-{{rule_uuid}}
+status: experimental
+description: Detect anomalous request patterns indicative of T1190 against {{target}}.
+references:
+  - https://attack.mitre.org/techniques/T1190/
+author: pencheff
+date: {{generated_date}}
+tags:
+  - attack.initial_access
+  - attack.t1190
+logsource:
+  category: webserver
+detection:
+  selection:
+    cs-method: ['POST', 'PUT', 'PATCH']
+    cs-uri-stem|contains:
+      {{indicator_paths}}
+  filter:
+    sc-status:
+      - 200
+      - 302
+  condition: selection and filter
+falsepositives:
+  - Legitimate API traffic
+  - Authorized scanner traffic from declared scope
+level: high

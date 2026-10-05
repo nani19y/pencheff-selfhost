@@ -1,0 +1,77 @@
+---
+title: Splunk HEC
+---
+
+# Splunk HEC integration
+
+Pencheff sends every finding as an HEC event with sourcetype
+`pencheff:finding` so it indexes cleanly alongside your other security
+telemetry.
+
+## Setup
+
+1. In Splunk: **Settings → Data inputs → HTTP Event Collector → New Token**.
+2. Allow `_json` source type, assign to your security index.
+3. Copy the token and HEC URL (e.g.
+   `https://splunk.example.com:8088/services/collector/event`).
+4. In Pencheff: **Dashboard → Integrations → Connect → Splunk**. Paste
+   both, save.
+
+## Via API
+
+```http
+POST /integrations
+{
+  "kind": "splunk",
+  "name": "prod-splunk",
+  "severity_filter": "medium",
+  "config": {
+    "hec_url": "https://splunk.example.com:8088/services/collector/event",
+    "token":   "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  }
+}
+```
+
+## Via MCP
+
+```text
+export_to_splunk(session_id=sid, hec_url="...", token="...")
+```
+
+## Event shape
+
+Each HEC line is an event:
+
+```json
+{
+  "time": 1729516423.5,
+  "sourcetype": "pencheff:finding",
+  "source": "pencheff",
+  "host": "pencheff",
+  "event": {
+    "id": "...",
+    "title": "...",
+    "severity": "critical",
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/...",
+    "category": "injection",
+    "owasp": "A03: Injection",
+    "endpoint": "https://example.com/...",
+    "evidence": [...],
+    "remediation": "...",
+    "compliance": { "PCI-DSS": ["6.5.1"], ... }
+  }
+}
+```
+
+## Splunk query examples
+
+```spl
+# Top targets by severity
+sourcetype=pencheff:finding event.severity IN ("critical","high")
+| stats count by event.endpoint
+
+# Critical findings over time
+sourcetype=pencheff:finding event.severity=critical
+| timechart count by event.owasp
+```

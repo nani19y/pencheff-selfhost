@@ -1,0 +1,14 @@
+# Security response headers for both Cloudflare Pages projects
+# (pencheff.com + app.pencheff.com). Cloudflare Pages serves these from
+# out/_headers. x-content-type-options and referrer-policy are already
+# set upstream, so only the missing four are added here.
+#
+# CSP is intentionally minimal: frame-ancestors (clickjacking) +
+# upgrade-insecure-requests only. No script-src/default-src, so it cannot
+# break the Clerk-auth Next.js app. Harden with a script policy later
+# behind report-only testing.
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Frame-Options: SAMEORIGIN
+  Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
+  Content-Security-Policy: frame-ancestors 'self'; upgrade-insecure-requests

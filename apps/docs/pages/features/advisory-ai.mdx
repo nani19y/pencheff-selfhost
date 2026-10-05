@@ -1,0 +1,69 @@
+---
+title: Advisory AI enrichment
+---
+
+# Advisory AI enrichment
+
+Pencheff's vulnerability data layer aggregates OSV.dev, NVD, EPSS,
+CISA KEV, RustSec, GoVulnDB, and (Phase 1.1b+) ecosystem-specific +
+distro feeds. The advisory AI service sits on top of that aggregator
+and produces a per-advisory **exploit walkthrough** + **fix recipe**
+on demand — cached, provenance-logged, trained only on permissively-
+licensed data.
+
+## What you get
+
+For every CVE / advisory id you ask about, the API returns:
+
+| Field | Source |
+| --- | --- |
+| Cached advisory body | OSV / RustSec / GoVulnDB depending on ecosystem |
+| NVD enrichment | CWE list, CPE URIs, NVD-issued CVSS v3.1, canonical advisory URL |
+| EPSS / KEV labels | FIRST EPSS daily score, CISA KEV active-exploitation flag |
+| AI exploit walkthrough | ≤ 300-word technical prose explaining how the bug is reachable |
+| AI fix recipe | ≤ 200-word ordered remediation steps |
+| Reachability signals | ≤ 6 short strings (function names / config tokens / call patterns) for code-search |
+| Provenance trail | Every input URL + license + retrieval timestamp, model id, prompt version, output hash |
+
+The AI output is cached by content hash on the SQLite feed cache,
+so repeat requests for the same advisory don't re-bill the LLM.
+Bumping the prompt version invalidates by changing the hash
+automatically.
+
+## Endpoints
+
+| Method | Path | Scope | Returns |
+| --- | --- | --- | --- |
+| `GET` | `/advisories/{id}` | `dependencies:read` | Full advisory + NVD + EPSS / KEV + AI enrichment + provenance |
+| `GET` | `/advisories?package=&ecosystem=` | `dependencies:read` | List of advisories that affect `package` in `ecosystem` (one row per match) |
+
+## Web UI
+
+`/advisories/{id}` renders:
+
+* Header pills — severity, CISA KEV flag, EPSS percentile, NVD CVSS,
+  upstream license.
+* **§ AI Walkthrough** card — markdown-rendered exploit walkthrough
+  + fix recipe + reachability-signal list. Marked `cached` /
+  `fresh` per request, with the model id and prompt version
+  visible.
+* **§ NVD enrichment** card — CWE chips, CPE list, primary URL.
+* **§ Provenance** card — every AI run recorded as a JSONL row with
+  the model, hashes, and source URLs / licenses.
+
+## License posture
+
+The AI synthesis pipeline accepts only permissively-licensed inputs
+(MIT, Apache-2.0, BSD-2/3, ISC, CC0, public domain, plus CC-BY-4.0
+where attribution is preservable). Each consumed source's license is
+recorded on the per-output JSONL so the audit trail can answer
+*"where did this walkthrough come from?"* for any single line.
+
+The output ships under MIT — same as Pencheff itself.
+
+## Source
+
+* Service — [`apps/api/.../services/advisory_ai.py`](https://github.com/Magadha-IG/pencheff/blob/main/apps/api/pencheff_api/services/advisory_ai.py)
+* Router — [`apps/api/.../routers/advisories.py`](https://github.com/Magadha-IG/pencheff/blob/main/apps/api/pencheff_api/routers/advisories.py)
+* Feed registry the synthesiser reads from —
+  [`plugins/.../core/feeds/`](https://github.com/Magadha-IG/pencheff/tree/main/plugins/pencheff/pencheff/core/feeds)

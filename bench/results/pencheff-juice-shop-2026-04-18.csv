@@ -1,0 +1,23 @@
+scanner,target,severity,cwe,title,url,confidence,verified
+pencheff,juice-shop,high,CWE-525,Web Cache Deception Vulnerability,http://host.docker.internal:3001/nonexistent.css,high,true
+pencheff,juice-shop,high,CWE-319,Site Not Using HTTPS,http://host.docker.internal:3001,high,true
+pencheff,juice-shop,info,,Browser Crawl Complete,http://host.docker.internal:3001,high,true
+pencheff,juice-shop,info,CWE-79,Missing Security Header: x-xss-protection,http://host.docker.internal:3001,high,true
+pencheff,juice-shop,low,CWE-200,Missing Security Header: referrer-policy,http://host.docker.internal:3001,high,true
+pencheff,juice-shop,low,CWE-16,Missing Security Header: permissions-policy,http://host.docker.internal:3001,high,true
+pencheff,juice-shop,low,CWE-290,Missing DMARC Record,host.docker.internal,high,true
+pencheff,juice-shop,low,CWE-290,Missing SPF Record,host.docker.internal,high,true
+pencheff,juice-shop,medium,CWE-770,No Rate Limiting on Sensitive Endpoint,http://host.docker.internal:3001#/forgot-password,high,true
+pencheff,juice-shop,medium,CWE-770,No Rate Limiting on Sensitive Endpoint,http://host.docker.internal:3001#/register,high,true
+pencheff,juice-shop,medium,CWE-770,No Rate Limiting on Sensitive Endpoint,http://host.docker.internal:3001/login?return_to=https%3A%2F%2Fgithub.com%2Fjuice-shop%2Fjuice-shop,high,true
+pencheff,juice-shop,medium,CWE-770,No Rate Limiting on Sensitive Endpoint,http://host.docker.internal:3001/login?return_to=%2Fjuice-shop%2Fjuice-shop,high,true
+pencheff,juice-shop,medium,CWE-350,Missing Host Header Validation (DNS Rebinding Risk),http://host.docker.internal:3001,high,true
+pencheff,juice-shop,medium,CWE-319,Missing Security Header: strict-transport-security,http://host.docker.internal:3001,high,true
+pencheff,juice-shop,medium,CWE-1021,Missing Security Header: content-security-policy,http://host.docker.internal:3001,high,true
+pencheff,juice-shop,medium,CWE-942,CORS Wildcard Origin Allowed,http://host.docker.internal:3001,high,true
+pencheff,juice-shop,medium,CWE-307,No Account Lockout or Rate Limiting,http://host.docker.internal:3001#/login,high,true
+pencheff,juice-shop,medium,CWE-284,High-Risk Port Exposed: 5432 (PostgreSQL),host.docker.internal:5432,high,true
+pencheff,juice-shop,medium,CWE-521,Weak Password Accepted: 'password',http://host.docker.internal:3001/register,high,true
+pencheff,juice-shop,medium,CWE-650,HTTP Method Override Accepted,http://host.docker.internal:3001/redirect?to=https://github.com/juice-shop/juice-shop,high,true
+pencheff,juice-shop,medium,CWE-20,Server Error on Fuzz Input (json_object),http://host.docker.internal:3001/api/Challenges/?name=Score%20Board,high,true
+pencheff,juice-shop,medium,CWE-770,No Rate Limiting on Sensitive Endpoint,http://host.docker.internal:3001#/login,high,true

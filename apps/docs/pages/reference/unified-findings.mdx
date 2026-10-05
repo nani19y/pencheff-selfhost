@@ -1,0 +1,95 @@
+---
+title: Unified findings API
+---
+
+# Unified findings API
+
+The single sortable, filterable queue across **SAST + DAST + SCA + IaC
++ secrets** — the read endpoint behind the dashboard's
+[`/findings`](/features/findings-stream) page.
+
+## `GET /unified-findings`
+
+Returns a paginated, priority-ranked stream merged from the `findings`
+and `repo_findings` tables.
+
+### Query parameters
+
+| Param | Type | Notes |
+| --- | --- | --- |
+| `target_id` | uuid | Restrict to a single target. |
+| `source` | string (multi) | `sast` \| `dast` \| `sca` \| `iac` \| `secret`. Repeat the param to combine. |
+| `severity` | string | `critical` \| `high` \| `medium` \| `low` \| `info`. |
+| `reachability` | string | `exploited` \| `reachable` \| `present` \| `unknown`. |
+| `include_suppressed` | bool | default `false`. |
+| `limit` | int | 1–500, default 100. |
+| `offset` | int | default 0. |
+
+### Response
+
+```json
+{
+  "items": [
+    {
+      "id": "...",
+      "source": "dast",
+      "table": "findings",
+      "title": "SQL injection in /login",
+      "severity": "critical",
+      "risk_score": 88.5,
+      "reachability": "exploited",
+      "ssvc_decision": "act",
+      "epss": 0.95,
+      "kev": true,
+      "cwe_id": "CWE-89",
+      "owasp_category": "A03",
+      "location": "/login",
+      "package": null,
+      "fixed_version": null,
+      "suppressed": false,
+      "created_at": "2026-05-02T...Z",
+      "workspace_id": "...",
+      "target_id": "...",
+      "repository_id": null
+    }
+  ],
+  "total": 1247,
+  "limit": 100,
+  "offset": 0
+}
+```
+
+### Source mapping
+
+How each underlying row maps to a `source` label:
+
+| `source` | From `findings` rows where… | From `repo_findings` rows where… |
+| --- | --- | --- |
+| `dast`   | `category != "components"` | — |
+| `sca`    | `category == "components"` | `scanner` ∈ `osv`, `ghsa`, `pip-audit`, `npm-audit` |
+| `sast`   | — | `scanner` ∈ `semgrep`, `bandit`, `gosec`, `brakeman`, `eslint`, `treesitter:*`, `ruff`. Legacy `codeql` rows from pre-v0.7 scans still classify as SAST. |
+| `secret` | — | `scanner` ∈ `gitleaks`, `detect-secrets` |
+| `iac`    | — | `scanner` ∈ `trivy_iac`, `checkov` |
+
+### Sort order
+
+Server-side, stable across pages:
+
+```
+risk_score DESC NULLS LAST,
+severity_rank ASC,         -- critical=0, high=1, …
+created_at DESC
+```
+
+`risk_score` for legacy rows that pre-date the prioritisation engine
+falls back to a severity-based score so the merge still produces a
+deterministic order.
+
+### Drill-through
+
+`item.table` distinguishes which detail page applies:
+
+- `findings` — visit `/findings/<id>` (dashboard redirector resolves
+  `scan_id` and forwards to `/scans/<scan_id>/findings/<id>`).
+- `repo_findings` — visit the repo detail page at
+  `/repos/...`.

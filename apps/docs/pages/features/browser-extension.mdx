@@ -1,0 +1,67 @@
+---
+title: Browser Extension Security
+description: Static security analysis of Chrome, Firefox, and Edge extensions (CRX/XPI) — permission & CSP scoring, remote-code loading, DOM sinks, and hardcoded secrets. Never loaded in a browser.
+---
+
+import { Callout } from "nextra/components";
+
+# Browser Extension Security
+
+Pencheff statically analyzes browser extensions (Chrome/Edge `.crx`,
+Firefox `.xpi`, or a zipped unpacked extension). It strips the CRX header,
+unpacks the ZIP, and scores the manifest, scripts, and resources — the
+analysis the now-defunct CRXcavator pioneered, extended with modern
+exfiltration and obfuscation detection. The extension is **never loaded
+in a browser**.
+
+## Register a target
+
+Register a **Browser Extension** target under **Mobile & Client
+Security** with the artifact URL (`.crx`/`.xpi`/`.zip`) and its SHA-256,
+then commission a scan. Walkthrough:
+[Browser extension scanning](/tutorials/browser-extension-scanning).
+
+## What it tests
+
+| Area | Checks |
+|------|--------|
+| Permissions | Critical (`debugger`, `cookies`, `<all_urls>`, `proxy`) and sensitive (`tabs`, `nativeMessaging`, `management`, `history`, `downloads`) permission scoring |
+| Host access | Broad `host_permissions` / `<all_urls>` / `*://*/*` |
+| Manifest | Manifest V2 deprecation, weak `content_security_policy` (`unsafe-eval`/`unsafe-inline`/`http:`), broad `externally_connectable` |
+| Content scripts | Injection into all sites (broad `matches`) |
+| Code | Remote-code loading (`importScripts`/remote `<script src>` — banned in MV3), DOM sinks (`eval`, `new Function`, `.innerHTML`, `document.write`), external message handlers (`onMessageExternal`) |
+| Secrets | Hardcoded API keys, tokens, and private keys in the bundle |
+
+Findings are tagged `extension_misconfig` and `extension_secrets`, each
+with severity, CWE, the manifest key or script file, and remediation.
+
+<Callout type="warning">
+  **Remote-code loading** is the highest-severity pattern — it's the
+  supply-chain vector behind incidents like Cyberhaven (Dec 2024) and is
+  banned under Manifest V3. Pencheff flags any package that fetches and
+  executes code at runtime.
+</Callout>
+
+## How it works
+
+1. **Unpack** — CRX2/CRX3 header stripped to recover the ZIP (XPI is a
+   plain ZIP); extraction is guarded against zip-slip and zip bombs.
+2. **Manifest scoring** — `manifest.json` parsed for permission, host,
+   CSP, and `externally_connectable` risk.
+3. **Code scan** — bundled JS/HTML scanned for sinks, remote-code
+   loading, and external message handlers.
+4. **Secrets sweep** — regex over the bundle for hardcoded credentials.
+
+## MCP tool
+
+Exposed to MCP hosts as `scan_extension(session_id, extension_path)`.
+
+## Test targets
+
+Any public extension's `.crx` (fetch from the Chrome Web Store download
+endpoint) or a deliberately over-permissioned sample makes a good test.
+
+## See also
+
+* [Tutorial: Browser extension scanning](/tutorials/browser-extension-scanning)
+* [Desktop App Security](/features/desktop-app)

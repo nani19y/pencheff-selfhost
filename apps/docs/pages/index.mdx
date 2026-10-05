@@ -1,0 +1,76 @@
+---
+title: Pencheff Docs
+description: AI-native penetration testing — DAST, SCA, IaC, Network VA, continuous scanning, and compliance in one tool.
+---
+
+import { Cards } from "nextra/components";
+
+# Welcome to Pencheff
+
+> **Open beta.** Pencheff is in active beta — every feature is unlocked at
+> the **Free** tier today. **Pro** (coming soon) adds automated remediation
+> that fixes what it finds. **Team** is for organisations needing unlimited
+> scale and dedicated support — [contact us](mailto:hello@pencheff.com?subject=Pencheff%20Team%20enquiry).
+
+**Pencheff** is an autonomous penetration testing platform that blends a full DAST
+engine with software composition analysis, IaC misconfiguration scanning,
+host vulnerability assessment, continuous attack surface management, and a
+YAML-driven automation framework. Findings can be mapped to common compliance
+framework categories and wired into your chat / pager / SIEM of choice.
+
+You can also drive the entire engine **from your IDE over MCP** — connect
+Claude Code, Cursor, or Codex to `mcp.pencheff.com` to scan and fix repos with
+your editor's own model (handy when your plan's AI quota or credits are used up).
+See [MCP — drive Pencheff from your IDE](/features/mcp).
+
+<Cards>
+  <Cards.Card title="Drive Pencheff from your IDE (MCP)" href="/features/mcp" />
+  <Cards.Card title="Install & run your first scan" href="/getting-started/installation" />
+  <Cards.Card title="Quickstart — pick a target" href="/quickstart" />
+  <Cards.Card title="Tutorials — end-to-end" href="/tutorials" />
+  <Cards.Card title="Pencheff Studio (macOS) — download + setup" href="/desktop/install" />
+  <Cards.Card title="Explore scan features" href="/features/dast" />
+  <Cards.Card title="Cloud security targets" href="/features/cloud-security" />
+  <Cards.Card title="AI runtime protection (guardrails, firewall, traces)" href="/features/sentry" />
+  <Cards.Card title="Connect a GitHub repo and scan" href="/repos/connect" />
+  <Cards.Card title="Compliance mapping (per-scan)" href="/features/compliance-mapping" />
+</Cards>
+
+## What Pencheff is
+
+| Category | Covered by |
+| --- | --- |
+| **AI agent swarm** — parallel multi-agent scanning, 17 agents in 3 phases | `swarm` (default), `SWARM_ENABLED=false` to revert |
+| **AI runtime protection** — guardrail proxy, [agent firewall](/features/agent-firewall), [runtime traces](/features/runtime-traces), [memory scanner](/features/memory-scanner), provider-backed memory target registration, and local memory-file import | [`sentry`](/features/sentry) + `/proxy/{target}`, `/v1/memory/scan`, `/v1/traces` |
+| **Web DAST** — OWASP Top 10, exploit-first manual hacking | `scan_injection`, `scan_auth`, `scan_authz`, `scan_client_side`, `scan_advanced`, `test_endpoint`, `test_chain` |
+| **SCA + SBOM + license compliance** | `scan_dependencies`, `generate_sbom`, `check_licenses` |
+| **IaC + container scanning** | `scan_dockerfile`, `scan_kubernetes`, `scan_terraform`, `scan_helm`, `scan_container_image` |
+| **Cloud posture targets** — CSPM, CIEM, DSPM, serverless, edge/CDN, managed databases, and secrets metadata | `cloud_account`, `serverless_function`, `cloud_storage`, `load_balancer_cdn`, `cloud_database`, `secrets_manager` |
+| **Network VA** — host CVE + service misconfig assessment | `scan_host_vulns`, `scan_network_misconfig`, `scan_authenticated_host` |
+| **Passive proxy + parameter fuzzer + YAML automation** | `start_proxy`, `fuzz_parameter`, `run_policy` |
+| **Attack Surface Management** — continuous discovery, cert watch | `asm_discover`, `asm_diff`, `asm_cert_watch` |
+| **Scheduled / continuous scans** | `/schedules` API + dashboard |
+| **Integrations** — Slack, Teams, PagerDuty, Splunk, Opsgenie, Discord, webhooks, Jira, GitHub | `/integrations` API + dashboard |
+| **Compliance reports** — OWASP Top 10, PCI-DSS, NIST 800-53, SOC 2, ISO 27001, HIPAA | Findings mapped to framework categories |
+
+## Elevator pitch
+
+A scanner tells you _"HSTS header missing."_ Pencheff tells you _"I stole your
+admin session, dumped your database, and pivoted into your AWS account via the
+metadata service — here is the PoC, the CVSS, and the CISA-KEV flag."_
+
+It does both — automated breadth and elite manual depth — in one MCP + CLI
+tool that plugs straight into your IDE, CI/CD pipeline, or a scheduled
+agent.
+
+## Start here
+
+- **New to Pencheff?** → [Install & first scan](/getting-started/installation)
+- **Want a one-page rapid path?** → [Quickstart](/quickstart) (URL · LLM · Repo · SBOM · Compliance)
+- **Want an end-to-end walkthrough?** → [Tutorials](/tutorials)
+- **Registering AWS/Azure/GCP targets?** → [Cloud target registration](/tutorials/cloud-targets)
+- **Want a native Mac client?** → [Pencheff Studio (macOS)](/desktop/install) — download, sign in, scan locally
+- **Curious about the architecture?** → [Concepts](/getting-started/concepts)
+- **Integrating with CI?** → [GitHub Actions recipe](/ci-cd/github-actions)
+- **Mapping findings to controls?** → [Compliance mapping (per-scan)](/features/compliance-mapping)
+- **Writing a custom check?** → [Plugin SDK](/plugin-sdk/writing-modules)

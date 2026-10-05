@@ -1,0 +1,86 @@
+---
+title: Generic signed webhook
+---
+
+# Generic signed webhook
+
+Point Pencheff at any HTTPS endpoint — it will POST a JSON body of
+findings with an HMAC-SHA256 signature header so the receiver can
+verify authenticity.
+
+## Setup
+
+```http
+POST /integrations
+{
+  "kind": "webhook",
+  "name": "SOAR",
+  "severity_filter": "medium",
+  "config": {
+    "webhook_url": "https://soar.example.com/pencheff",
+    "hmac_secret": "<shared-secret-at-least-32-bytes>"
+  }
+}
+```
+
+## Via MCP
+
+```text
+send_webhook(
+  session_id=sid,
+  webhook_url="https://soar.example.com/pencheff",
+  hmac_secret="shared-secret",
+  severity_filter="medium"
+)
+```
+
+## Request body
+
+```json
+{
+  "tool": "pencheff",
+  "version": "1.0",
+  "metadata": {
+    "session_id": "a8f4...c2",
+    "target": "https://example.com"
+  },
+  "summary": { "critical": 2, "high": 5, "medium": 12 },
+  "findings": [{ /* Finding.to_dict() */ }]
+}
+```
+
+## Signature verification
+
+```http
+X-Pencheff-Signature: sha256=<hex-hmac>
+X-Pencheff-Timestamp: 1729516423
+```
+
+The signature is `HMAC-SHA256(hmac_secret, request_body_bytes)`.
+
+Python reference receiver:
+
+```python
+import hmac, hashlib
+
+def verify(body: bytes, sig_header: str, secret: bytes) -> bool:
+    prefix = "sha256="
+    if not sig_header.startswith(prefix):
+        return False
+    expected = hmac.new(secret, body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, sig_header[len(prefix):])
+```
+
+## Retry behaviour
+
+- 3 attempts total (initial + 2 retries)
+- Exponential backoff: 1.5s, 2.25s
+- Retries on `429` and any `5xx` status code
+- No retry on `4xx` (other than 429)
+
+## Use cases
+
+- Custom SOAR integrations (Tines, Torq, XSOAR, Swimlane, n8n)
+- Ticketing systems beyond GitHub / Jira
+- Internal event buses (SNS, PubSub, Kafka via a proxy)
+- Audit-log replication

@@ -1,0 +1,148 @@
+---
+title: Software Composition Analysis
+---
+
+# Software Composition Analysis (SCA)
+
+Pencheff's SCA module (`scan_dependencies`) parses dependency manifests,
+queries the **OSV.dev** vulnerability database, enriches each finding with
+**NVD** (CWE / CPE / NVD-issued CVSS), **EPSS** scores, and **CISA KEV**
+flags. Output is a native `Finding` — same CVSS, severity, remediation,
+and compliance mapping as every other scan.
+
+## Live data on every scan
+
+Every SCA scan pulls live CVE data:
+
+| Source        | When fetched                                                       |
+| ------------- | ------------------------------------------------------------------ |
+| OSV.dev       | Per-package query, re-fetched if cache is older than `PENCHEFF_OSV_TTL_HOURS` (default 24 h) |
+| NVD 2.0       | Per-CVE enrichment, re-fetched if cache is older than `PENCHEFF_NVD_TTL_DAYS` (default 14 d) |
+| EPSS feed     | Refreshed at scan start when older than `PENCHEFF_FEED_TTL_HOURS` (default 24 h) |
+| CISA KEV      | Refreshed alongside EPSS                                           |
+
+Set any TTL to `0` to force a live fetch on every scan
+(`PENCHEFF_OSV_TTL_HOURS=0 pencheff scan ...`). Set `NVD_API_KEY` to
+raise NVD's rate limit from 5/30 s to 50/30 s.
+
+The freshness layer **fails open**: a network failure during refresh
+falls back to the stale cached row rather than dropping findings.
+
+### Structured fields on findings
+
+Every SCA finding carries these fields on `Finding.metadata` so
+autofix, dashboard, and prioritisation can read them without parsing
+description text:
+
+```json
+{
+  "advisory_id": "CVE-2024-1234",
+  "ecosystem": "npm",
+  "package": "lodash",
+  "current_version": "4.17.20",
+  "fix_version": "4.17.21",
+  "epss": 0.42,
+  "epss_percentile": 0.95,
+  "kev": true,
+  "kev_short_desc": "Active exploitation in the wild",
+  "kev_due_date": "2024-02-01",
+  "cwe_ids": ["CWE-1321"],
+  "advisory_url": "https://nvd.nist.gov/vuln/detail/CVE-2024-1234",
+  "nvd_cvss_score": 8.6,
+  "nvd_cvss_vector": "CVSS:3.1/..."
+}
+```
+
+The canonical NVD URL is also promoted to position 0 of `references`
+so renderers (DOCX, PR comment, finding card) link to NVD before OSV.
+
+## Supported manifests
+
+| Ecosystem | Manifests parsed |
+| --- | --- |
+| npm | `package-lock.json`, `npm-shrinkwrap.json`, `package.json` |
+| PyPI | `requirements*.txt`, `pyproject.toml`, `poetry.lock` |
+| Go | `go.mod` |
+| Rust (crates.io) | `Cargo.lock` |
+| RubyGems | `Gemfile.lock` |
+| Packagist (PHP) | `composer.lock` |
+| Maven | `pom.xml` |
+
+The same parsers back `generate_sbom` (SPDX + CycloneDX) — see
+[SBOM generation](/features/sbom).
+
+## Reachability annotation
+
+Dep findings where the package isn't actually `import`ed / `require`d anywhere
+in the source tree get flagged with `verification_notes: "low_reachability:
+no imports detected"` so reporters can de-prioritise them.
+
+When `semgrep` is available on PATH, Pencheff uses a generated rule for the
+reachability pass instead of plain regex — faster and more accurate.
+
+The annotation feeds the [reachability classifier](/features/reachability):
+SCA findings without an import probe land as **Reachable**; ones flagged
+`low_reachability` drop to **Present**.
+
+## Auto-fix PRs
+
+Every SCA finding ships with a **Propose fix** button that opens a
+deterministic version-bump PR. Nine ecosystems supported, no LLM cost,
+no lockfile editing — see [Auto-fix PRs](/features/auto-fix#sca-deterministic-free-no-llm).
+
+## Example
+
+```bash
+# Scan every manifest under ./ and emit Findings for every vuln.
+python -c "
+import asyncio
+from pathlib import Path
+from pencheff.modules.sca.dependency_scan import DependencyScanModule
+from pencheff.core.session import create_session
+from pencheff.core.http_client import PencheffHTTPClient
+
+s = create_session('local:./')
+h = PencheffHTTPClient(s)
+findings = asyncio.run(DependencyScanModule().run(s, h, config={'path': '.'}))
+print(f'{len(findings)} findings')
+"
+```
+
+Via the MCP tool:
+
+```text
+scan_dependencies(session_id=sid, path='./', annotate_reachability=True)
+→ { findings_added: 42, total_findings_generated: 57, path: './' }
+```
+
+Via the CLI with the `sca` profile:
+
+```bash
+pencheff scan --profile sca --path ./ --output reports/
+```
+
+## License policy
+
+`check_licenses` complements the CVE scan with an SPDX-license policy pass:
+
+- **Default allowed:** MIT, Apache-2.0, BSD-2/3, ISC, Zlib, Python, LGPL-2.1/3.0, MPL-2.0, EPL-2.0
+- **Default denied:** GPL-2.0, GPL-3.0, AGPL-3.0, SSPL-1.0
+
+Override via `~/.pencheff/policies/license_policy.yaml`:
+
+```yaml
+allowed: [MIT, Apache-2.0, BSD-3-Clause]
+denied: [GPL-3.0, AGPL-3.0, SSPL-1.0]
+unknown_behavior: deny   # flag | allow | deny
+```
+
+## Pairing with `syft`
+
+If `syft` is on `PATH`, Pencheff will shell out to it for higher-fidelity
+SBOMs (better license detection, deeper transitive coverage). The CVE query
+still runs through OSV so the finding shape stays identical.
+
+## What's next
+
+- [SBOM generation](/features/sbom)
+- [CISA KEV + EPSS risk scoring](/features/epss-kev)

@@ -1,0 +1,197 @@
+# Pencheff deterministic tool-selection table.
+#
+# Keyed by (target_profile, objective). Each entry returns an ordered list of
+# tool candidates with confidence weights in [0, 1]. Higher confidence ⇒ tried
+# first. The orchestrator picks the first candidate whose binary is installed
+# (see fallbacks.yaml for graceful degradation).
+#
+# Sources:
+# - Each tool's own README / man page (cited inline).
+# - OWASP Web Security Testing Guide v4.2 (sequence templates).
+# - PTES "Vulnerability Analysis" and "Exploitation" sections.
+#
+# DO NOT consult any third-party orchestrator's source here — every entry must
+# be defensible from the cited tool's own docs.
+
+version: 1
+
+profiles:
+  # ─────────── Web target ───────────
+  web:
+    discovery:
+      - { tool: subfinder,    confidence: 0.95, ttl: 3600,  notes: "passive subdomain enum" }
+      - { tool: amass,        confidence: 0.90, ttl: 3600,  notes: "passive+active subdomain" }
+      - { tool: assetfinder,  confidence: 0.75, ttl: 3600 }
+      - { tool: httpx,        confidence: 0.95, ttl: 600,   notes: "live host probe" }
+      - { tool: katana,       confidence: 0.90, ttl: 1200,  notes: "JS-aware crawler" }
+      - { tool: hakrawler,    confidence: 0.75, ttl: 1200 }
+      - { tool: gau,          confidence: 0.85, ttl: 86400, notes: "wayback URLs" }
+      - { tool: waybackurls,  confidence: 0.80, ttl: 86400 }
+      - { tool: aquatone,     confidence: 0.70, ttl: 1200,  notes: "screenshots" }
+      - { tool: paramspider,  confidence: 0.80, ttl: 3600 }
+      - { tool: arjun,        confidence: 0.85, ttl: 600,   notes: "param discovery" }
+
+    surface_map:
+      - { tool: ffuf,         confidence: 0.90, ttl: 600 }
+      - { tool: feroxbuster,  confidence: 0.90, ttl: 600 }
+      - { tool: gobuster,     confidence: 0.85, ttl: 600 }
+      - { tool: dirsearch,    confidence: 0.75, ttl: 600 }
+      - { tool: dirb,         confidence: 0.50, ttl: 600 }
+
+    fingerprint:
+      - { tool: whatweb,      confidence: 0.85, ttl: 1800 }
+      - { tool: wafw00f,      confidence: 0.85, ttl: 3600 }
+      - { tool: nuclei,       confidence: 0.95, ttl: 1800,  notes: "tech-detection templates" }
+
+    injection:
+      - { tool: nuclei,       confidence: 0.95, ttl: 600,   notes: "high-signal template scan" }
+      - { tool: sqlmap,       confidence: 0.90, ttl: 1200,  notes: "SQLi only after parameter signal" }
+      - { tool: dalfox,       confidence: 0.90, ttl: 600,   notes: "XSS auto-exploit" }
+      - { tool: xsstrike,     confidence: 0.75, ttl: 600 }
+      - { tool: jaeles,       confidence: 0.70, ttl: 1200 }
+      - { tool: x8,           confidence: 0.65, ttl: 600,   notes: "hidden parameter brute" }
+      - { tool: commix,       confidence: 0.60, ttl: 600,   notes: "command injection" }
+      - { tool: tplmap,       confidence: 0.55, ttl: 600,   notes: "SSTI" }
+
+    auth:
+      - { tool: hydra,        confidence: 0.80, ttl: 600 }
+      - { tool: medusa,       confidence: 0.70, ttl: 600 }
+      - { tool: patator,      confidence: 0.55, ttl: 600 }
+
+    vuln_scan:
+      - { tool: nuclei,       confidence: 0.95, ttl: 600 }
+      - { tool: nikto,        confidence: 0.70, ttl: 1200 }
+      - { tool: wpscan,       confidence: 0.85, ttl: 3600,  notes: "wordpress only" }
+
+    tls:
+      - { tool: testssl,      confidence: 0.95, ttl: 86400 }
+      - { tool: sslyze,       confidence: 0.90, ttl: 86400 }
+      - { tool: sslscan,      confidence: 0.75, ttl: 86400 }
+
+  # ─────────── API target ───────────
+  api:
+    discovery:
+      - { tool: nuclei,       confidence: 0.85, ttl: 600,   notes: "API templates" }
+      - { tool: katana,       confidence: 0.80, ttl: 1200 }
+      - { tool: kiterunner,   confidence: 0.85, ttl: 1200,  notes: "API path brute" }
+
+    injection:
+      - { tool: nuclei,       confidence: 0.95, ttl: 600 }
+      - { tool: sqlmap,       confidence: 0.85, ttl: 1200 }
+      - { tool: jaeles,       confidence: 0.70, ttl: 1200 }
+
+    auth:
+      - { tool: nuclei,       confidence: 0.90, ttl: 600,   notes: "auth bypass templates" }
+      - { tool: hydra,        confidence: 0.65, ttl: 600,   notes: "only with Authorization header support" }
+
+  # ─────────── Network target ───────────
+  network:
+    discovery:
+      - { tool: rustscan,     confidence: 0.95, ttl: 1800,  notes: "ultra-fast port discovery" }
+      - { tool: nmap,         confidence: 0.95, ttl: 1800 }
+      - { tool: naabu,        confidence: 0.90, ttl: 1800 }
+      - { tool: masscan,      confidence: 0.80, ttl: 1800,  notes: "internet-scale" }
+      - { tool: autorecon,    confidence: 0.85, ttl: 3600,  notes: "service-aware orchestrator" }
+
+    enumeration:
+      - { tool: nmap,         confidence: 0.95, ttl: 3600,  notes: "-sV -sC version+default scripts" }
+      - { tool: enum4linux-ng, confidence: 0.90, ttl: 1800, notes: "smb enum" }
+      - { tool: enum4linux,   confidence: 0.75, ttl: 1800 }
+      - { tool: smbmap,       confidence: 0.85, ttl: 1800 }
+      - { tool: nbtscan,      confidence: 0.60, ttl: 1800 }
+
+    vuln_scan:
+      - { tool: nuclei,       confidence: 0.90, ttl: 1800,  notes: "network templates" }
+      - { tool: nmap,         confidence: 0.85, ttl: 1800,  notes: "vuln NSE scripts" }
+
+    auth:
+      - { tool: hydra,        confidence: 0.85, ttl: 600 }
+      - { tool: medusa,       confidence: 0.70, ttl: 600 }
+      - { tool: netexec,      confidence: 0.95, ttl: 600,   notes: "smb/winrm/mssql credential spray" }
+      - { tool: crackmapexec, confidence: 0.90, ttl: 600 }
+
+  # ─────────── Cloud target ───────────
+  cloud:
+    discovery:
+      - { tool: prowler,      confidence: 0.95, ttl: 3600,  notes: "AWS/Azure/GCP" }
+      - { tool: scoutsuite,   confidence: 0.90, ttl: 3600 }
+      - { tool: cloudsploit,  confidence: 0.80, ttl: 3600 }
+
+    privesc:
+      - { tool: pacu,         confidence: 0.90, ttl: 3600,  notes: "AWS privesc modules" }
+      - { tool: cloudfox,     confidence: 0.85, ttl: 3600 }
+
+    container:
+      - { tool: trivy,        confidence: 0.95, ttl: 3600 }
+      - { tool: grype,        confidence: 0.90, ttl: 3600 }
+      - { tool: kube-hunter,  confidence: 0.85, ttl: 1800 }
+      - { tool: kube-bench,   confidence: 0.90, ttl: 86400 }
+
+  # ─────────── Binary target ───────────
+  binary:
+    triage:
+      - { tool: file,         confidence: 1.00, ttl: 86400 }
+      - { tool: checksec,     confidence: 0.95, ttl: 86400 }
+      - { tool: strings,      confidence: 0.90, ttl: 86400 }
+      - { tool: binwalk,      confidence: 0.85, ttl: 86400 }
+
+    static:
+      - { tool: radare2,      confidence: 0.90, ttl: 86400 }
+      - { tool: ghidra-headless, confidence: 0.85, ttl: 86400 }
+      - { tool: objdump,      confidence: 0.75, ttl: 86400 }
+
+    rop:
+      - { tool: ropgadget,    confidence: 0.90, ttl: 86400 }
+      - { tool: ropper,       confidence: 0.90, ttl: 86400 }
+      - { tool: one-gadget,   confidence: 0.95, ttl: 86400, notes: "libc only" }
+
+    symbolic:
+      - { tool: angr,         confidence: 0.70, ttl: 86400, notes: "small binaries only" }
+
+  # ─────────── Mobile target ───────────
+  mobile:
+    static:
+      - { tool: apktool,      confidence: 0.95, ttl: 86400 }
+      - { tool: jadx,         confidence: 0.95, ttl: 86400 }
+      - { tool: aapt,         confidence: 0.85, ttl: 86400 }
+      - { tool: mobsf,        confidence: 0.80, ttl: 86400 }
+
+  # ─────────── CTF target ───────────
+  ctf:
+    triage:
+      - { tool: file,         confidence: 1.00, ttl: 86400 }
+      - { tool: exiftool,     confidence: 0.90, ttl: 86400 }
+      - { tool: binwalk,      confidence: 0.85, ttl: 86400 }
+      - { tool: strings,      confidence: 0.85, ttl: 86400 }
+
+    stego:
+      - { tool: zsteg,        confidence: 0.85, ttl: 86400 }
+      - { tool: stegseek,     confidence: 0.90, ttl: 86400 }
+      - { tool: steghide,     confidence: 0.75, ttl: 86400 }
+      - { tool: stegsolve,    confidence: 0.60, ttl: 86400 }
+
+    forensics:
+      - { tool: foremost,     confidence: 0.85, ttl: 86400 }
+      - { tool: photorec,     confidence: 0.80, ttl: 86400 }
+      - { tool: scalpel,      confidence: 0.65, ttl: 86400 }
+      - { tool: bulk_extractor, confidence: 0.70, ttl: 86400 }
+      - { tool: volatility,   confidence: 0.85, ttl: 86400 }
+
+    crypto:
+      # Pure-python solvers under modules/ctf/crypto, no external binary.
+      - { tool: pencheff_ctf_classical, confidence: 0.95, ttl: 86400, native: true }
+      - { tool: pencheff_ctf_rsa,       confidence: 0.95, ttl: 86400, native: true }
+      - { tool: pencheff_ctf_hashing,   confidence: 0.90, ttl: 86400, native: true }
+
+  # ─────────── OSINT ───────────
+  osint:
+    people:
+      - { tool: sherlock,         confidence: 0.85, ttl: 86400 }
+      - { tool: social-analyzer,  confidence: 0.70, ttl: 86400 }
+
+    infra:
+      - { tool: theHarvester,     confidence: 0.80, ttl: 3600 }
+      - { tool: spiderfoot,       confidence: 0.85, ttl: 3600 }
+
+    secrets:
+      - { tool: trufflehog,       confidence: 0.90, ttl: 3600 }

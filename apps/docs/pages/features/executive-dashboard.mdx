@@ -1,0 +1,69 @@
+---
+title: Executive risk dashboard
+---
+
+# Executive risk dashboard
+
+The dashboard for the people who don't open finding detail pages.
+Five aggregations over the same data the operator surface uses,
+rendered with [Recharts](https://recharts.org/) (90-day trend) and a
+hand-rolled CSS heatmap (Recharts has no good heatmap primitive).
+
+Lives at [`/dashboard/executive`](https://app.pencheff.com/dashboard/executive)
+in the SaaS UI. See the broader [dashboards reference](dashboards.mdx)
+for the per-scan / per-target / per-repo views layered on top of the
+same data.
+
+## What it shows
+
+| Tile | What's inside |
+| --- | --- |
+| **Severity × scanner heatmap** | One cell per (severity, scanner) bucket — rows are critical → info, columns are the scan kinds that produced findings in this workspace. Cell weight is finding count; colour ramp is gilt → oxblood. |
+| **90-day new vs. closed trend** | Twin sparkline overlay — net-new findings against findings closed (fixed or suppressed). The cross-over point is the "are we keeping up?" signal. |
+| **Top-10 risky repos** | Repos ranked by open findings, with critical / high counts called out separately. Each row is a click-through to `/repos/{id}`. |
+| **KEV exposure tile** | Total / open / suppressed / fixed findings flagged in the CISA Known-Exploited-Vulnerabilities catalogue, plus a per-severity breakdown. The board tile most operators look at first. |
+| **Fix-conversion tile** | Of every finding, how many had a fix proposed and how many had that proposal applied. Two coverage percentages — the lift between them is your developer-merge friction. |
+
+## How to read it
+
+The intended operator question is: **"In one screen, are we trending in
+the right direction?"** Three signals to read together:
+
+1. **Heatmap weight** drifting right (older scanners) is fine; drifting
+   down (lower severity) is good; drifting up-and-left is the warning.
+2. **Trend overlay** — closed should track new with a small lag. A
+   widening gap means the backlog is growing.
+3. **KEV tile open count** must trend to zero. A KEV finding open on
+   day 14 is the only metric here that should appear in a board pack.
+
+## API
+
+```bash
+curl -H "Authorization: Bearer $JWT" -H "X-Workspace-Id: $WS" \
+  https://api.pencheff.com/dashboard/heatmap
+curl -H "Authorization: Bearer $JWT" -H "X-Workspace-Id: $WS" \
+  "https://api.pencheff.com/dashboard/trend?window_days=90"
+curl -H "Authorization: Bearer $JWT" -H "X-Workspace-Id: $WS" \
+  "https://api.pencheff.com/dashboard/top-repos?limit=10"
+curl -H "Authorization: Bearer $JWT" -H "X-Workspace-Id: $WS" \
+  https://api.pencheff.com/dashboard/kev-exposure
+curl -H "Authorization: Bearer $JWT" -H "X-Workspace-Id: $WS" \
+  https://api.pencheff.com/dashboard/fix-conversion
+```
+
+Every endpoint scopes via the `X-Workspace-Id` header — same shape as the
+operator dashboards.
+
+## Tier gating
+
+Aggregations are gated on the `EXECUTIVE_DASHBOARD` feature flag —
+team / enterprise / self-hosted. The free + pro plans see an upgrade
+nudge in place of the tile grid.
+
+## Performance
+
+Each aggregation is a single grouped query with no joins beyond the
+workspace scope. The whole page renders three round-trips: frameworks
+list, the five tiles in parallel, and the live workspace context. The
+backend caps each tile's row count so the response stays under a
+megabyte even on workspaces with 100k+ findings.

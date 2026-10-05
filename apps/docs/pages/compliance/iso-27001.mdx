@@ -1,0 +1,32 @@
+---
+title: ISO 27001:2022
+---
+
+# ISO 27001:2022
+
+Pencheff maps findings to the Annex A controls introduced / revised in
+the 2022 edition (ISO/IEC 27001:2022).
+
+| Annex A | Theme | Coverage |
+| --- | --- | --- |
+| A.5.15 | Access control | `scan_authz`, `scan_auth` |
+| A.5.16 | Identity management | `scan_auth`, `scan_oauth` |
+| A.5.17 | Authentication information | `scan_mfa_bypass` |
+| A.5.18 | Access rights | `scan_authz` |
+| A.5.19 | Supplier relationships — ICT | Subdomain takeover + ASM |
+| A.5.32 | Intellectual property rights | License compliance |
+| A.8.2 | Privileged access rights | `scan_authz` |
+| A.8.7 | Malware | `scan_container_image`, `scan_host_vulns` |
+| A.8.8 | Technical vulnerabilities | Full pencheff DAST + SCA + Network VA |
+| A.8.9 | Configuration management | IaC scanners |
+| A.8.15 / A.8.16 | Logging + monitoring | Passive scanner, CC7 overlap |
+| A.8.19 | Installation of software | SBOM + dep scan |
+| A.8.22 | Segregation of networks | CORS, SSRF, subdomain takeover |
+| A.8.23 | Web filtering | `scan_cloud` |
+| A.8.24 | Cryptography | `scan_infrastructure` |
+| A.8.28 | Secure coding | `scan_injection`, `scan_client_side`, `scan_advanced` |
+
+## Report
+
+Use the `compliance-full` profile; the DOCX includes an ISO 27001
+Annex A coverage matrix.

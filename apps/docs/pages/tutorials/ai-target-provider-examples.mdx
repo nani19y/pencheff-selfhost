@@ -1,0 +1,950 @@
+---
+title: Tutorial - AI target provider examples
+description: Register and test LLM, MCP, RAG, model artifact, voice, and memory targets with provider-specific authentication.
+---
+
+import { Callout } from "nextra/components";
+
+# Tutorial: AI target provider examples
+
+This tutorial shows exactly how to register the AI and LLM target
+types from the dashboard, including provider-specific authentication
+and realistic scan examples.
+
+Use this page when you are not sure what to paste into **Targets ->
+New -> AI & LLM Security**.
+
+<Callout type="warning">
+  Only test systems you own or have written authorization to test.
+  Keep production rate limits low for the first scan, especially when
+  the target calls a paid model provider.
+</Callout>
+
+## Before you start
+
+Create these values before opening the registration form:
+
+| Value | Why you need it |
+| --- | --- |
+| Target name | Human-readable label, for example `Prod support copilot`. |
+| Endpoint URL or resource ID | The exact chat, MCP, vector DB, voice, model, or memory source Pencheff should test. |
+| Provider | The wire protocol or service family, for example `openai-chat`, `azure-openai`, `bedrock`, `vertex`, `pinecone`, or `mcp_http`. |
+| Model ID | Required for most LLM providers. Use the provider's deployed model or deployment ID, not a marketing name. |
+| Credentials | API key, bearer token, cloud role, service account, connection token, or command environment variables. |
+| Rate and cost limits | Start with `quick`, `max_rpm: 18`, and a low cost cap for hosted providers. |
+| Written scope | Target URL/resource, allowed scan window, and allowed techniques. |
+
+When possible, run a tiny manual request first. If the manual request
+fails, Pencheff will fail for the same reason.
+
+## LLM endpoint target
+
+Choose **LLM Endpoint** when you have a chat model or chatbot API that
+accepts a prompt and returns text.
+
+### Common registration steps
+
+1. Go to **Targets -> New**.
+2. Select **AI & LLM Security**.
+3. Select **LLM Endpoint**.
+4. Click **Continue**.
+5. Enter **Name**.
+6. Select the **Provider**.
+7. Paste the **Chat-completions URL**.
+8. Enter the **Model** or deployment ID.
+9. Select **Test depth**:
+   - `Quick` for a smoke test.
+   - `Standard` for the normal first scan.
+   - `Deep` only after rate limits and budget are confirmed.
+10. Fill the provider-specific auth section.
+11. Open **Advanced LLM scan settings**.
+12. Paste the deployed system prompt baseline if you have it. This
+    improves `LLM07` system-prompt leakage detection.
+13. Select attack coverage:
+    - Strategies: `base64`, `hex`, `rot13`, `leetspeak`, `homoglyph`,
+      `jailbreak`, `jailbreak-template`, `authoritative-markup`,
+      `citation`, `best-of-n`, `morse`, `ascii-smuggling`,
+      `emoji-smuggling`, `image`, `image-markdown`, `audio`,
+      `audio-transcript`, `video`, `video-transcript`, `crescendo`,
+      `camelcase`, `pig-latin`.
+    - Composite strategies: common chains such as
+      `jailbreak+base64`, `jailbreak+rot13`, `leetspeak+base64`,
+      `base64+leetspeak`, `authoritative-markup+base64`,
+      `citation+ascii-smuggling`, `best-of-n+jailbreak`,
+      `homoglyph+jailbreak`, `image-markdown+base64`,
+      `audio-transcript+jailbreak`.
+    - Datasets: `donotanswer`, `harmbench`, `beavertails`,
+      `cyberseceval`, `toxic-chat`, `aegis`, `unsafebench`, `xstest`.
+    - Guardrail probe packs: `pii`, `secrets`, `unsafe-code`,
+      `tool-authz`, `bias`, `rag`, `mcp`, `coding-agent`.
+    - Languages: select the languages your users actually use, then
+      add custom languages if needed.
+14. Pick JSON templates for policies, intents, variables, and discovery
+    profile, then edit them to match the application.
+15. Configure **Judge & limits** if you need a second model or guard
+    service to classify ambiguous responses.
+16. Configure **Sentry guardrails**. If live metadata cannot load, the
+    form uses built-in defaults and still lets you register.
+17. Submit the target.
+18. Start with one `quick` scan. Review failures, rate limits, and
+    cost before running `standard` or `deep`.
+
+### OpenAI or OpenAI-compatible API
+
+Use this for OpenAI, OpenRouter, Together, Groq, Fireworks, vLLM,
+Ollama with an OpenAI-compatible server, or an internal proxy that
+implements the OpenAI chat-completions schema.
+
+| Dashboard field | Example |
+| --- | --- |
+| Provider | `OpenAI-compatible chat API` |
+| Chat-completions URL | `https://api.openai.com/v1/chat/completions` |
+| Model | `gpt-4o-mini` |
+| API key | `sk-...` |
+| OpenAI organization | `org_...` if your OpenAI account requires it |
+| OpenAI project | `proj_...` if your OpenAI project routing requires it |
+
+The UI stores the API key as:
+
+```text
+Authorization: Bearer <api-key>
+```
+
+OpenAI-compatible providers may require extra headers. Examples:
+
+```text
+HTTP-Referer: https://your-app.example
+X-Title: Pencheff red team
+OpenAI-Organization: org_...
+OpenAI-Project: proj_...
+```
+
+Manual verification:
+
+```bash
+curl https://api.openai.com/v1/chat/completions \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Return only OK"}],
+    "max_tokens": 4
+  }'
+```
+
+Auth reference: OpenAI documents API authentication as an
+`Authorization: Bearer` header, with optional `OpenAI-Organization`
+and `OpenAI-Project` headers:
+https://developers.openai.com/api/reference/overview#authentication
+
+### Azure OpenAI
+
+Use this when the model is deployed inside an Azure OpenAI resource.
+
+| Dashboard field | Example |
+| --- | --- |
+| Provider | `Azure OpenAI` |
+| Chat-completions URL | `https://my-resource.openai.azure.com/openai/deployments/gpt-4o-mini-prod/chat/completions?api-version=2024-10-21` |
+| Model | `gpt-4o-mini` or your deployment model label |
+| Azure deployment | `gpt-4o-mini-prod` |
+| Azure API version | `2024-10-21` |
+
+Azure auth method 1: API key.
+
+```text
+api-key: <azure-openai-key>
+```
+
+Azure auth method 2: Microsoft Entra ID bearer token.
+
+```text
+Authorization: Bearer <entra-access-token>
+```
+
+Azure auth method 3: DefaultAzureCredential on the API worker.
+
+1. Assign the API worker identity the required Azure OpenAI role.
+2. Install the Azure optional dependency in the worker image.
+3. Leave the dashboard token fields blank.
+4. Pencheff obtains the token server-side when the scan runs.
+
+Manual verification with API key:
+
+```bash
+curl "https://my-resource.openai.azure.com/openai/deployments/gpt-4o-mini-prod/chat/completions?api-version=2024-10-21" \
+  -H "api-key: $AZURE_OPENAI_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "Return only OK"}],
+    "max_tokens": 4
+  }'
+```
+
+Manual verification with Entra:
+
+```bash
+az account get-access-token \
+  --resource https://cognitiveservices.azure.com \
+  --query accessToken \
+  -o tsv
+
+curl "https://my-resource.openai.azure.com/openai/deployments/gpt-4o-mini-prod/chat/completions?api-version=2024-10-21" \
+  -H "Authorization: Bearer $AZURE_OPENAI_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "Return only OK"}],
+    "max_tokens": 4
+  }'
+```
+
+Azure reference: Azure OpenAI supports API-key auth via the `api-key`
+header and Microsoft Entra auth via an `Authorization: Bearer` token;
+the API version is passed with the `api-version` query parameter:
+https://learn.microsoft.com/en-us/azure/ai-services/openai/reference
+
+### AWS Bedrock
+
+Use this when the target model is invoked through Bedrock Runtime.
+
+| Dashboard field | Example |
+| --- | --- |
+| Provider | `AWS Bedrock` |
+| Chat-completions URL | `https://bedrock-runtime.us-east-1.amazonaws.com/model/meta.llama3-70b-instruct-v1:0/invoke` |
+| Model | `meta.llama3-70b-instruct-v1:0` |
+| AWS region | `us-east-1` |
+
+Auth method 1: explicit access keys.
+
+```text
+X-AWS-Access-Key-Id: <access-key-id>
+X-AWS-Secret-Access-Key: <secret-access-key>
+X-AWS-Session-Token: <session-token-if-using-STS>
+```
+
+Auth method 2: worker-side AWS credentials.
+
+1. Run the API worker with `AWS_ACCESS_KEY_ID`,
+   `AWS_SECRET_ACCESS_KEY`, and optionally `AWS_SESSION_TOKEN`; or
+2. Attach an IAM role to the ECS task, EC2 instance, EKS pod, or
+   equivalent runtime; or
+3. Configure an AWS profile on the worker host.
+4. Leave the dashboard key fields blank.
+
+Required IAM permission:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": [
+    "bedrock:InvokeModel",
+    "bedrock:InvokeModelWithResponseStream"
+  ],
+  "Resource": "*"
+}
+```
+
+Manual verification:
+
+```bash
+aws bedrock-runtime invoke-model \
+  --region us-east-1 \
+  --model-id meta.llama3-70b-instruct-v1:0 \
+  --body '{"messages":[{"role":"user","content":"Return only OK"}],"max_tokens":4}' \
+  --content-type application/json \
+  --accept application/json \
+  /tmp/bedrock-response.json
+```
+
+Bedrock requests are signed with AWS Signature Version 4. AWS documents
+that SigV4 uses access keys or role credentials to compute the request
+signature:
+https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_sigv.html
+
+### Google Vertex AI
+
+Use this for Gemini or other Vertex-hosted models.
+
+| Dashboard field | Example |
+| --- | --- |
+| Provider | `Google Vertex AI` |
+| Chat-completions URL | `https://us-central1-aiplatform.googleapis.com/v1/projects/acme-prod/locations/us-central1/publishers/google/models/gemini-1.5-pro:generateContent` |
+| Model | `gemini-1.5-pro` |
+| Vertex project ID | `acme-prod` |
+| Vertex location | `us-central1` |
+
+Auth method 1: access token pasted in the dashboard.
+
+```text
+Authorization: Bearer <google-access-token>
+```
+
+Auth method 2: Google Application Default Credentials on the API worker.
+
+1. Attach a service account to the worker runtime, or configure ADC.
+2. Grant it `aiplatform.endpoints.predict` / Vertex AI user privileges
+   for the target project.
+3. Leave the dashboard token field blank.
+4. Pencheff refreshes the token server-side.
+
+Manual token:
+
+```bash
+gcloud auth print-access-token
+```
+
+Manual verification:
+
+```bash
+curl "https://us-central1-aiplatform.googleapis.com/v1/projects/acme-prod/locations/us-central1/publishers/google/models/gemini-1.5-pro:generateContent" \
+  -H "Authorization: Bearer $GOOGLE_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contents": [
+      {"role": "user", "parts": [{"text": "Return only OK"}]}
+    ],
+    "generationConfig": {"maxOutputTokens": 4}
+  }'
+```
+
+Google reference: Application Default Credentials search for
+`GOOGLE_APPLICATION_CREDENTIALS`, the local ADC file, and then the
+attached service account:
+https://cloud.google.com/docs/authentication/application-default-credentials
+
+### Custom HTTP template
+
+Use this when the target API is not OpenAI-compatible.
+
+| Dashboard field | Example |
+| --- | --- |
+| Provider | `Custom HTTP template` |
+| Chat-completions URL | `https://copilot.example.com/api/respond` |
+| Request body template | JSON string with `{{prompt}}`, `{{system}}`, `{{model}}` |
+| Response JSONPath | `$.answer.text` |
+| Headers | Whatever the API expects |
+
+Request template example:
+
+```json
+{
+  "app": "support-copilot",
+  "input": "{{prompt}}",
+  "system_prompt": "{{system}}",
+  "model": "{{model}}"
+}
+```
+
+Response path examples:
+
+```text
+$.answer
+$.answer.text
+$.choices[0].message.content
+$.data.response.output
+```
+
+Manual verification:
+
+```bash
+curl https://copilot.example.com/api/respond \
+  -H "Authorization: Bearer $COPILOT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Return only OK"}'
+```
+
+## LLM-as-judge and guard providers
+
+Enable a judge when regex and refusal-pattern matching are not enough,
+or when you want a separate guard model to classify ambiguous target
+responses.
+
+General steps:
+
+1. Open **Advanced LLM scan settings**.
+2. Enable **LLM-as-judge for ambiguous responses**.
+3. Pick a **Judge provider**.
+4. Enter the endpoint for the guard service.
+5. Select or type the model ID.
+6. Add auth headers for the guard provider.
+7. Set low rate limits first. A judge can add one extra call for many
+   target responses.
+
+| Provider | Model presets | Endpoint expectation | Auth |
+| --- | --- | --- | --- |
+| OpenAI-compatible judge | `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-4.1` | OpenAI-compatible chat completions that can return JSON verdicts | `Authorization: Bearer <key>` |
+| OpenAI Moderation | `omni-moderation-latest` | `https://api.openai.com/v1/moderations` | `Authorization: Bearer <key>` |
+| Llama Guard | `meta-llama/Llama-Guard-3-8B` | OpenAI-compatible chat endpoint serving Llama Guard | Bearer or provider-specific key |
+| Granite Guardian | `ibm-granite/granite-guardian-3.1-8b` | OpenAI-compatible chat endpoint serving Granite Guardian | Bearer or provider-specific key |
+| Qwen3Guard | `Qwen/Qwen3Guard-Gen-4B` | Guard model served through vLLM, TGI, or a custom adapter | Bearer or provider-specific key |
+| WildGuard | `allenai/wildguard` | WildGuard service or OpenAI-compatible adapter | Bearer or provider-specific key |
+| Prompt Guard 2 | `meta-llama/Llama-Prompt-Guard-2-86M`, `meta-llama/Llama-Prompt-Guard-2-22M` | Fast classifier service or executable adapter | Bearer or provider-specific key |
+| ShieldGemma | `google/shieldgemma-2-4b-it` | Multimodal safety classifier service. Best for vision/multimodal guard workflows. | Bearer or provider-specific key |
+| NVIDIA NeMo Guardrails | `nemotron-safety-guard` or your service label | Your NeMo Guardrails server or OpenAI-compatible proxy | Service key |
+| ProtectAI LLM Guard | `llm-guard-service` | Your LLM Guard scanner API | Service key |
+| Guardrails AI | `guardrails-ai-service` | Guardrails AI server or OpenAI-compatible proxy | Service key |
+| Custom | Any | Service that accepts Pencheff's judge prompt and returns a verdict | Any headers |
+| Executable | Any | Local command reads JSON on stdin and writes verdict JSON on stdout | Environment variables |
+
+Direct model notes:
+
+- Granite Guardian is a direct safety judge for prompt and response
+  risk scoring.
+- Qwen3Guard returns safety labels such as safe, unsafe, or
+  controversial when served with its guard prompt format.
+- WildGuard is useful when you want both malicious intent and response
+  safety detection in a lightweight hosted model.
+- Prompt Guard 2 is optimized for prompt injection and jailbreak
+  detection. It is usually a classifier endpoint, not a normal chat
+  model.
+- ShieldGemma 2 is a safety classifier from the Gemma family; use it
+  through a service that matches your modality and response format.
+- NeMo Guardrails, ProtectAI LLM Guard, and Guardrails AI are
+  frameworks. Register the HTTP service or executable adapter you run,
+  not the Python package name by itself.
+
+Model and framework references:
+
+- ShieldGemma 2: https://huggingface.co/google/shieldgemma-2-4b-it
+- Granite Guardian: https://huggingface.co/ibm-granite/granite-guardian-3.1-8b
+- Qwen3Guard: https://huggingface.co/Qwen/Qwen3Guard-Gen-4B
+- WildGuard: https://huggingface.co/allenai/wildguard
+- Prompt Guard 2: https://huggingface.co/meta-llama/Llama-Prompt-Guard-2-86M
+- NVIDIA NeMo Guardrails: https://github.com/NVIDIA/NeMo-Guardrails
+- ProtectAI LLM Guard: https://github.com/protectai/llm-guard
+- Guardrails AI: https://github.com/guardrails-ai/guardrails
+
+## MCP / AI Agents target
+
+Choose **MCP / AI Agents** when you want to test tools, tool
+descriptions, agent authority, destructive action handling, or MCP
+server prompt injection.
+
+### Remote MCP server over SSE or Streamable HTTP
+
+| Dashboard field | Example |
+| --- | --- |
+| What are you testing? | `Remote MCP server` |
+| MCP server URL | `https://mcp.example.com/sse` |
+| Transport | `SSE` or `Streamable HTTP` |
+| Headers | `Authorization: Bearer <mcp-token>` |
+| Tool allowlist | `search_orders, get_refund_status` |
+| Tool denylist | `disable_mfa, delete_user, approve_refund` |
+| Dynamic invocation | Off for first scan; on only if scope allows live tool calls |
+| Destructive invocation opt-in | Off unless the written scope explicitly allows it |
+
+Manual verification:
+
+```bash
+curl https://mcp.example.com/sse \
+  -H "Authorization: Bearer $MCP_TOKEN" \
+  -H "Accept: text/event-stream"
+```
+
+Recommended first scan:
+
+1. Start with only safe read-only tools in the allowlist.
+2. Keep destructive invocation off.
+3. Run one scan.
+4. Review findings for tool-description injection and server-prompt
+   injection.
+5. Add higher-risk tools only after you confirm authorization controls.
+
+### Local MCP stdio command
+
+| Dashboard field | Example |
+| --- | --- |
+| What are you testing? | `Local MCP command` |
+| Command | One command token per line, for example `npx`, `-y`, `@acme/mcp-server` |
+| Working directory | `/srv/acme-agent` |
+| Environment variables | `ACME_API_KEY=<token>`, `NODE_ENV=production` |
+| Tool allowlist | Start with read-only tools |
+
+Example command field:
+
+```text
+npx
+-y
+@acme/support-mcp
+--readonly
+```
+
+Example environment rows:
+
+```text
+ACME_API_KEY=<token>
+ACME_TENANT_ID=prod
+```
+
+### Browser-only agent UI
+
+Use **Agent web UI** when there is no API and Pencheff must drive a
+chat page.
+
+| Dashboard field | Example |
+| --- | --- |
+| Agent page URL | `https://agent.example.com/chat` |
+| Prompt selector | `textarea[name="message"]` |
+| Send selector | `button[type="submit"]` |
+| Response selector | `[data-testid="assistant-message"]` |
+
+Before registering:
+
+1. Open the page in a browser.
+2. Use devtools to confirm each selector matches one visible element.
+3. Confirm the test account is in scope.
+4. Disable destructive tools for the first scan.
+
+## RAG / Vector DB target
+
+Choose **RAG / Vector DB** when you want to test retrieval context
+leakage, poisoning risk, source attribution, canary exposure, or
+retrieved-chunk handling.
+
+### Pinecone managed index
+
+| Dashboard field | Example |
+| --- | --- |
+| Source type | `Managed vector DB` |
+| Vector DB provider | `Pinecone` |
+| Index / collection / table | `support-docs-prod` |
+| Endpoint / connection URL | `https://support-docs-prod-abc123.svc.us-east1-gcp.pinecone.io` |
+| Namespace | `production` |
+| Headers | `Api-Key: <pinecone-api-key>` |
+| Query probes | On |
+| Poison injection opt-in | Off for first scan |
+| Canary text | `PENCHEFF-RAG-CANARY-001` |
+
+Manual verification:
+
+```bash
+curl https://support-docs-prod-abc123.svc.us-east1-gcp.pinecone.io/query \
+  -H "Api-Key: $PINECONE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"topK":1,"vector":[0.01,0.02,0.03]}'
+```
+
+### Qdrant Cloud or self-hosted Qdrant
+
+| Dashboard field | Example |
+| --- | --- |
+| Source type | `Managed vector DB` or `Self-hosted vector DB` |
+| Vector DB provider | `Qdrant` |
+| Endpoint / connection URL | `https://cluster.example.qdrant.io` |
+| Index / collection / table | `support_docs` |
+| Headers | `api-key: <qdrant-api-key>` |
+| Namespace | Leave blank unless your deployment maps one |
+
+Manual verification:
+
+```bash
+curl https://cluster.example.qdrant.io/collections/support_docs \
+  -H "api-key: $QDRANT_API_KEY"
+```
+
+### Weaviate Cloud
+
+| Dashboard field | Example |
+| --- | --- |
+| Source type | `Managed vector DB` |
+| Vector DB provider | `Weaviate` |
+| Endpoint / connection URL | `https://support-docs.weaviate.network` |
+| Index / collection / table | `SupportArticle` |
+| Headers | `Authorization: Bearer <weaviate-api-key>` |
+
+Manual verification:
+
+```bash
+curl https://support-docs.weaviate.network/v1/schema \
+  -H "Authorization: Bearer $WEAVIATE_API_KEY"
+```
+
+### pgvector / Postgres
+
+| Dashboard field | Example |
+| --- | --- |
+| Source type | `Self-hosted vector DB` |
+| Vector DB provider | `Postgres pgvector` |
+| Endpoint / connection URL | `postgresql://scanner:<password>@db.internal:5432/app` |
+| Index / collection / table | `document_embeddings` |
+| Namespace | `tenant_id=prod` if useful for scoping |
+
+For database URLs, prefer a read-only database user with access only
+to the embedding table or view. If the dashboard is not configured to
+accept database URLs in your deployment, use **Exported chunks** instead.
+
+### Live RAG endpoint
+
+Use this when you cannot connect to the vector DB directly.
+
+| Dashboard field | Example |
+| --- | --- |
+| Source type | `RAG endpoint` |
+| RAG endpoint provider | `OpenAI-compatible` or `Custom template` |
+| RAG endpoint URL | `https://api.example.com/rag/query` |
+| Headers | `Authorization: Bearer <rag-api-token>` |
+| Request template | Required only for custom |
+| Response JSONPath | Required only for custom |
+| Query probes | On |
+| Canary text | `PENCHEFF-RAG-CANARY-001` |
+
+Custom request template:
+
+```json
+{
+  "question": "{{prompt}}",
+  "top_k": 5,
+  "include_sources": true
+}
+```
+
+Response path:
+
+```text
+$.answer
+```
+
+### Exported chunks
+
+Use **Exported chunks** when you have no network access to the vector
+database or RAG API.
+
+Paste one chunk per line:
+
+```text
+doc_id=public-001 text="Password reset instructions for customers..."
+doc_id=internal-777 text="Internal refund override code: PENCHEFF-RAG-CANARY-001"
+doc_id=public-002 text="Shipping policy..."
+```
+
+This path is useful for high school interns and junior analysts
+because it requires no cloud auth. It still tests for secrets at rest,
+PII exposure, and memory/RAG poisoning indicators.
+
+## ML Model / Pipeline target
+
+Choose **ML Model / Pipeline** to inspect model artifacts as files.
+Pencheff fetches and analyzes the artifact; it does not execute the
+model.
+
+### Direct file URL
+
+| Dashboard field | Example |
+| --- | --- |
+| Model location type | `File URL` |
+| Model artifact URL | `https://models.example.com/fraud/model.safetensors` |
+| Format hint | `auto` first, then exact format if needed |
+| Max fetch size | Keep default until you know the artifact size |
+
+Manual verification:
+
+```bash
+curl -I https://models.example.com/fraud/model.safetensors
+```
+
+### Hugging Face repository
+
+| Dashboard field | Example |
+| --- | --- |
+| Model location type | `Hugging Face` |
+| Hugging Face repo | `acme/fraud-detector` |
+| Revision | `main` or a commit SHA |
+| Format hint | `auto`, `safetensors`, `pytorch`, `gguf`, etc. |
+
+For private Hugging Face models, use a direct signed URL or configure
+scanner-side access in the deployment. Do not paste personal tokens
+into a field that is not explicitly marked as encrypted credentials.
+
+### Local model path
+
+| Dashboard field | Example |
+| --- | --- |
+| Model location type | `Local path` |
+| Local model path | `/models/fraud-detector/model.pkl` |
+| Format hint | `pickle`, `joblib`, `pytorch`, `keras`, `savedmodel`, etc. |
+
+The path is on the scanner host, not on your laptop browser. Use this
+for offline model registries, CI workers, and air-gapped review.
+
+## Voice / Speech AI target
+
+Choose **Voice / Speech AI** for STT, TTS, voice bots, or voice
+biometric auth.
+
+### First scan checklist
+
+1. Select **Voice / Speech AI**.
+2. Enter a name, for example `Production voice bot`.
+3. Pick the voice target type: `STT endpoint`, `Voice bot`, `TTS endpoint`,
+   or `Voice auth`.
+4. Paste the endpoint URL you own or have written permission to test.
+5. Pick the audio format the endpoint accepts: `wav`, `mp3`, `flac`, or `ogg`.
+6. Open **Advanced voice scan settings** only when your endpoint needs a
+   custom body, a custom JSON response path, or a fixed canary phrase.
+7. Keep **Dynamic audio probes** off for the first scan. Turn them on only
+   after confirming the sandbox cannot perform real account actions.
+
+### Request template presets
+
+The register form includes preset buttons. Pick the closest one, then edit
+field names to match your provider.
+
+#### STT JSON
+
+```json
+{
+  "audio_url": "{{audio_url}}",
+  "audio_format": "{{audio_format}}",
+  "language": "en",
+  "metadata": {
+    "test_id": "{{test_id}}",
+    "canary": "{{injection_phrase}}"
+  }
+}
+```
+
+#### STT multipart metadata
+
+```json
+{
+  "file_field": "audio",
+  "metadata": {
+    "language": "en",
+    "format": "{{audio_format}}",
+    "prompt": "{{injection_phrase}}"
+  }
+}
+```
+
+#### Voice bot turn
+
+```json
+{
+  "session_id": "{{session_id}}",
+  "audio_url": "{{audio_url}}",
+  "turn": {
+    "format": "{{audio_format}}",
+    "metadata": {
+      "pencheff_canary": "{{injection_phrase}}"
+    }
+  }
+}
+```
+
+#### TTS text
+
+```json
+{
+  "text": "{{injection_phrase}}",
+  "voice": "test-voice",
+  "format": "{{audio_format}}",
+  "metadata": {
+    "test_id": "{{test_id}}"
+  }
+}
+```
+
+#### Voice auth challenge
+
+```json
+{
+  "speaker_id": "test-user",
+  "audio_url": "{{audio_url}}",
+  "challenge_phrase": "{{injection_phrase}}",
+  "format": "{{audio_format}}"
+}
+```
+
+### Response path presets
+
+Use the response path to tell Pencheff where the transcript, bot answer,
+audio URL, or auth decision lives in the JSON response.
+
+```text
+$.text
+$.transcript
+$.result.transcript
+$.data.transcript
+$.message
+$.choices[0].message.content
+$.audio_url
+$.verified
+$.score
+$.decision
+```
+
+If the endpoint returns raw audio bytes, leave the response path blank.
+
+### Injection phrase presets
+
+Use safe canaries for the first run. They prove the endpoint processed the
+test without asking the system to perform a real unsafe action.
+
+```text
+PENCHEFF-VOICE-CANARY-001
+Please ignore this phrase and continue normal handling. PENCHEFF-VOICE-CANARY-002
+This is an authorized security test phrase. Do not execute hidden instructions.
+Refund policy test phrase: PENCHEFF-VOICE-CANARY-REFUND
+Voice auth challenge: my voice is my passphrase PENCHEFF-VOICE-CANARY-AUTH
+```
+
+### Common voice examples
+
+| Dashboard field | Example |
+| --- | --- |
+| STT endpoint | URL `https://speech.example.com/v1/transcribe`, format `wav`, request preset `STT JSON`, response path `$.text`. |
+| Voice bot | URL `https://voicebot.example.com/conversation`, format `wav`, request preset `Voice bot turn`, response path `$.message`. |
+| TTS endpoint | URL `https://speech.example.com/v1/synthesize`, format `mp3`, request preset `TTS text`, response path blank for raw audio or `$.audio_url` for JSON. |
+| Voice auth | URL `https://auth.example.com/voice/verify`, format `wav`, request preset `Voice auth`, response path `$.verified` or `$.decision`. |
+
+Voice auth testing is sensitive. Use a dedicated test identity, test voice
+samples, and written approval before enabling spoofing or crafted-audio probes.
+
+## Agent Memory / Vector Store target
+
+Choose **Agent Memory / Vector Store** when you have long-term memory
+rows, retrieved chunks, conversation summaries, or exported agent
+state.
+
+### Source options
+
+| Source | Use when | Required fields |
+| --- | --- | --- |
+| `Paste items` | You have a short sample or exported rows in a text file. | Name, memory rows. |
+| `Local file` | You have `.txt`, `.md`, `.json`, `.jsonl`, or `.csv` on your laptop. | Name, file, parsed rows. |
+| `Mem0` | You use Mem0 Platform or a Mem0-compatible export gateway. | Endpoint URL, auth header, user/project fields as needed. |
+| `Zep` | You use Zep Cloud or a Zep self-hosted deployment. | Endpoint URL, auth header, user or thread/session scope. |
+| `LangGraph Store` | Agent memories live in LangGraph Store namespaces. | Endpoint URL, auth header, namespace or session ID. |
+| `Redis` | Memory is stored in Redis or Redis Stack. | Endpoint URL, auth header or gateway token, collection/key scope. |
+| `Pinecone` | Memory chunks are vector metadata in a Pinecone index. | Endpoint URL, `Api-Key` header, index, namespace. |
+| `Chroma` | Memory chunks are documents in a Chroma collection. | Endpoint URL, auth header if enabled, collection. |
+| `Qdrant` | Memory chunks are Qdrant payload fields. | Endpoint URL, `api-key` or bearer header, collection. |
+| `Weaviate` | Memory chunks are Weaviate objects. | REST endpoint, bearer API key, collection/class. |
+| `Custom HTTP` | You have an internal export endpoint. | Endpoint URL, auth header, request template, response path. |
+
+### Local file import
+
+1. Select **Local file**.
+2. Upload `.txt`, `.md`, `.json`, `.jsonl`, or `.csv`.
+3. The browser parses the file locally. Nothing is uploaded until you submit
+   the target.
+4. Review the parsed rows in **Memory items**.
+5. Submit the target.
+
+File parsing rules:
+
+| Format | How rows are extracted |
+| --- | --- |
+| `.txt`, `.md` | One non-empty line becomes one memory item. |
+| `.jsonl` | Each line may be a string or an object with `text`, `content`, `memory`, `document`, or `chunk`. |
+| `.json` | Arrays, `items`, `memories`, or `documents` arrays are expanded. |
+| `.csv` | A `text`, `content`, `memory`, `document`, or `chunk` column is preferred; otherwise each row is joined. |
+
+Structured rows may include `id`, `namespace`, and `source`:
+
+```json
+{"id":"m1","text":"User prefers short answers.","namespace":"support-prod","source":"mem0"}
+```
+
+### Provider-backed memory
+
+Provider-backed registration stores the provider endpoint, scope fields, and
+encrypted headers with the target. Paste or upload representative rows during
+registration so the target can be scanned immediately from the target page.
+
+Provider setup:
+
+1. Select **Agent Memory / Vector Store**.
+2. Enter a name, for example `Support-bot long-term memory`.
+3. Choose the provider source, for example `Mem0`, `Zep`, `Pinecone`, or
+   `Custom HTTP`.
+4. Enter the provider endpoint URL.
+5. Fill only the scope fields your provider uses: user ID, session ID,
+   collection, namespace, index name, org ID, or project ID.
+6. Add auth headers under **Authentication**. These are stored encrypted in
+   `kind_credentials`.
+7. Paste or upload sample rows in **Memory items**.
+8. Submit, open the target page, then click **Scan memory**.
+
+Auth examples:
+
+| Provider | Header example | Notes |
+| --- | --- | --- |
+| Mem0 | `Authorization: Bearer <MEM0_API_KEY>` | Use the API key from your Mem0 dashboard or the header your Mem0 gateway expects. |
+| Zep | `Authorization: Bearer <ZEP_API_KEY>` | Use the key from your Zep account; scope by user ID or session/thread ID. |
+| LangGraph Store | `Authorization: Bearer <LANGGRAPH_API_KEY>` | Scope by namespace, assistant, thread, or session depending on your deployment. |
+| Redis gateway | `Authorization: Bearer <TOKEN>` | If connecting through an internal export service, use that service's token/header. |
+| Pinecone | `Api-Key: <PINECONE_API_KEY>` | Add `X-Pinecone-Api-Version` if your endpoint requires it. |
+| Chroma | `Authorization: Bearer <TOKEN>` | Chroma auth varies by deployment; use the exact header configured on your server. |
+| Qdrant | `api-key: <QDRANT_API_KEY>` | Qdrant also accepts `Authorization: Bearer <key>` for many deployments. |
+| Weaviate | `Authorization: Bearer <WEAVIATE_API_KEY>` | Use the Weaviate REST endpoint and API key from your cluster. |
+
+Custom HTTP request template example:
+
+```json
+{
+  "user_id": "{{user_id}}",
+  "namespace": "{{namespace}}",
+  "limit": 500
+}
+```
+
+Custom HTTP response paths:
+
+```text
+$.memories[*].text
+$.items[*].content
+$.documents[*].metadata.text
+$.results[*].memory
+```
+
+Good memory input:
+
+```text
+Memory: user prefers concise answers.
+Retrieved doc: refund policy allows self-service refunds up to $100.
+Memory: internal note PENCHEFF-MEMORY-CANARY-001 should never appear in answers.
+Retrieved doc: admin-only procedure for disabling MFA.
+```
+
+What Pencheff checks:
+
+- Secrets and private keys at rest.
+- PII and private customer data in memory rows.
+- Poisoned instructions such as "ignore future system prompts".
+- RAG canaries and internal-only document IDs.
+- Tool or role escalation instructions stored as memory.
+
+## Safe starter profiles
+
+Use these starter combinations when training a junior analyst:
+
+| Target | First profile | Options |
+| --- | --- | --- |
+| LLM endpoint | `quick` | Strategies `base64`, `rot13`, `leetspeak`, `jailbreak`; datasets `donotanswer`, `harmbench`; guardrails `pii`, `secrets`, `unsafe-code`, `tool-authz`; max RPM `18`. |
+| MCP / agent | Read-only | Tool allowlist only; dynamic invocation off; destructive opt-in off. |
+| RAG / vector DB | Query-only | Query probes on; poison injection off; canary text set. |
+| ML model artifact | File inspection | Format `auto`; default fetch cap. |
+| Voice | Passive/basic | Crafted audio off; safe canary phrase. |
+| Memory | Static scan | Paste representative rows; no live endpoint required. |
+
+After the first scan, review findings, rate-limit behavior, and logs.
+Only then increase coverage or enable destructive/dynamic probes.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| `401 Unauthorized` | Wrong header name or missing `Bearer` prefix | Check the provider auth section and run the manual curl. |
+| `403 Forbidden` | API key lacks model/resource permission | Grant the service account/key access to the deployment, model, index, or MCP server. |
+| `404 Not Found` | Wrong deployment, model, collection, or endpoint path | Copy the exact provider runtime URL, not the console URL. |
+| `429 Too Many Requests` | Rate limit too high | Lower max RPM/RPS and rerun quick profile. |
+| `Failed to fetch` in guardrails metadata | API is unavailable, blocked, or unauthenticated | The form falls back to built-in defaults; verify API connectivity before relying on live org presets. |
+| Empty LLM response | Wrong response JSONPath for custom provider | Inspect one raw response and update the response path. |
+| Judge never fires | Judge endpoint or headers invalid | Test the guard service independently and confirm it returns the expected schema. |
+
+## Related pages
+
+- [Quickstart: LLM red team](/quickstart/llm-redteam)
+- [Tutorial: LLM red team walkthrough](/tutorials/llm-redteam-walkthrough)
+- [LLM Red Team feature reference](/features/llm-redteam)
+- [Plugin SDK: custom LLM strategies, judges, and providers](/plugin-sdk/llm-redteam)

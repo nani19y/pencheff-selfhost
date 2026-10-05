@@ -1,0 +1,39 @@
+# === literal child routes (must precede the :id rewrites below; first match wins) ===
+# Identity 200-rewrites: serve the literal page asset and short-circuit the
+# /targets/:id and /scans/:id shells. NOT a `.html` destination — that triggers
+# Cloudflare's .html→extensionless 308 canonicalization and an infinite loop.
+/targets/new                        /targets/new                   200
+/scans/compare                      /scans/compare                 200
+# === dynamic user-data route rewrites (serve placeholder shell, keep URL) ===
+/scans/:id/findings/:fid            /scans/_/findings/_            200
+/scans/:id/dashboard                /scans/_/dashboard             200
+/scans/:id/compliance               /scans/_/compliance            200
+/scans/:id/threat-model             /scans/_/threat-model          200
+/scans/:id/recommended-guardrails   /scans/_/recommended-guardrails 200
+/scans/:id                          /scans/_                       200
+/campaigns/:id                      /campaigns/_                   200
+/support/tickets/:id                /support/tickets/_             200
+/support/agent/tickets/:id          /support/agent/tickets/_       200
+/repos/scans/:scanId/compliance     /repos/scans/_/compliance      200
+/repos/scans/:scanId/dashboard      /repos/scans/_/dashboard       200
+/repos/scans/:scanId                /repos/scans/_                 200
+/repos/:repoId/dashboard            /repos/_/dashboard             200
+/repos/:repoId/edit                 /repos/_/edit                  200
+/repos/:repoId                      /repos/_                       200
+/engagements/:id/threat-model       /engagements/_/threat-model    200
+/engagements/:id/api-discovery      /engagements/_/api-discovery   200
+/observability/traces/:scanId       /observability/traces/_        200
+/workspaces/:id/branding            /workspaces/_/branding         200
+/advisories/:id                     /advisories/_                  200
+/findings/:id                       /findings/_                    200
+/dependencies/:scanId               /dependencies/_                200
+/sbom/:scanId                       /sbom/_                        200
+/targets/:id/edit                   /targets/_/edit                200
+/targets/:id                        /targets/_                     200
+/invite/:token                      /invite/_                      200
+# === redirect-stub replacements (server routes deleted in Task 1) ===
+/subscriptions/*   /pricing             301
+/audience/*        /solutions/overview  301
+# === canonical de-dup (from old next.config.js) ===
+/support/case-studies   /company/case-studies   301
+/company/contact-us     /company/contact        301

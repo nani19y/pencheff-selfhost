@@ -1,0 +1,42 @@
+# Node
+**/node_modules
+**/.next
+**/.turbo
+**/out
+**/dist
+
+# Python
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.venv
+**/venv
+**/*.egg-info
+**/.eggs
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+
+# IDE / VCS / env
+.git
+.gitignore
+.github
+.claude
+.next
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Build artifacts
+**/*.tsbuildinfo
+**/coverage
+**/htmlcov
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Project-local scratch
+tmp/
+pencheff-reports/

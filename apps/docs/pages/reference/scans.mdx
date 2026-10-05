@@ -1,0 +1,212 @@
+---
+title: Scans API
+---
+
+# Scans API
+
+## `POST /scans`
+
+Trigger a new scan.
+
+```http
+POST /scans
+{
+  "target_id": "...",
+  "profile": "standard",
+  "consent_payload": {
+    "authorization_text": "I am authorised to test example.com as of 2026-05-06 and I accept the disclosed actions.",
+    "acknowledged": true
+  }
+}
+```
+
+`profile` is one of `quick`, `standard`, or `deep`. Older specialised
+names (`engage`, `compliance`, `api-only`, `cicd`, `sca`, `iac`,
+`supply-chain`, `network-va`, `hackme`, `continuous`,
+`compliance-full`) are still accepted and coerced to the matching tier
+at the runner — see [Picking a profile](/getting-started/first-scan#picking-a-profile)
+for the fold-in table.
+
+`consent_payload` is **required** when swarm mode is active (default). The
+API returns `422 Unprocessable Entity` if the field is absent, if
+`authorization_text` is shorter than 50 characters, or if `acknowledged` is
+not `true`. The payload is persisted on `Scan.consent_payload` (JSONB) and
+included in every audit export. Shape (Pydantic schema `ConsentPayload`):
+
+```typescript
+type ConsentPayload = {
+  authorization_text: string;  // >= 50 characters
+  acknowledged: boolean;       // must be true
+};
+```
+
+## `GET /scans`
+
+List scans for the current org (paginated).
+
+## `GET /scans/{id}`
+
+Fetch a single scan — includes summary counts, grade, progress.
+
+## `GET /scans/{id}/progress` (SSE)
+
+Server-Sent Events stream of live progress ticks during an active
+scan. Events:
+
+- `stage_start: recon_passive`
+- `stage_done: recon_passive: 47 endpoints`
+- `finding: HIGH SQLi on /api/users`
+- `finished`
+
+## `GET /scans/{id}/findings`
+
+Returns every finding for the scan with CVSS, EPSS, KEV, risk_score,
+compliance mapping.
+
+## `GET /scans/{id}/linked-repos`
+
+Returns the repositories attached to this URL scan's target. Source-code
+findings (Semgrep · Bandit · gosec · Brakeman · ESLint · OSV · secret-scan) live on each repo's own
+assessment page (`/repos/{repository_id}`) — the URL scan deliberately
+does **not** mix SAST findings into its own results list. Use this
+endpoint to render a "Linked repositories" sidebar with deep-links.
+
+```typescript
+type LinkedRepo = {
+  repository_id: string;
+  full_name: string;
+  provider: string | null;
+  scan_url: string;   // e.g. "/repos/abc-123"
+};
+```
+
+Returns `[]` for scans whose target has no attached repos. Available
+on URL targets only.
+
+## `GET /scans/{a}/compare/{b}`
+
+Compare two completed scans of the same workspace and return a
+structured diff. Particularly useful for LLM red-team scans where
+you want to gate a PR on safety regressions, or A/B different model
+versions on the same suite.
+
+```http
+GET /scans/3a35.../compare/9359...
+Authorization: Bearer <token>
+```
+
+Response:
+
+```typescript
+type ScanCompare = {
+  baseline: { name: string; summary: RedTeamSummary };
+  candidate: { name: string; summary: RedTeamSummary };
+  regressions: Finding[];     // candidate-only
+  fixes: Finding[];           // baseline-only
+  common_failures: Finding[]; // present in both
+  counts: { regressions: number; fixes: number; common_failures: number };
+  keys: { regressions: string[]; fixes: string[]; common_failures: string[] };
+  scan_a: { id: string; profile: string; grade: string | null;
+            score: number | null; created_at: string };
+  scan_b: { id: string; profile: string; grade: string | null;
+            score: number | null; created_at: string };
+};
+```
+
+The dedup key is `endpoint|parameter|technique|title`, so re-running
+the identical suite against an unchanged target produces zero
+regressions. The web UI exposes the same diff at
+`/scans/compare?a=…&b=…` with a JUnit-XML download for the
+regressions list — wire it into CI to fail builds on new findings.
+
+## `POST /scans/{id}/share` (LLM only)
+
+Issues a Fernet-encrypted token granting public read access to the
+scan's LLM-flavored report. Available only when the underlying target
+is `kind: "llm"`.
+
+```http
+POST /scans/3a35.../share?ttl_seconds=604800
+Authorization: Bearer <token>
+```
+
+Response:
+
+```json
+{
+  "token": "gAAAAA...",
+  "expires_in": 604800,
+  "url_path": "/share/llm/gAAAAA..."
+}
+```
+
+The companion public route `GET /share/llm/{token}` renders the scan
+as HTML (default), Markdown, CSV, or JSON depending on the
+`?download=` query param. Token expiry is the only revocation — let
+it expire to revoke. PII is redacted in evidence snippets before
+rendering, regardless of the public/private path.
+
+## `GET /scans/{id}/llm-traces`
+
+Returns the full LLM call trace for a scan. Each row corresponds to one
+chat-completions call made by a swarm agent during the scan.
+
+Authentication required. Returns `[]` for scans run with `SWARM_ENABLED=false`.
+
+```typescript
+type ScanLLMTrace = {
+  id: string;
+  scan_id: string;
+  agent: string;             // e.g. "InjectionAgent", "ChainAgent"
+  turn: number;              // agent conversation turn number
+  request_messages: object[];  // full messages array sent to the LLM
+  response: object;          // raw LLM response including tool-call blocks
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  reasoning: string | null;  // thinking/reasoning block if present
+  created_at: string;
+};
+```
+
+## `GET /scans/{id}/evidence/{finding_id}.png`
+
+Returns the Playwright evidence screenshot captured by `EvidenceCaptureAgent`
+for the specified finding. PII is redacted before storage.
+
+Authentication required. Returns `404 Not Found` if no screenshot exists for
+that finding (e.g. the finding was below high severity, the agent did not run,
+or the scan used the legacy single-agent path).
+
+```http
+GET /scans/3a35.../evidence/f7b2c4....png
+Authorization: Bearer <token>
+```
+
+Response: `image/png` binary. Cache the response client-side — screenshots
+do not change after the scan completes.
+
+## `DELETE /scans/{id}`
+
+Cancel an in-flight scan or remove a finished one.
+
+## Scan object
+
+```typescript
+type Scan = {
+  id: string;
+  target_id: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  profile: string;
+  progress_pct: number;      // 0-100
+  current_stage: string | null;
+  summary: {
+    critical: number; high: number; medium: number; low: number; info: number;
+    suppressed: number;
+  } | null;
+  grade: "A" | "B" | "C" | "D" | "F" | null;
+  score: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+};
+```

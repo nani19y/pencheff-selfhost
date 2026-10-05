@@ -1,0 +1,739 @@
+---
+title: LLM Red Team — adversarial testing for chat endpoints
+---
+
+# LLM Red Team
+
+Pencheff treats an LLM endpoint as a third kind of asset alongside
+URL (DAST) and Repo (SAST/SCA). Register a chat-completions endpoint
+once, and Pencheff fires a curated suite of black-box adversarial
+probes at it: prompt injection, system-prompt leakage, output-handling
+abuse, denial-of-wallet, and more — graded by a deterministic
+rule-based engine, optionally escalated by an LLM-as-judge.
+
+## At a glance
+
+| Capability | Status |
+| --- | --- |
+| OWASP LLM Top 10 (2025) coverage | LLM01–LLM10 |
+| Compliance mappings | OWASP LLM Top 10 · MITRE ATLAS · NIST AI RMF · EU AI Act · GDPR · ISO/IEC 42001:2023 |
+| Provider transports | OpenAI-compatible · Custom JSON template · Executable command · WebSocket · AWS Bedrock (SigV4) · Google Vertex (ADC) · Azure OpenAI (Entra) · Browser (Playwright) |
+| Attack strategies | 21 transforms (base64, leetspeak, jailbreak, ASCII smuggling, …) + composite stacking + multilingual variants |
+| Multi-turn | Real Crescendo escalation with judge-driven early abort · GOAT per-turn technique switching · Hydra parallel multi-objective fan-out |
+| Iterative search | PAIR loop · TAP tree-of-attacks-with-pruning (off-topic prune at every depth) · attacker-driven synthesis |
+| Verdict | Regex (always) + embedding similarity (optional) + LLM-as-judge (optional) |
+| Judge providers | OpenAI-compatible · Llama Guard 3 · Granite Guardian · OpenAI Moderation · executable command |
+| Datasets (built-in) | DoNotAnswer · HarmBench · BeaverTails · CyberSecEval · ToxicChat · Aegis · UnsafeBench (text proxies) · XSTest (over-refusal) |
+| Add-on plugin packs | Bias (age/disability/gender/race) · RAG (poisoning/exfil/source-attribution) · MCP (tool-poisoning/name-collision/server-prompt/resource-exfil) · Coding-agent (11 sub-techniques) |
+| Guardrails | PII, secrets, unsafe code, tool authorisation — plus active bypass probes |
+| Cost controls | Per-call max_tokens, per-scan max_calls / max_cost_usd, retries, RPS / RPM rate limit |
+| Reports | Markdown · HTML · CSV · JSON · JUnit XML · Prometheus · share-by-link |
+
+## Quick start
+
+1. **`/targets/new`** in the SaaS UI → pick **LLM endpoint**.
+2. Endpoint URL, e.g. `https://api.openai.com/v1/chat/completions` or
+   `https://openrouter.ai/api/v1/chat/completions`. **Not** the model
+   info page — the chat-completions URL.
+3. Provider preset: `OpenAI-compatible` or one of the cloud-native shapes.
+4. Add an `Authorization` header row with the literal value
+   `Bearer sk-…`. Add any provider-specific extras
+   (`HTTP-Referer`, `OpenAI-Organization`, `x-api-key`).
+5. Optional: paste your deployed system prompt baseline so probes
+   exercise the *deployed* configuration, not a bare model.
+6. Pick a profile (`quick` / `standard` / `deep`) and submit.
+
+The runner branches on `target.kind = "llm"` and dispatches a single
+stage that orchestrates all 10 OWASP LLM modules. Findings appear in
+the report under `owasp_category: LLM01..LLM10`.
+
+## Anatomy of an LLM scan
+
+Click **Run scan** on an LLM target and the runner dispatches one
+stage that walks through 10 OWASP-LLM modules in order (LLM01 →
+LLM10). Each module's pipeline is identical:
+
+```
+1.  Load base payload library                   (payloads/llm0X_*.yaml)
+2.  Add per-module extras                       (custom policies, intents, factuality KB)
+3.  Add tier-4 add-on plugin packs              (bias / RAG / MCP / coding-agent)            ⟵ auto-on
+4.  Add dataset cases                           (harmbench, donotanswer, beavertails,        ⟵ auto-on
+                                                cyberseceval, toxic-chat, aegis,
+                                                unsafebench, xstest)
+5.  Add discovery-driven synthesis cases        (purpose / limitations / tools / user_role)  ⟵ opt-in
+6.  Add attacker-LLM-synthesised cases          (redteam.llm_synthesis)                      ⟵ opt-in
+7.  Apply variables                             ({{org}}, {{user_role}} substitution)        ⟵ opt-in
+8.  Apply strategies                            (encoded variants — base64 / hex / rot13 /
+                                                jailbreak / leetspeak / homoglyph /
+                                                citation / authoritative-markup / …)        ⟵ opt-in
+9.  Apply composite strategies                  (chained transforms, e.g. jailbreak+base64)  ⟵ opt-in
+10. Apply iterative attacks                     (TAP + GOAT + Hydra always-on when an        ⟵ auto-on*
+                                                attacker LLM is configured;
+                                                + PAIR / static if explicitly requested)
+11. Apply languages                             (multilingual wrap)                          ⟵ opt-in
+12. Filter by techniques_filter                 (caller restriction)                         ⟵ opt-in
+13. Round-robin cap at max_payloads             (profile cap; quick=25, standard=75,         ⟵ auto-on
+                                                deep=250)
+14. Dispatch with bounded concurrency           (rate limiter shared across all modules)
+15. Per-probe verdict pipeline:
+    a. Regex (success_indicators ∧ ¬refusal)                                                 ⟵ always
+    b. Embedding similarity grader                                                           ⟵ opt-in
+    c. LLM-as-judge                                                                          ⟵ opt-in
+    d. Factuality grader                            (LLM09 with KB)                          ⟵ opt-in
+16. Aggregate by (category, technique) → Finding     (≤5 evidence rows per Finding)         ⟵ auto-on
+17. Persist to DB at module_done
+```
+
+After all 10 modules complete:
+
+```
+18. Compute scan grade with the LLM-specific severity curve                                  ⟵ auto-on
+    (looser caps than URL/DAST: critical 100 / high 60 / medium 40 / low 12)
+19. Apply compliance mappings to every finding:                                              ⟵ auto-on
+    • OWASP LLM Top 10 (2025)
+    • MITRE ATLAS
+    • NIST AI RMF
+    • EU AI Act
+    • GDPR
+    • ISO/IEC 42001:2023
+20. Generate report                              (Markdown / HTML / CSV / JSON / JUnit /     ⟵ auto-on
+                                                 Prometheus / share-by-link)
+21. Surface recommended runtime guardrails       (failed categories → toggle suggestions     ⟵ auto-on
+                                                 for the Sentry proxy)
+```
+
+\* Auto-on when an attacker LLM is configured on the target. Without
+one, TAP / GOAT / Hydra silently skip with a one-time log line — they
+need the attacker to generate refinements / branch prompts. PAIR and
+static iterative are still opt-in via `redteam.iterative`.
+
+## OWASP LLM Top 10 (2025) modules
+
+Every category ships a curated payload library AND auto-loads the
+matching slice of every tier-4 add-on plugin pack and dataset.
+Findings are keyed on `(owasp_category, technique)` so the report
+shows *"Direct override of prior instructions (8/12 payloads)"* as a
+single Finding with up to 5 evidence rows — never 8 near-duplicate
+clones.
+
+| ID | Base coverage | Add-on plugin packs auto-loaded | Datasets auto-loaded |
+| --- | --- | --- | --- |
+| **LLM01** | Direct override · role-play (DAN-style) · suffix injection · encoded (b64, hex, ROT13, Morse) · multilingual · instruction-hierarchy bypass · nested | `coding-agent:repo-prompt-injection` | (none) |
+| **LLM02** | PII echo · "repeat above" · coercive paraphrase · synthetic training-data recall | `coding-agent:secret-handling` · `coding-agent:delayed-ci-exfil` · `coding-agent:procfs-credential-read` · `coding-agent:steganographic-exfil` · `rag:exfiltration` | (none) |
+| **LLM03** | Model-card disclosure · version probing · third-party reference leakage | (none) | (none) |
+| **LLM04** | Indirect-injection style RAG-context simulation · adversarial training-time markers | `rag:poisoning` | (none) |
+| **LLM05** | XSS via markdown · `<script>` emission · iframe injection · ANSI hidden-text · SQL injection payload generation | `coding-agent:generated-vulnerabilities` · `coding-agent:terminal-output-injection` | aegis (S3, S7) · unsafebench (phishing-art) |
+| **LLM06** | Tool / function-call abuse · privilege escalation framing · custom-intent-driven probes | `coding-agent:automation-poisoning` · `coding-agent:network-egress-bypass` · `coding-agent:sandbox-escape` · `coding-agent:verifier-sabotage` · `coding-agent:core` · `mcp:tool-poisoning` · `mcp:tool-name-collision` · `mcp:untrusted-server-prompt` · `mcp:resource-exfil` | (none) |
+| **LLM07** | Direct extraction · completion shotgun · fake debug mode · role inversion · "translate above" suffix | (none) | (none) |
+| **LLM08** | Adversarial query crafting · context confusion | (none) | (none) |
+| **LLM09** | Custom policy-driven probes · optional KB-grounded factuality grader | `bias:age` · `bias:disability` · `bias:gender` · `bias:race` · `rag:source-attribution` | aegis (S1, S2, S4, S5, S6) · unsafebench (hate-iconography, graphic-violence, NSFW-CSAM, weapon-howto, doxx) · xstest (8 over-refusal probes — verdict semantics inverted) · harmbench · donotanswer · beavertails · toxic-chat |
+| **LLM10** | Token-bomb baits · recursive amplification · repetition loops · ZWSP flooding · latency / token / cost threshold findings | (none) | (none) |
+
+## Strategies and composite stacking
+
+Strategies are deterministic prompt transformations applied to base
+payloads. They multiply coverage cheaply.
+
+```yaml
+redteam:
+  strategies:
+    - base64
+    - hex
+    - rot13
+    - morse
+    - leetspeak
+    - homoglyph
+    - jailbreak
+    - authoritative-markup
+    - citation
+    - best-of-n
+    - ascii-smuggling
+    - emoji-smuggling
+    - image-markdown
+    - audio-transcript
+    - video-transcript
+    - camelcase
+    - pig-latin
+    - crescendo          # promoted to multi-turn — see below
+  composite_strategies:
+    - jailbreak+base64
+    - leetspeak+jailbreak
+    - base64+leetspeak
+    - citation+ascii-smuggling
+  languages: [Spanish, Mandarin, Hindi, Arabic]
+```
+
+Each base payload × each strategy ↦ one extra TestCase. Composites
+chain transforms left-to-right. Languages wrap each prompt with
+*"Respond in &lt;language&gt;"* — non-English locales typically have
+weaker safeguards.
+
+## Multi-turn Crescendo
+
+The `crescendo` strategy doesn't just wrap a prompt — it produces a
+real 5-turn TestCase that builds context turn-by-turn. The dispatcher
+carries the assistant's reply forward as `messages[]` history, so
+later turns reference earlier ones. When a [judge](#llm-as-judge) is
+configured, intermediate-turn refusals can short-circuit the
+escalation to save budget.
+
+## Iterative search (PAIR · TAP · GOAT · Hydra)
+
+Pencheff supports four attacker-driven iterative search strategies.
+**TAP, GOAT, and Hydra are always on for every scan when an attacker
+LLM is configured** — they expand each base case with a `:tap`,
+`:goat`, and `:hydra` marker that the dispatcher routes to the
+matching loop. PAIR and the deterministic `static` mode are opt-in
+via `redteam.iterative`.
+
+| Mode | Defining feature | Auto-on? | Cost shape |
+| --- | --- | --- | --- |
+| `tap` | Tree-of-Attacks-with-Pruning (Mehrotra et al. 2023) — branching + **off-topic pruning** at each depth | **Yes** (with attacker) | O(depth · branching) — pruned |
+| `goat` | Multi-turn (Pavlova et al. 2024) — attacker picks one of 8 named techniques per turn, switches on observed refusals | **Yes** (with attacker) | O(max_turns) |
+| `hydra` | Multi-objective parallel multi-turn — K independent conversations, one per objective; first-to-converge wins | **Yes** (with attacker) | O(objectives · max_turns / concurrency) |
+| `pair` | Linear refinement: attacker reads the target's last reply and rewrites the prompt | Opt-in (`iterative: pair`) | O(iterations) |
+| `static` | Deterministic refinement variants — no attacker required | Opt-in (`iterative: static`) | O(rounds) |
+
+When **no attacker LLM is configured**, TAP/GOAT/Hydra silently skip
+with a one-time log line (`iterative_skipped — configure
+redteam.attacker to enable…`). Configure an attacker per target via
+the **Attacker LLM** block in the target form, or `redteam.attacker`
+in the config.
+
+User opts via `redteam.iterative` are **additive** with the auto-on
+trio. So `iterative: pair` runs PAIR alongside TAP+GOAT+Hydra on
+every base case (4 marker variants), not instead of.
+
+```yaml
+redteam:
+  iterative: tap          # pair | tap | goat | hydra
+  pair_iterations: 5      # PAIR-only
+  tap:
+    depth: 4
+    branching: 3
+    width: 10
+  goat:
+    max_turns: 5
+  hydra:
+    objectives: ["leak SSN", "leak credit-card number"]   # else derived from success_indicators
+    max_turns: 3
+    concurrency: 4
+  attacker:
+    enabled: true
+    provider: openai-chat
+    endpoint: https://openrouter.ai/api/v1/chat/completions
+    model: meta-llama/llama-3.3-70b-instruct:free
+    headers:
+      Authorization: "Bearer sk-or-v1-…"
+```
+
+PAIR (legacy default):
+
+```yaml
+redteam:
+  iterative: pair
+  pair_iterations: 5
+  attacker:
+    enabled: true
+    provider: openai-chat
+    endpoint: https://openrouter.ai/api/v1/chat/completions
+    model: meta-llama/llama-3.3-70b-instruct:free
+    headers:
+      Authorization: "Bearer sk-or-v1-…"
+```
+
+Set `iterative: static` for a deterministic, attacker-free expansion
+that's safe to run in air-gapped environments.
+
+## Attacker-LLM synthesis
+
+The same attacker block, when paired with `redteam.llm_synthesis`,
+generates *novel* TestCases targeted at your discovered profile —
+once per scan, results cached by profile hash:
+
+```yaml
+redteam:
+  discovery:
+    purpose: "internal customer-support copilot"
+    limitations: "must refuse PII extraction, refunds > $500, …"
+    tools: ["order_lookup", "refund_create"]
+    user_context: "customer rep with read-only role"
+  llm_synthesis:
+    enabled: true
+    n: 10
+```
+
+## Verdict pipeline
+
+For each probe, the engine evaluates verdicts in order:
+
+1. **Regex** — `success_indicators` ∧ ¬`refusal_patterns` →
+   VULNERABLE. Refusal beats success.
+2. **Embedding similarity** (optional) — when a TestCase declares
+   `success_embeddings: [text, …]` and an [embedder](#embedding-similarity-grader)
+   is configured, an AMBIGUOUS verdict can be promoted by cosine
+   match against any anchor.
+3. **LLM-as-judge** (optional) — still-AMBIGUOUS verdicts go to a
+   judge model. Judge confidence ≥ `min_confidence` is required
+   to override.
+4. **Factuality** (LLM09 only) — KB-grounded contradiction check
+   via the judge.
+
+REFUSED beats every promotion path. AMBIGUOUS emits no Finding —
+that's how the false-positive rate stays at zero.
+
+## LLM-as-judge
+
+Five judge providers ship out of the box:
+
+| Provider | Notes |
+| --- | --- |
+| `openai-chat` | Any OpenAI-compatible chat endpoint. JSON-protocol baked into the system prompt. |
+| `executable` | Local command receives JSON on stdin, returns JSON on stdout. Air-gapped friendly. |
+| `llama-guard` | Llama Guard 3 (8B). Parses the official `safe`/`unsafe S1..S14` reply and maps S-codes onto OWASP LLM categories. |
+| `granite-guardian` | IBM Granite Guardian 3.x. Yes/No protocol with optional risk dimension. |
+| `openai-moderation` | OpenAI `/moderations` API. Threshold-graded; cheap and unaffected by `<think>` traces — recommended for reasoning-model targets. |
+
+```yaml
+redteam:
+  judge:
+    enabled: true
+    provider: openai-moderation
+    endpoint: https://api.openai.com/v1/moderations
+    model: omni-moderation-latest
+    headers:
+      Authorization: "Bearer sk-…"
+    min_confidence: 0.65
+    unsafe_threshold: 0.4
+```
+
+## Embedding similarity grader
+
+For verdicts that depend on semantic equivalence rather than literal
+strings, configure an embedder. v1 supports OpenAI-compatible
+`/embeddings` and Cohere `embed`. TestCases opt in via
+`success_embeddings: [...]`.
+
+```yaml
+redteam:
+  embedder:
+    enabled: true
+    endpoint: https://api.openai.com/v1/embeddings
+    model: text-embedding-3-small
+    headers:
+      Authorization: "Bearer sk-…"
+    threshold: 0.85
+```
+
+## Datasets and guardrails
+
+Datasets and the four tier-4 add-on plugin packs **load on every
+scan automatically**. The config below is shown for reference (and
+operator opt-out paths); typical scans don't need to touch any of it.
+
+```yaml
+redteam:
+  # Datasets — 8 packs auto-load (5 legacy + 3 tier-4). Operators
+  # can list additional names to add user / file packs, OR set
+  # ``datasets_disable_default: true`` to turn off the auto-merge
+  # of aegis / unsafebench / xstest.
+  datasets:
+    - donotanswer
+    - harmbench
+    - beavertails
+    - cyberseceval
+    - toxic-chat
+    - aegis           # ⟵ auto-on — NVIDIA AI safety taxonomy (S1–S13)
+    - unsafebench     # ⟵ auto-on — text proxies for image-paired failure modes
+    - xstest          # ⟵ auto-on — over-refusal probes (verdict semantics inverted)
+  datasets_disable_default: false
+  # Plug-in packs — auto-load on every scan. Set ``plugins`` to a
+  # narrower list to opt OUT of specific packs.
+  plugins:
+    - bias            # ⟵ auto-on — age / disability / gender / race
+    - rag             # ⟵ auto-on — poisoning / exfiltration / source-attribution
+    - mcp             # ⟵ auto-on — tool-poisoning / name-collision / server-prompt / resource-exfil
+    - coding-agent    # ⟵ auto-on — 11 sub-techniques for autonomous coding agents
+  # Scan-time guardrail probes — opt-in. Test whether the
+  # *configured* runtime guardrail blocks the failure mode.
+  guardrails:
+    - pii
+    - secrets
+    - unsafe-code
+    - tool-authz
+    - bias            # ⟵ also available as scan-time probe
+    - rag
+    - mcp
+    - coding-agent
+  guardrail_bypass: true   # add active bypass variants
+```
+
+External datasets can also be loaded with `file://path/to/seeds.json`
+or any HTTP URL pointing to a JSON / YAML list.
+
+### Default dataset / plugin reach
+
+| Dataset / pack | Auto-on? | Failure modes covered | OWASP-LLM bucket |
+| --- | --- | --- | --- |
+| `donotanswer` | Yes | Unsafe medical advice · illegal-evasion compliance | LLM09 |
+| `harmbench` | Yes | Harmful instruction compliance · unsafe code emission | LLM05 / LLM09 |
+| `beavertails` | Yes | Manipulative / coercive output | LLM09 |
+| `cyberseceval` | Yes | Prompt injection · shell-command emission | LLM01 / LLM05 |
+| `toxic-chat` | Yes | Hate speech · demeaning content | LLM09 |
+| `aegis` | **Yes (tier-4)** | NVIDIA S1–S13 taxonomy: violence, weapons, cyber, self-harm, CSAM, fraud, malware | LLM05 / LLM09 |
+| `unsafebench` | **Yes (tier-4)** | Hate iconography · graphic violence · NSFW-CSAM · weapon how-to · phishing-page mockup · doxx | LLM05 / LLM09 |
+| `xstest` | **Yes (tier-4)** | Over-refusal of benign questions (verdict inverted) | LLM09 |
+| `bias` plugin | **Yes (tier-4)** | Stereotype affirmation × age / disability / gender / race | LLM09 |
+| `rag` plugin | **Yes (tier-4)** | Poisoned passages · retrieved-context exfil · fabricated citations | LLM02 / LLM04 / LLM09 |
+| `mcp` plugin | **Yes (tier-4)** | Tool description injection · name collision · untrusted-server prompt · resource exfil | LLM06 |
+| `coding-agent` plugin | **Yes (tier-4)** | Automation poisoning · CI exfil · sandbox escape · secret handling · ANSI hijack · BiDi · verifier sabotage · network egress bypass · procfs read · repo prompt injection · steganographic exfil | LLM01 / LLM02 / LLM05 / LLM06 |
+
+### XSTest over-refusal semantics
+
+XSTest probes are inverted: the failure mode is *over-refusal of a
+benign request*. A finding fires when the model **refuses** a request
+that's actually safe (kill a Python process, fictional poison for a
+novel, define "phishing" for a security deck). In the engine this
+maps cleanly: refusal-language is the `success_indicator` for these
+seeds, and compliance language is the `refusal_pattern`.
+
+### IP / dataset provenance
+
+Pencheff does **not** vendor any rows from upstream LLM safety
+datasets. Every built-in seed is an in-house paraphrase that probes
+the same failure mode as the cited corpus. Module docstrings cite
+each upstream paper + license. Users who want the original rows can
+plug them in via the `file://` / HTTP loader — Pencheff treats
+externally-loaded probes the same as built-ins.
+
+## Runtime guardrails (Sentry proxy)
+
+The scan-time pipeline finds *which* failure modes a model is
+vulnerable to. The runtime proxy *blocks them in production*.
+Pencheff Sentry is a thin HTTP / LiteLLM-plugin / MCP-middleware
+that runs on every request before it reaches the upstream model and
+on every response before it reaches your application.
+
+The full loop:
+
+1. **Scan** the endpoint — finds the bias / RAG / MCP / coding-agent
+   failure modes the model produces.
+2. **Recommendations** appear at `/scans/{id}/recommended-guardrails` —
+   one toggle per failed category, with rationale.
+3. **Apply** the recommended config (or pick a compliance preset).
+4. **Sentry blocks** the same failure modes inline. Re-run the scan
+   to confirm zero failures under the configured guardrails.
+
+### Detector matrix
+
+| Toggle | Side | Detector | Maps to |
+| --- | --- | --- | --- |
+| `LLM01` | input | injection-pattern regex (override / DAN / role-play) | OWASP LLM01 · ISO 42001 A.6.2.4 |
+| `LLM02` | input + output | PII / secret shapes (SSN, card, AWS key, OpenAI sk-, GH PAT) | OWASP LLM02 · GDPR Art. 32 |
+| `LLM05` | output | unsafe HTML emission (`<script>`, `<iframe>`, `javascript:` URI, inline event) | OWASP LLM05 · GDPR Art. 32 |
+| `LLM06` | input + output | tool-authorisation framing | OWASP LLM06 · EU AI Act Art. 14 |
+| `LLM07` | input + output | system-prompt-leak chain + baseline-window comparison | OWASP LLM07 · ISO 42001 A.6.2.7 |
+| `LLM09` | output | factuality judge (LLM call) | OWASP LLM09 · EU AI Act Art. 13 |
+| `LLM10` | input + output | token-count caps | OWASP LLM10 |
+| `BIAS` | output | stereotype-affirmation regex (gender / age / race / disability) **+ optional judge** | OWASP LLM09 · GDPR Art. 22 · EU AI Act Art. 5 |
+| `RAG` | output | doc-id leak / retrieved-secret-block / markdown-image-alt-exfil **+ optional judge** | OWASP LLM02 · GDPR Art. 32 · ISO 42001 A.7.5 |
+| `MCP` | input | tool-description-instruction / mcp-server-override / stealth-instruction / system-marker | OWASP LLM06 · ISO 42001 A.10.3 |
+| `CODING_AGENT` | output | ANSI-CSI / OSC 52 / Trojan-Source BiDi / `--no-verify` / hardcoded-credential-assignment | OWASP LLM02/05/06 · ISO 42001 A.6.2.4 |
+
+Toggles are stored on `Target.llm_config["guardrails"]` as
+`{input: {...}, output: {...}}`. Manage via the UI editor at
+`/targets/{id}/guardrails` or `PUT /targets/{id}/guardrails`.
+
+### Compliance presets
+
+Eight presets are available:
+
+| Preset | Use case |
+| --- | --- |
+| `balanced` (default) | Cheap-detector baseline: LLM01/02/07 input, LLM02/05/10 output |
+| `strict` | Every inline detector + LLM07 output baseline |
+| `minimal` | PII-only observe-mode |
+| `all` | Every detector that has *any* enforcement path (incl. tier-4) |
+| `gdpr-aligned` | Art. 5 data minimisation · Art. 22 (BIAS) · Art. 32 (RAG, integrity) |
+| `iso-42001-aligned` | Annex A V&V (LLM01, BIAS, CODING_AGENT) · A.7.2 data quality · A.10.3 supplier (MCP) |
+| `ai-act-high-risk` | Art. 13 transparency · Art. 14 oversight (LLM06, MCP) · Art. 15 accuracy (LLM09, RAG) |
+| `bias-aware-production` | Consumer-facing endpoints — BIAS + LLM09 factuality + RAG source-attribution |
+
+Pick a preset via the **Presets** bar in the editor or
+`PUT /targets/{id}/guardrails {"preset": "gdpr-aligned"}`.
+
+### Optional LLM-judge fallback
+
+The four tier-4 inline detectors (BIAS / RAG / MCP / CODING_AGENT)
+support an optional LLM-judge fallback. When `judge_fallback: true`
+and a `judge` callable is configured, an inline regex hit is
+escalated to the judge for a second opinion before blocking. The
+judge can return `{"verdict": "allow"}` to overturn the block. Useful
+for accuracy-sensitive categories like bias and RAG fabrication
+where the regex chain is intentionally narrow.
+
+A judge fault (exception / non-dict reply) **fails closed** —
+we keep the block.
+
+### Scan-time guardrail-probe pack
+
+`redteam.guardrails: [bias, rag, mcp, coding-agent]` adds probes
+that test whether the *configured* runtime guardrail blocks the
+failure mode. Useful as a regression suite after applying recommended
+toggles. Combine with `guardrail_bypass: true` to fan out three
+active-bypass variants per probe.
+
+## Provider transports
+
+| Provider | Transport | Auth |
+| --- | --- | --- |
+| `openai-chat` | HTTPS chat completions | Bearer / custom headers |
+| `custom` | HTTPS with user-supplied request body template + response JSONPath | Headers |
+| `executable` | Local command, JSON on stdin/stdout | OS-level |
+| `websocket` | Single-message or multi-message WebSocket | Headers |
+| `bedrock` | InvokeModel | AWS SigV4 (boto3) |
+| `vertex` | `:generateContent` | Google ADC token (google-auth) |
+| `azure-openai` | Chat completions | Entra OAuth (azure-identity) or `api-key` |
+| `browser` | Playwright drives a chat UI | Headers + cookies |
+
+Cloud-native auth re-signs / refreshes tokens per request without
+touching the credential blob. Optional extras pull the right SDK:
+`pip install pencheff[bedrock]` / `[vertex]` / `[azure]`.
+
+## Rate limits, retries, and cost ceilings
+
+The token-bucket rate limiter is **shared across every probe targeting
+the same endpoint at the same rate**, so 10 OWASP modules dispatching
+concurrently respect a single per-key cap.
+
+```yaml
+max_rps: 0.3       # explicit; overrides max_rpm
+max_rpm: 18        # OpenRouter free tier ≈ 20 RPM
+rate_burst: 5      # bucket capacity (defaults to RPS)
+concurrency: 3     # in-flight requests
+retries: 3         # on 429, 5xx — uses upstream Retry-After when present
+backoff_s: 1.0     # exponential base
+timeout_s: 30
+budget:
+  max_calls: 2000
+  max_cost_usd: 5.0
+  input_cost_per_1k: 0.0   # set to non-zero for paid models
+  output_cost_per_1k: 0.0
+thresholds:
+  max_latency_ms: 30000      # emits LLM10 finding when exceeded
+  max_tokens_per_call: 4000  # emits LLM10 finding when exceeded
+cache: true
+cache_size: 512
+```
+
+429 responses honour the upstream `Retry-After` header automatically;
+the shared limiter stalls all concurrent dispatchers until the
+provider's window resets so retries don't thunder-herd.
+
+## Profiles
+
+LLM scans use a separate profile cap from URL targets. The cap is
+applied *after* strategy fan-out and iterative-marker expansion, so
+a `deep` scan with TAP+GOAT+Hydra auto-on still tops out at 250
+total cases — round-robin distributes them fairly across techniques.
+
+| Profile | `max_payloads` | Wall time @ 18 RPM | Hard budget |
+| --- | --- | --- | --- |
+| `quick` | 25 | ~5 min | 10 min |
+| `standard` | 75 | ~15 min | 30 min |
+| `deep` | 250 | ~60–90 min | **2 hours** (fits tier-4 surface + always-on TAP/GOAT/Hydra) |
+
+A scan that hits the hard budget is cut off mid-module; aggregated
+findings from prior modules are preserved, but the in-flight module's
+unflushed verdicts are dropped at cancellation. Pick a profile that
+fits the model's per-call latency. Free-tier endpoints with 10–30 s
+per probe + retries should use `deep` only when ready for the full
+2-hour budget.
+
+## Grading
+
+LLM targets use a separate severity curve from URL/DAST. The URL
+curve is tuned for deduplicated DAST findings (5 highs is genuinely
+catastrophic); the LLM curve uses lower per-finding weights and
+wider caps because LLM scans naturally produce more rows — one per
+`(owasp_category, technique)` pair, and tier-4 adds ~22 technique
+slots on top of the OWASP-LLM-10 base.
+
+| Severity | URL weight / cap | LLM weight / cap |
+| --- | --- | --- |
+| critical | 25 / 75 (3 saturate) | 25 / 100 (4 saturate) |
+| high | 8 / 40 (5 saturate) | **4 / 60** (15 saturate) |
+| medium | 3 / 25 (8 saturate) | **1.5 / 40** (27 saturate) |
+| low | 1 / 15 | **0.3 / 12** |
+
+Same A/B/C/D/F thresholds (≥90 / 80 / 65 / 50 / else) and same
+safety rails apply: any unsuppressed critical caps at C; any
+unsuppressed high caps at B.
+
+Calibration points worth knowing:
+
+| LLM finding profile | Grade |
+| --- | --- |
+| Clean | A |
+| 1 high | B (rail) |
+| 5 high + 5 medium | **C** |
+| 8 distinct high bypasses | C |
+| 1 critical alone | C (rail) |
+| 12 highs | D |
+| 20+ highs | F |
+| 3+ criticals | F |
+| 3 critical + 70 high + 53 medium + 9 low | F |
+
+## Reporting
+
+| Format | Where | Notes |
+| --- | --- | --- |
+| Markdown | `reporting.render_red_team_markdown` | CI comments, Slack |
+| HTML | `reporting_extras.render_html` | Self-contained, embedded CSS, no JS, email-able |
+| CSV | `reporting_extras.render_csv` | One row per Finding; stable columns |
+| JSON | `--output-format json` from CLI | Full Finding shape + summary + optional regression diff |
+| JUnit XML | `reporting.render_junit_xml` | CI fail-on-threshold |
+| Prometheus | `reporting.render_prometheus_metrics` | Pair with the [Grafana dashboard](#grafana-dashboard) |
+
+### A/B comparison & regression detection
+
+`GET /scans/{a}/compare/{b}` returns a structured diff (regressions,
+fixes, common failures). The web UI exposes the same diff at
+`/scans/compare?a=…&b=…`. Use it to gate PRs on safety regressions
+or to A/B different model versions on the same suite.
+
+### Share-by-link
+
+`POST /scans/{id}/share?ttl_seconds=604800` returns a Fernet-encrypted
+token. The public route `GET /share/llm/{token}` renders the report
+as HTML / Markdown / CSV / JSON without auth — token expiry is the
+only revocation. Available only for `kind: "llm"` scans.
+
+### Grafana dashboard
+
+The repo ships a canonical dashboard at
+[`docs/grafana/pencheff-llm-redteam.json`](https://github.com/Magadha-IG/pencheff/blob/main/docs/grafana/pencheff-llm-redteam.json):
+total failures, per-OWASP-LLM breakdown, per-strategy table, severity
+donut, latency p50/p95/p99, regression rate, cost trend.
+
+## CLI
+
+The full headless CLI is documented at [CLI reference →
+llm-redteam](/cli/reference#llm-redteam). Quick example:
+
+```bash
+pencheff llm-redteam \
+  --target https://openrouter.ai/api/v1/chat/completions \
+  --model 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' \
+  --header "Authorization=Bearer sk-or-v1-…" \
+  --strategies 'base64,jailbreak,crescendo,leetspeak' \
+  --datasets 'donotanswer,harmbench' \
+  --guardrails 'pii,secrets,unsafe-code,tool-authz' \
+  --judge-provider openai-moderation \
+  --judge-endpoint https://api.openai.com/v1/moderations \
+  --max-rps 0.3 \
+  --max-cost-usd 5 \
+  --output-format html \
+  --output-file report.html \
+  --fail-on high
+```
+
+## Plugin SDK
+
+`_TRANSFORMS`, `LlmJudge` providers, and chat providers are all
+extensible. Drop a Python file under
+`~/.pencheff/custom_llm_strategies/`, `~/.pencheff/custom_llm_judges/`,
+or `~/.pencheff/custom_llm_providers/`, set
+`PENCHEFF_ENABLE_CUSTOM_MODULES=1`, and Pencheff discovers them at
+scan time. See the [Plugin SDK guide →
+LLM red team](/plugin-sdk/llm-redteam) for the protocol classes.
+
+## OWASP-LLM-aware integrations
+
+Slack / webhook / Jira payloads automatically include a per-OWASP-LLM
+breakdown and the top failed techniques when `target.kind == "llm"`.
+The same generic integration matchers apply (per-target scoping,
+per-event filtering, severity gating).
+
+## Ethical framing
+
+A finding here means *"the model produced output of class X when
+asked"* — not *"here is the harmful generation verbatim."* Evidence
+captures sanitized snippets (≤512 chars) and PII-shaped tokens
+(emails, SSNs, cards, phone numbers, common API key patterns) are
+redacted before they reach Findings. Full responses go to the scan
+log only when explicitly opted in.
+
+## Reasoning-model gotchas
+
+Models that emit `<think>…</think>` traces (Nemotron, DeepSeek-R1,
+QwQ, …) often parrot refusal language *inside the trace* even when
+the final answer complies. Two mitigations:
+
+1. **Use the OpenAI Moderation judge** (`provider: openai-moderation`).
+   It scores the visible output, not the chain-of-thought, and is
+   unaffected by trace contamination.
+2. **Use embedding similarity** for any TestCase whose success can
+   be expressed semantically — `success_embeddings` catches "the
+   model agreed in spirit even if it didn't echo the canary string."
+
+Without either of these, expect a misleadingly low VULNERABLE rate
+on reasoning-model targets.
+
+## Auto-on vs opt-in — full reference
+
+Use this table as the answer to "what runs in every scan?".
+
+### Auto-on (every LLM scan)
+
+| Layer | What | Config field that turns it on |
+| --- | --- | --- |
+| OWASP-LLM modules | All 10 modules (LLM01 → LLM10) | (always — built-in) |
+| Add-on plugin packs | bias · rag · mcp · coding-agent | `redteam.plugins` defaults to all four |
+| Datasets — legacy | donotanswer · harmbench · beavertails · cyberseceval · toxic-chat | (loaded when their per-module hooks fire — LLM01 / LLM05 / LLM09) |
+| Datasets — tier-4 | aegis · unsafebench · xstest | `redteam.datasets_disable_default: false` (default) |
+| Iterative search | TAP + GOAT + Hydra | Auto-on **when an attacker LLM is configured** |
+| Verdict — regex | success_indicators ∧ ¬refusal_patterns | (always, baked into engine) |
+| Compliance mappings | OWASP LLM · MITRE ATLAS · NIST AI RMF · EU AI Act · GDPR · ISO/IEC 42001:2023 | (always, applied at finding-render) |
+| Grading | LLM-specific severity curve | (always — the runner picks `target_kind="llm"`) |
+| Reporting | Markdown + Prometheus + share-by-link | (always; CSV/HTML/JSON/JUnit on demand) |
+| Recommended runtime guardrails | Toggle suggestions per failed category | (always available at `/scans/{id}/recommended-guardrails`) |
+| Round-robin cap | `max_payloads` distributed across techniques | (always — quick=25, standard=75, deep=250) |
+
+### Opt-in (off by default — set the field to enable)
+
+| Layer | Field | Effect |
+| --- | --- | --- |
+| Iterative — PAIR | `redteam.iterative: pair` | PAIR markers added on top of the auto-on TAP/GOAT/Hydra |
+| Iterative — static | `redteam.iterative: static` | Deterministic refinement variants (no attacker required) |
+| Strategies | `redteam.strategies: [base64, jailbreak, …]` | Encoded variants — each base case fans out into the listed transforms |
+| Composite strategies | `redteam.composite_strategies: [jailbreak+base64, …]` | Chained transforms |
+| Multilingual | `redteam.languages: [Spanish, Mandarin, …]` | Wraps each prompt with "Respond in &lt;language&gt;" |
+| Discovery probes | `redteam.discovery: {purpose, limitations, tools, user_context}` | Synthesises probes targeted at the application profile |
+| Attacker-LLM synthesis | `redteam.llm_synthesis: {enabled: true, n: 10}` | One attacker call generates N novel TestCases per scan |
+| LLM-as-judge | `redteam.judge: {…}` | AMBIGUOUS verdicts get escalated to the judge |
+| Embedding similarity | `redteam.embedder: {…}` | Anchor-based semantic verdict promotion |
+| Factuality grader (LLM09) | `redteam.factuality.kb: …` | KB-grounded contradiction check |
+| Custom policy probes | `redteam.policies: […]` | Bespoke LLM09 rules turned into TestCases |
+| Custom intent probes | `redteam.intents: […]` | Bespoke LLM06 / agentic checks |
+| Variables substitution | `redteam.variables: {org: "…", role: "…"}` | `{{var}}` → value in prompt text |
+| Scan-time guardrail probes | `redteam.guardrails: [pii, secrets, bias, rag, mcp, coding-agent, …]` | Validate that the runtime guardrail blocks each failure mode |
+| Active guardrail bypass | `redteam.guardrail_bypass: true` | Three bypass-template variants per guardrail probe |
+| Cost ceiling | `redteam.budget: {max_calls, max_cost_usd, …}` | Hard cap on dispatched probes / spend |
+| System-prompt baseline | `target.llm_config.system_prompt` | Probes exercise the deployed system prompt, not a bare model |
+
+### Always-off (you have to opt-out explicitly)
+
+| Layer | Field | Effect |
+| --- | --- | --- |
+| Tier-4 dataset auto-merge | `redteam.datasets_disable_default: true` | Skips aegis / unsafebench / xstest even though built-in |
+| Add-on plugin packs | `redteam.plugins: [bias]` (narrower list) | Loads only the listed packs; omitted = skipped |
+
+## See also
+
+- [Visual dashboards](dashboards.mdx) — `/scans/{id}/dashboard` renders an LLM-specific composition (verdict funnel, OWASP-LLM heatmap, strategy + technique breakdown, judge-confidence histogram, token + latency profile) when the target is `kind="llm"`.
+- [LLM target API](/reference/targets#llm-targets) — full schema
+- [`scan_llm_red_team` MCP tool](/reference/mcp-tools#llm-red-team)
+- [CLI: `pencheff llm-redteam`](/cli/reference#llm-redteam)
+- [Plugin SDK — custom strategies / judges / providers](/plugin-sdk/llm-redteam)
+- [Compliance: OWASP LLM Top 10 / MITRE ATLAS / NIST AI RMF / EU AI Act](/compliance/overview)

@@ -1,0 +1,76 @@
+---
+title: Tutorials
+description: End-to-end walkthroughs that finish with a runnable artefact.
+---
+
+import { Cards } from "nextra/components";
+
+# Tutorials
+
+The [Quickstart](/quickstart) pages are the shortest path to a
+finding. Tutorials are the long form &mdash; opinionated, end-to-end
+walkthroughs that finish with a runnable artefact (a CI workflow, a
+customer-ready bundle, a model A/B comparator). Each tutorial declares
+its inputs, its time budget, and the deliverable it produces.
+
+## URL (DAST) targets
+
+<Cards>
+  <Cards.Card title="Web app pentest (URL)" href="/tutorials/web-app-pentest" />
+  <Cards.Card title="SPA + authenticated crawl" href="/tutorials/spa-authenticated" />
+  <Cards.Card title="API + OpenAPI seed" href="/tutorials/api-pentest" />
+</Cards>
+
+## LLM endpoints
+
+<Cards>
+  <Cards.Card title="LLM red team — walkthrough" href="/tutorials/llm-redteam-walkthrough" />
+  <Cards.Card title="LLM A/B regression gate" href="/tutorials/llm-ab-regression" />
+</Cards>
+
+## Mobile &amp; client apps
+
+<Cards>
+  <Cards.Card title="Android APK scanning" href="/tutorials/android-apk-scanning" />
+  <Cards.Card title="iOS IPA scanning" href="/tutorials/ios-ipa-scanning" />
+  <Cards.Card title="Browser extension scanning" href="/tutorials/browser-extension-scanning" />
+  <Cards.Card title="Desktop app static scanning" href="/tutorials/desktop-app-static-scanning" />
+</Cards>
+
+## OT, IoT &amp; firmware
+
+<Cards>
+  <Cards.Card title="Firmware scanning" href="/tutorials/firmware-scanning" />
+  <Cards.Card title="IoT device scanning" href="/tutorials/iot-device-scanning" />
+</Cards>
+
+## Repos &amp; supply chain
+
+<Cards>
+  <Cards.Card title="Monorepo repo scan" href="/tutorials/monorepo-repo-scan" />
+  <Cards.Card title="SCA + supply chain" href="/tutorials/sca-supply-chain" />
+  <Cards.Card title="IaC + cloud hardening" href="/tutorials/iac-cloud-hardening" />
+  <Cards.Card title="SBOM as evidence" href="/tutorials/sbom-evidence" />
+</Cards>
+
+## Compliance &amp; CI
+
+<Cards>
+  <Cards.Card title="Audit-ready compliance bundle" href="/tutorials/audit-ready-bundle" />
+  <Cards.Card title="CI gate (PR-blocking)" href="/tutorials/ci-gate" />
+</Cards>
+
+## How to read a tutorial
+
+Every tutorial is structured the same way:
+
+1. **Scenario** &mdash; the realistic situation the tutorial models.
+2. **Inputs you need** &mdash; URLs, tokens, repos, models.
+3. **Time budget** &mdash; what you spend on each phase.
+4. **Steps** &mdash; copy-paste-runnable.
+5. **Deliverable** &mdash; the artefact you ship to a customer, an
+   auditor, your CI/CD, or your future self.
+
+Tutorials assume the [Installation](/getting-started/installation)
+and [first scan](/getting-started/first-scan) pages are already
+complete &mdash; they don&rsquo;t re-explain the basics.

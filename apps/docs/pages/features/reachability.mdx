@@ -1,0 +1,74 @@
+---
+title: Reachability classifier
+---
+
+# Reachability classifier
+
+Snyk says "this dependency has a CVE." Pencheff says "this CVE is
+actually **exploited** in your live deployment." That gap is what the
+reachability classifier closes.
+
+Every finding gets one of four labels, persisted on the row and
+surfaced as a colour-coded badge in the dashboard.
+
+| State | Meaning | When |
+| --- | --- | --- |
+| **Exploited** | Pencheff DAST live-verified the issue | DAST findings, or active-verifier replay confirmed |
+| **Reachable** | Static taint or import probe traces user input to the sink | SAST with Semgrep / Bandit / gosec / Brakeman / ESLint trace; SCA where the package is imported |
+| **Present** | Vulnerable code/dependency exists; no usage evidence | SCA without imports, SAST without taint trace |
+| **Unknown** | Insufficient signal | Pre-classification, or scanner that doesn't emit reachability data |
+
+## Why three tiers, not two
+
+Snyk's reachability is **binary**: reachable or not. Pencheff splits
+"we can prove this is exploitable" from "the dataflow says it could
+be" because the operational responses are different:
+
+- **Exploited** → drop everything. The exploit ran live.
+- **Reachable** → fix in the current sprint. Taint reaches a sink, but
+  we haven't yet replayed it against production.
+- **Present** → triage in the backlog. The pattern exists; whether
+  it's actually reachable from the public surface is unconfirmed.
+
+## How it's computed
+
+Per-finding, at insert time, from signals already on the row:
+
+- DAST findings → **Exploited** (the scanner only emits findings on a
+  confirmed request/response pair).
+- Active-verifier replay → **Exploited** (regardless of source).
+- SAST evidence carrying a Semgrep `text_replace` autofix or a per-
+  language linter (Bandit / gosec / Brakeman / ESLint) hit at a
+  taintable sink → **Reachable**.
+- SCA findings → **Reachable** by default; downgraded to **Present**
+  when the [SCA reachability annotator](/features/sca#reachability-annotation)
+  flags `low_reachability: no imports detected`.
+
+Cross-finding upgrade: when a SAST finding shares a CWE or route token
+with an existing DAST finding, Pencheff promotes it to **Exploited** —
+the live attack path is already proved.
+
+## Priority ordering
+
+Reachability feeds the unified `risk_score` (CVSS × EPSS × KEV × SSVC ×
+reachability). The dashboard sorts by it. See
+[EPSS, KEV, SSVC](/features/epss-kev) for the full formula.
+
+## Filter the unified queue
+
+```
+GET /unified-findings?reachability=exploited
+GET /unified-findings?reachability=reachable&severity=high
+```
+
+The `/findings` page in the dashboard exposes the same filter as
+clickable chips.
+
+## What's tested
+
+```bash
+cd plugins/pencheff && uv run pytest tests/test_reachability.py
+```
+
+14 unit tests cover the per-finding classifier and the cross-finding
+upgrade rules.

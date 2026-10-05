@@ -1,0 +1,34 @@
+---
+title: PCI-DSS 4.0
+---
+
+# PCI-DSS 4.0
+
+Pencheff covers the PCI-DSS v4.0 technical requirements most commonly
+exercised by external auditors. Use the `pci-dss` or `compliance-full`
+profile.
+
+## Requirements covered
+
+| Requirement | Meaning | Pencheff module |
+| --- | --- | --- |
+| 2.2 | Secure configuration | `scan_infrastructure`, `scan_dockerfile`, `scan_kubernetes` |
+| 4.1 | Strong cryptography | `scan_infrastructure` (SSL/TLS) |
+| 6.2 | Bespoke / custom software secure development | SCA + IaC + DAST |
+| 6.5.1 | Injection flaws | `scan_injection` |
+| 6.5.7 | Cross-site scripting | `scan_client_side`, `scan_dom_xss` |
+| 6.5.8 | Broken access control | `scan_authz` |
+| 6.5.10 | Broken authentication / session mgmt | `scan_auth`, `scan_oauth`, `scan_advanced` |
+| 6.6 | Web application firewall or code review | `scan_waf` |
+| 7.1 / 7.2 | Access control | `scan_authz` |
+| 8.1 / 8.2 / 8.3 | Strong authentication + MFA | `scan_auth`, `scan_mfa_bypass` |
+| 11.3 | Internal + external vuln scans | `scan_host_vulns`, `scan_network_misconfig` |
+
+## Report
+
+```bash
+pencheff run-policy policies/examples/pci_dss.yaml
+```
+
+The resulting DOCX includes a **PCI-DSS 4.0 mapping table** listing
+every requirement touched by the scan, and the findings that hit each.

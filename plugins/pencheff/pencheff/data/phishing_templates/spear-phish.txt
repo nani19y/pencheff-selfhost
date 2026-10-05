@@ -1,0 +1,19 @@
+Subject: Action required: {{topic}} for {{target_company}}
+
+Hi {{recipient_first}},
+
+I'm reaching out from {{pretext_role}} regarding {{topic}}. We need your input
+before {{deadline}} to keep {{project_name}} on schedule.
+
+Please review the document at: {{landing_url}}
+
+If anything looks off, reply to this thread or reach me at {{pretext_phone}}.
+
+Thanks,
+{{pretext_full_name}}
+{{pretext_title}}
+{{pretext_company}}
+
+— Authorized engagement only. This template is generated for tabletop /
+authorized-phishing exercises documented in scope.yaml. Sending without
+written authorization violates pencheff's scope guard.

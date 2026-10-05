@@ -1,0 +1,169 @@
+---
+title: Email notifications
+---
+
+# Email notifications
+
+Three opt-in email flows powered by [Resend](https://resend.com) and
+the existing wrapper at `apps/api/pencheff_api/services/email.py`. All
+three short-circuit cleanly when `RESEND_API_KEY` is unset — no
+exception, no blocked request path; the rest of the app continues to
+work.
+
+## Configuration
+
+Set these environment variables to enable email delivery:
+
+| Variable | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `RESEND_API_KEY` | yes | empty | Resend API key. When empty, all sends short-circuit and log "resend not configured". |
+| `EMAIL_FROM` | no | `Pencheff <no-reply@pencheff.com>` | `From:` header on every Pencheff email. |
+| `EMAIL_APP_URL` | no | falls back to `web_base_url` | Base URL embedded in email links — `{EMAIL_APP_URL}/scans/{id}/dashboard` etc. |
+
+You also need a Celery worker running
+`pencheff_api.tasks.email_task` (already auto-loaded via the
+`celery_app` `include` list) and Celery beat for the weekly digest.
+
+## Flow 1 — scan-completion email
+
+Captured at scan-commission time and dispatched when the scan
+transitions to `done` or `failed`.
+
+### UI
+
+The commission scan modal exposes a `§ Email when complete` toggle. Tick
+it to reveal the recipient picker:
+
+- **Workspace-member dropdown** — populated from
+  `GET /workspaces/{id}/members` (returns one row per `OrgMember` with
+  `user_id`, `email`, `name`, `role`). Pick a member and Pencheff adds
+  them as a recipient chip.
+- **Free-text input** — type any email and press *Add* (or Enter). The
+  client validates against `^[^\s@]+@[^\s@]+\.[^\s@]+$` and
+  deduplicates against the existing chip list.
+- **Chip list** — recipients render as removable chips. The cap is 10
+  recipients per scan.
+
+### API
+
+`POST /scans` accepts an optional `notify_emails: list[str]` field.
+The server sanitises (trim, drop blanks/non-emails, dedupe, cap at
+10) and persists to `Scan.notify_emails` (JSONB array).
+
+```bash
+curl -X POST -H "Authorization: Bearer $JWT" \
+  -H "X-Workspace-Id: $WS" -H "Content-Type: application/json" \
+  https://api.pencheff.com/scans -d @- <<'EOF'
+{
+  "target_id": "...",
+  "profile": "standard",
+  "consent_payload": { ... },
+  "notify_emails": ["security@example.com", "sre-oncall@example.com"]
+}
+EOF
+```
+
+### Dispatch
+
+Three terminal points in `apps/api/pencheff_api/services/scan_runner.py`
+(early-success path, main-success path, exception/failed path)
+enqueue
+`pencheff_api.tasks.email_task.send_scan_complete_email_task(scan_id)`.
+The task is best-effort — failures log but never block other scan
+post-processing.
+
+The email contains the grade badge, severity strip, dashboard link
+(`/scans/{id}/dashboard`), and an error block for failed scans.
+
+## Flow 2 — per-target weekly digest
+
+A subscription on the Target row. Mondays 09:00 UTC the digest sends
+a 7-day summary of completed scans for that target.
+
+### UI
+
+`/targets/{id}/edit` has a `§ Weekly digest` section using the same
+recipient-picker component. Recipients are persisted to
+`Target.weekly_digest_emails` (JSONB array, capped at 20).
+
+### API
+
+`PATCH /targets/{id}` accepts an optional `weekly_digest_emails`
+field; an empty array clears the subscription, omitting it leaves
+the existing list unchanged. `TargetOut` returns the current list.
+
+### Dispatch
+
+Celery beat schedule entry `weekly-digest`
+(`crontab(hour=9, minute=0, day_of_week='mon')`) fires
+`pencheff_api.tasks.email_task.run_weekly_digest`. The task walks
+`Target` rows where `weekly_digest_emails IS NOT NULL`, builds a
+7-day window of completed scans per target, and sends one email per
+target via `send_target_weekly_digest()`.
+
+Each email contains a recent-scans table (date · grade · severity
+strip) and a button linking to `/targets/{id}`.
+
+## Flow 3 — per-workspace weekly digest
+
+A workspace-level rollup that summarises every target. Sent by the
+**same** Mondays 09:00 UTC beat job.
+
+### UI
+
+`/org/settings` includes a "Workspace digest" Card pinned to the
+active workspace. Recipients land on `Workspace.weekly_digest_emails`
+(JSONB array, capped at 20). Click *Save recipients* to PATCH —
+unlike the target form, the workspace digest has its own save button
+since the org-settings page contains multiple unrelated cards.
+
+### API
+
+`PATCH /workspaces/{id}` accepts an optional
+`weekly_digest_emails` field. `WorkspaceOut` returns the current
+list. `GET /workspaces/{id}/members` powers the recipient dropdown.
+
+### Dispatch
+
+The same `run_weekly_digest` task also walks every Workspace with a
+non-empty `weekly_digest_emails` list and dispatches one email per
+workspace via `send_workspace_weekly_digest()`. The email contains a
+table with one row per target (name · grade · severity strip) and a
+link to `/dashboard`.
+
+## Templates
+
+All three flows render twin HTML + plain-text bodies inline in
+`apps/api/pencheff_api/services/email.py`:
+
+- `_scan_complete_html()` / `_scan_complete_text()`
+- `_target_digest_html()` / `_target_digest_text()`
+- `_workspace_digest_html()` / `_workspace_digest_text()`
+
+Inlined CSS, no external assets — render correctly in Gmail, Outlook,
+Apple Mail, and most enterprise filters.
+
+## Failure modes
+
+- **`RESEND_API_KEY` unset** — every `_send()` call returns `False`
+  after logging "resend not configured". No error surfaces to the
+  caller; the scan finishes normally.
+- **Resend 4xx / 5xx** — logged with status code + first 400
+  characters of the response. Returns `False`. The scan completion
+  task does not retry.
+- **No recipients on a Scan / Target / Workspace** — the corresponding
+  `_send()` helper short-circuits before composing the payload.
+
+## Schema
+
+Added by Alembic migration `0043_email_notifications`:
+
+```sql
+ALTER TABLE scans     ADD COLUMN notify_emails        JSONB;
+ALTER TABLE targets   ADD COLUMN weekly_digest_emails JSONB;
+ALTER TABLE workspaces ADD COLUMN weekly_digest_emails JSONB;
+```
+
+All three default to `NULL`. Apps written before this migration
+require no behavioural change — empty / null lists short-circuit the
+send paths.

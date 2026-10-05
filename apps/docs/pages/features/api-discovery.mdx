@@ -1,0 +1,61 @@
+---
+title: API discovery from runtime traffic
+---
+
+# API discovery from runtime traffic
+
+Pencheff's browser-extension proxy + mitmproxy ingester capture every
+HTTP flow that hits a target. The API discovery module converts that
+slice of `ProxyFlow` rows into an OpenAPI 3.1 document — and a drift
+detector diffs the synthesised spec against the team's declared spec
+to surface **shadow endpoints**, **phantom endpoints**, and **method
+drift**.
+
+## What gets synthesised
+
+| Layer | Behaviour |
+| --- | --- |
+| **URL templating** | `/users/123/posts/456` and `/users/789/posts/012` collapse to `/users/{userId}/posts/{postId}`. Detector handles UUIDs, integer ids, and base36 ids. |
+| **Methods + status** | Every (path, method) pair gets a response object per observed status code. |
+| **Response-shape inference** | JSON bodies walked once and merged across requests into a minimal JSON Schema (`type` / `properties` / `items`). |
+| **Auth scheme detection** | `Authorization: Bearer …` → HTTP bearer; `X-API-Key` → apiKey securityScheme. Spec carries the scheme + a `security` requirement on every operation that observed a credentialed request. |
+| **Provenance** | Every operation's `description` records the count of captured requests and first/last seen timestamps. |
+| **LLM-assisted (optional)** | One-line operation summaries via `LLMClient._chat`. Off by default. |
+
+Output is a deterministic OpenAPI 3.1 document — re-running on the
+same traffic produces byte-identical output (modulo LLM-assisted
+summaries).
+
+## Drift detection
+
+Diff a synthesised spec against the declared spec attached to the
+target:
+
+| Drift kind | Severity | What it means |
+| --- | --- | --- |
+| **Shadow endpoint** | high | Live traffic exercised this path/method; the declared spec doesn't list it. The canonical AppSec blind spot. |
+| **Phantom endpoint** | low | The spec lists this path/method; no traffic ever hit it. Often unused / test-only / waiting on a client. |
+| **Method drift** | medium | Same path, different method set. Common cause: missing CSRF protection on a state-changing verb. |
+
+Findings carry `category: "api_drift"` so the
+[per-scan compliance rollup](/features/compliance-mapping)
+automatically maps them to **OWASP A04 — Insecure Design**.
+
+## Where it shows up
+
+* **Web UI** — the engagement detail page exposes an
+  **API discovery** sub-tab at `/engagements/{id}/api-discovery`
+  (sibling of the existing `/threat-model` page) with a summary
+  strip, auth-scheme pills, drift table, and a download link for
+  the synthesised OpenAPI 3.1 document.
+* **Findings stream** — drift findings land in the unified queue
+  alongside DAST/SAST/SCA results. Filter by
+  `category=api_drift` to scope.
+* **Reports** — every drift row carries a `path` + `method` + a
+  human-readable description, so the DOCX / Markdown report walks
+  the diff naturally.
+
+## Source
+
+* Synthesiser: [`plugins/.../modules/api_discovery/synth.py`](https://github.com/Magadha-IG/pencheff/blob/main/plugins/pencheff/pencheff/modules/api_discovery/synth.py)
+* Drift detector: [`apps/api/.../services/api_drift.py`](https://github.com/Magadha-IG/pencheff/blob/main/apps/api/pencheff_api/services/api_drift.py)

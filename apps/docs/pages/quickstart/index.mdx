@@ -1,0 +1,58 @@
+---
+title: Quickstart
+description: One-page rapid path per scan kind — URL, LLM, Repo, SBOM, Compliance.
+---
+
+import { Cards } from "nextra/components";
+
+# Quickstart
+
+The shortest path from "I just installed Pencheff" to "I have a real
+finding in front of me" &mdash; one page per scan kind. Pick whichever
+asset class matches what you&rsquo;re hardening today; every page
+finishes in under 10 minutes.
+
+<Cards>
+  <Cards.Card title="URL scan (DAST)" href="/quickstart/url-scan" />
+  <Cards.Card title="LLM red team" href="/quickstart/llm-redteam" />
+  <Cards.Card title="Repo scan" href="/quickstart/repo-scan" />
+  <Cards.Card title="SBOM generation" href="/quickstart/sbom" />
+  <Cards.Card title="Compliance mapping" href="/quickstart/compliance" />
+</Cards>
+
+## What you need first
+
+* The Pencheff CLI (`pip install pencheff`) **or** an account on
+  [`app.pencheff.com`](https://app.pencheff.com) **or** an MCP-capable
+  IDE (Cursor, Continue, Cline, Zed). All three drive the same engine.
+* For URL scans &mdash; written authorization to test the target. The
+  CLI and API both reject scans without a `consent_payload`.
+* For LLM scans &mdash; an API key for the model under test, plus an
+  optional moderation key (e.g. OpenAI Moderation) for the judge step.
+* For repo scans &mdash; a GitHub App install, a fine-grained PAT, or
+  a public GitHub URL.
+
+## Three depths, one shape
+
+Every quickstart page uses the same three profiles &mdash; `quick`,
+`standard`, `deep`. The legacy specialised profiles (`engage`,
+`compliance`, `api-only`, `cicd`, `sca`, `iac`, `supply-chain`,
+`network-va`, `hackme`, `compliance-full`) still resolve at the runner
+for back-compat, but the dashboard, the docs, and the new scenarios
+all speak the three-tier vocabulary.
+
+| Tier | URL scan | LLM scan | Repo scan |
+| --- | --- | --- | --- |
+| `quick` | ~5 min &mdash; recon + top-severity probes | 25 payloads, ~2 min | All scanners, fast rules only |
+| `standard` | ~20-40 min &mdash; full OWASP Top 10 | 75 payloads, ~5 min | All scanners + IaC + secrets |
+| `deep` | 60+ min &mdash; auto-engagement + chains + threat model | 250 payloads, 15-60 min | All scanners + extended rule packs |
+
+Once you have a finding, [Compliance mapping](/quickstart/compliance)
+is the same flow for every target kind.
+
+## Going further
+
+When you outgrow the rapid path, switch to the [Tutorials](/tutorials)
+section. Each tutorial walks an end-to-end scenario (auth-gated app,
+SPA crawl, CI gating, model drift A/B, audit-ready compliance bundle)
+and finishes with a runnable artefact you can ship to a customer.

@@ -1,0 +1,7 @@
+// MITRE T1190 — Exploit Public-Facing Application
+W3CIISLog
+| where TimeGenerated > ago(24h)
+| where csUriStem matches regex @"(?i)\.(env|git|svn|bak|swp)|/admin|/actuator|/debug"
+| summarize hits = count() by cIP, csUriStem, scStatus
+| where hits > 5
+| order by hits desc

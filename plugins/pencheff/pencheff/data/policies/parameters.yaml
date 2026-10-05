@@ -1,0 +1,223 @@
+# Pencheff per-tool parameter lookup table.
+#
+# Replaces the role of an "AI parameter optimizer". Given (tool, profile,
+# attributes), the selector returns the CLI argv. Profiles map to objective
+# tiers: stealth (slow, low-noise), default, aggressive (fast, loud).
+#
+# Each block cites the tool's own documentation for the chosen flags so
+# changes are auditable.
+
+version: 1
+
+tools:
+  # ─── nmap ───
+  # source: nmap(1) "TIMING AND PERFORMANCE", "SCAN TECHNIQUES"
+  nmap:
+    stealth:    ["-sS", "-T2", "-Pn", "--top-ports", "100"]
+    default:    ["-sS", "-sV", "-T4", "-Pn", "--top-ports", "1000"]
+    aggressive: ["-sS", "-sV", "-sC", "-A", "-T4", "-Pn", "-p-", "--max-retries", "1"]
+    udp:        ["-sU", "-T3", "--top-ports", "100"]
+    vuln:       ["-sV", "--script", "vuln", "-T4"]
+
+  # ─── rustscan ───
+  # source: rustscan --help, README.md "Usage examples"
+  rustscan:
+    stealth:    ["-b", "100", "-t", "1500"]
+    default:    ["-b", "1000", "-t", "1500"]
+    aggressive: ["-b", "5000", "-t", "1000", "-r", "1-65535"]
+
+  # ─── naabu ───
+  # source: github.com/projectdiscovery/naabu README "Usage"
+  naabu:
+    stealth:    ["-rate", "100", "-c", "10"]
+    default:    ["-rate", "1000", "-c", "25"]
+    aggressive: ["-rate", "5000", "-c", "50", "-p", "-"]
+
+  # ─── masscan ───
+  masscan:
+    stealth:    ["--rate", "1000"]
+    default:    ["--rate", "10000"]
+    aggressive: ["--rate", "100000"]
+
+  # ─── sqlmap ───
+  # source: sqlmap --help; "Risk and level" section of usage docs.
+  sqlmap:
+    stealth:    ["--level=1", "--risk=1", "--batch", "--random-agent",
+                 "--threads=1", "--delay=1"]
+    default:    ["--level=3", "--risk=2", "--batch", "--random-agent",
+                 "--threads=4"]
+    aggressive: ["--level=5", "--risk=3", "--batch", "--random-agent",
+                 "--threads=10", "--smart"]
+
+  # ─── nuclei ───
+  # source: nuclei --help, severity / tag docs.
+  nuclei:
+    stealth:    ["-rl", "30", "-c", "10", "-severity", "critical,high"]
+    default:    ["-rl", "150", "-c", "25", "-severity", "critical,high,medium"]
+    aggressive: ["-rl", "500", "-c", "50"]
+    fingerprint: ["-tags", "tech"]
+
+  # ─── ffuf ───
+  ffuf:
+    stealth:    ["-rate", "20", "-t", "10"]
+    default:    ["-rate", "100", "-t", "40"]
+    aggressive: ["-rate", "500", "-t", "200"]
+
+  # ─── feroxbuster ───
+  feroxbuster:
+    stealth:    ["--rate-limit", "20", "--threads", "10"]
+    default:    ["--rate-limit", "100", "--threads", "50"]
+    aggressive: ["--rate-limit", "500", "--threads", "200"]
+
+  # ─── gobuster ───
+  gobuster:
+    stealth:    ["--threads", "5", "--delay", "100ms"]
+    default:    ["--threads", "30"]
+    aggressive: ["--threads", "100"]
+
+  # ─── dirsearch ───
+  dirsearch:
+    stealth:    ["-t", "10", "--delay", "0.5"]
+    default:    ["-t", "30"]
+    aggressive: ["-t", "100"]
+
+  # ─── hydra ───
+  # source: hydra(1) "Tasks and timing"
+  hydra:
+    stealth:    ["-t", "1", "-w", "5"]
+    default:    ["-t", "4", "-w", "3"]
+    aggressive: ["-t", "16", "-w", "1", "-V"]
+
+  # ─── medusa ───
+  medusa:
+    stealth:    ["-t", "1"]
+    default:    ["-t", "4"]
+    aggressive: ["-t", "16"]
+
+  # ─── katana ───
+  katana:
+    stealth:    ["-rl", "20", "-c", "5",  "-d", "2"]
+    default:    ["-rl", "100", "-c", "10", "-d", "5"]
+    aggressive: ["-rl", "500", "-c", "20", "-d", "10", "-jc"]
+
+  # ─── httpx ───
+  httpx:
+    stealth:    ["-rl", "20", "-threads", "10"]
+    default:    ["-rl", "100", "-threads", "50"]
+    aggressive: ["-rl", "500", "-threads", "200"]
+
+  # ─── dalfox ───
+  dalfox:
+    stealth:    ["--worker", "5", "--delay", "500"]
+    default:    ["--worker", "20"]
+    aggressive: ["--worker", "100", "--mining-dom", "--deep-domxss"]
+
+  # ─── arjun ───
+  arjun:
+    stealth:    ["-T", "5", "-d", "1"]
+    default:    ["-T", "10"]
+    aggressive: ["-T", "30", "-m", "GET,POST,JSON"]
+
+  # ─── wpscan ───
+  wpscan:
+    stealth:    ["--random-user-agent", "--max-threads", "5"]
+    default:    ["--random-user-agent", "--max-threads", "20",
+                 "--enumerate", "vp,vt,u"]
+    aggressive: ["--random-user-agent", "--max-threads", "50",
+                 "--enumerate", "ap,at,cb,dbe,u,m", "--plugins-detection", "aggressive"]
+
+  # ─── nikto ───
+  nikto:
+    stealth:    ["-Tuning", "1", "-timeout", "10"]
+    default:    ["-Tuning", "x6", "-timeout", "10"]
+    aggressive: ["-Tuning", "x", "-timeout", "10", "-evasion", "1"]
+
+  # ─── testssl ───
+  testssl:
+    stealth:    ["--fast"]
+    default:    ["--fast", "-S", "-P", "-U"]
+    aggressive: ["--full", "-U"]
+
+  # ─── netexec / crackmapexec ───
+  # source: github.com/Pennyw0rth/NetExec wiki
+  netexec:
+    stealth:    []
+    default:    ["--continue-on-success"]
+    aggressive: ["--continue-on-success", "--shares", "--users", "--groups"]
+
+  crackmapexec:
+    stealth:    []
+    default:    ["--continue-on-success"]
+    aggressive: ["--continue-on-success", "--shares"]
+
+  # ─── subfinder / amass ───
+  subfinder:
+    stealth:    ["-rl", "10"]
+    default:    ["-rl", "100"]
+    aggressive: ["-rl", "300", "-all"]
+
+  amass:
+    stealth:    ["enum", "-passive"]
+    default:    ["enum"]
+    aggressive: ["enum", "-active", "-brute"]
+
+  # ─── trivy / grype ───
+  trivy:
+    stealth:    ["fs", "--severity", "HIGH,CRITICAL"]
+    default:    ["fs", "--severity", "MEDIUM,HIGH,CRITICAL"]
+    aggressive: ["fs", "--severity", "LOW,MEDIUM,HIGH,CRITICAL", "--scanners", "vuln,secret,misconfig"]
+
+  grype:
+    stealth:    ["--fail-on", "high"]
+    default:    []
+    aggressive: ["--add-cpes-if-none"]
+
+  # ─── kube-hunter / kube-bench ───
+  kube-hunter:
+    stealth:    ["--passive"]
+    default:    ["--remote"]
+    aggressive: ["--remote", "--active"]
+
+  kube-bench:
+    stealth:    []
+    default:    ["run"]
+    aggressive: ["run", "--asff"]
+
+  # ─── prowler / scoutsuite / pacu ───
+  prowler:
+    stealth:    ["-S", "high,critical"]
+    default:    []
+    aggressive: ["-S", "low,medium,high,critical"]
+
+  scoutsuite:
+    stealth:    []
+    default:    []
+    aggressive: ["--max-rate", "20"]
+
+  # ─── ghidra-headless / radare2 ───
+  ghidra-headless:
+    default:    ["analyzeHeadless"]
+
+  radare2:
+    default:    ["-A", "-q"]
+
+  # ─── ROPgadget / ropper ───
+  ropgadget:
+    default:    ["--all"]
+
+  ropper:
+    default:    ["--nocolor"]
+
+  # ─── trufflehog ───
+  trufflehog:
+    stealth:    ["--only-verified"]
+    default:    ["--only-verified", "--no-update"]
+    aggressive: ["--no-update"]
+
+  # ─── exiftool ───
+  exiftool:
+    default:    ["-a", "-u", "-g1"]
+
+  # ─── volatility ───
+  volatility:
+    default:    ["--info"]

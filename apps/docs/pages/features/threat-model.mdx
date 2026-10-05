@@ -1,0 +1,188 @@
+---
+title: Threat modeling (STRIDE / DREAD)
+---
+
+# Threat modeling
+
+Threat modeling is the structured exercise of enumerating *what could
+go wrong* against a system before or during testing, so scans target
+the highest-impact paths instead of running every check generically.
+Pencheff implements two methods:
+
+- **STRIDE** — categorise threats per asset/component as **S**poofing,
+  **T**ampering, **R**epudiation, **I**nformation Disclosure, **D**enial
+  of Service, **E**levation of Privilege.
+- **DREAD** — score each threat on **D**amage, **R**eproducibility,
+  **E**xploitability, **A**ffected users, **D**iscoverability (1–10
+  each, average is the priority score).
+
+The deterministic generator lives in
+`apps/api/pencheff_api/services/threat_model.py` (no LLM — the rubric
+is a static matrix per asset type).
+
+## Threat-model resolution at scan time
+
+Every scan that runs against a URL gets a threat model — you don't have
+to remember to generate one. The dispatcher follows three rules in
+order:
+
+| Caller supplies… | Profile | What happens |
+| --- | --- | --- |
+| `engagement_id` with a model attached | any | The engagement's model is used as-is. `summary.threat_model_source = "engagement"`. |
+| `engagement_id` without a model | any | A fly-by DREAD model is generated from the target URL. **Not persisted** — used for biasing only. `summary.threat_model_source = "fly_by"`. |
+| nothing (no engagement_id) | `deep` | An engagement keyed by `deep-{target_id[:8]}` is found-or-created in the workspace, a DREAD model is generated and **persisted** on it. Repeat deep scans of the same target reuse the same engagement. `summary.threat_model_source = "auto_engagement"`. |
+| nothing (no engagement_id) | `quick`, `standard`, etc. | Fly-by DREAD model from the target URL. **Not persisted**. `summary.threat_model_source = "fly_by"`. |
+
+Either way, the chosen model drives `module_priority_bias`, and the
+result lands on `Scan.summary.threat_model_bias` so the worker
+reorders + the dashboard explains *why* a particular module fired
+first.
+
+The deep-scan auto-engagement is the load-bearing path for repeatable
+work: every `--profile deep` against `https://acme.com` lands in the
+same engagement, accumulates findings, edits to the threat model
+persist across runs, and the operator can promote it to a fully-managed
+engagement at any time.
+
+## How it integrates
+
+### 1. Engagement-scoped storage
+
+A threat model is attached to an **engagement**, not a scan. Generate
+once per engagement; the model travels with every scan that runs against
+it.
+
+```bash
+# Generate from a target URL — the asset type is inferred (api,
+# webapp, cloud) from the URL shape.
+curl -X POST /engagements/$ENGAGEMENT_ID/threat-model \
+  -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  -d '{
+    "method": "dread",
+    "target_url": "https://api.example.com/graphql"
+  }'
+
+# Or specify assets explicitly
+curl -X POST /engagements/$ENGAGEMENT_ID/threat-model \
+  -d '{
+    "method": "stride",
+    "asset_types": ["webapp", "api", "cloud"],
+    "asset_names": ["www-frontend", "billing-api", "s3-uploads"]
+  }'
+```
+
+The dashboard's `/engagements/[id]/threat-model` page renders the
+output as a table (or markdown, or raw JSON) and exposes a one-click
+**Generate** / **Regenerate** / **Clear** workflow.
+
+### 2. Adaptive scan profile
+
+When a scan is created against an engagement that has a threat model,
+the dispatcher computes a **module priority bias** from the highest-
+scoring STRIDE categories. Modules tied to those categories run first:
+
+| STRIDE category | Modules biased toward |
+| --- | --- |
+| Spoofing | `scan_auth`, `scan_oauth`, `scan_mfa_bypass` |
+| Tampering | `scan_injection`, `scan_client_side`, `scan_api` |
+| Repudiation | `scan_authz`, `scan_infrastructure` |
+| Information Disclosure | `scan_infrastructure`, `scan_api`, `scan_advanced`, `scan_subdomain_takeover` |
+| Denial of Service | `scan_advanced`, `scan_infrastructure` |
+| Elevation of Privilege | `scan_authz`, `scan_oauth`, `scan_business_logic` |
+
+The bias **reorders** the profile's module list — it never replaces
+modules. A scan with an `Information Disclosure`-heavy threat model
+runs `scan_infrastructure` before `scan_injection`; the same profile
+on an `Elevation of Privilege`-heavy model runs `scan_authz` first.
+
+The chosen bias is stamped onto `Scan.summary.threat_model_bias` at
+creation time so the dashboard can display *why* a particular module
+fired first.
+
+### 3. ThreatModelAgent in the swarm
+
+A new BreakerSpec — `ThreatModelAgent` — runs in parallel with the
+attack breakers during the swarm's Phase 2. Its job is **not** to fire
+scanners; it reads the recon snapshot and other breakers' findings
+and produces an INFO-severity finding summarising:
+
+- Which STRIDE categories have the most evidence in this scan.
+- Which threats from the engagement's threat model are now confirmed
+  vs. still hypothetical.
+- Recommended hardening priorities specific to this target.
+
+The agent has no exclusive scan tools — it relies on the shared
+`get_findings` and `test_endpoint` tools so it stays a "lens", not a
+"probe". This avoids double-firing scanners that other breakers already
+own.
+
+## Output shape
+
+```json
+{
+  "method": "DREAD",
+  "generated_at": "2026-05-08T01:34:35Z",
+  "method_summary": "DREAD: each threat scored on Damage, ...",
+  "assets": [
+    {"name": "https://api.example.com/graphql", "type": "api"}
+  ],
+  "threats": [
+    {
+      "asset": "https://api.example.com/graphql",
+      "category": "Information Disclosure",
+      "threat": "Excessive data exposure",
+      "damage": 6, "reproducibility": 8, "exploitability": 7,
+      "affected_users": 7, "discoverability": 8,
+      "score": 7.2,
+      "priority": "high",
+      "mitigations": ["TLS everywhere", "Field-level encryption", ...]
+    }
+  ],
+  "category_scores": {
+    "Information Disclosure": 7.2,
+    "Elevation of Privilege": 6.6,
+    "Tampering": 6.4
+  }
+}
+```
+
+## Viewing a scan's threat model
+
+Every scan that resolved a persisted model surfaces a **§ Threat model**
+section on its assessment page (`/scans/<id>`) with a one-click link to
+the full STRIDE / DREAD render at `/scans/<id>/threat-model`. The
+scan-scoped page reads from a scan-scoped endpoint
+(`GET /scans/{id}/threat-model`) and shows the prioritised threats,
+DREAD score table, and category scores — no other state from the
+underlying storage container leaks.
+
+The link only appears when the scan has a persisted model
+(`summary.threat_model_source` ∈ `{engagement, auto_engagement}`).
+Fly-by models — produced by `quick` / `standard` / other non-deep
+profiles — live only on `summary.threat_model_bias` for module
+priority biasing and are not linkable since there is nothing durable
+to fetch.
+
+## Endpoints
+
+| Method | Path | Scope | What it does |
+| --- | --- | --- | --- |
+| `GET` | `/scans/{id}/threat-model` | `scans:read` | **Scan-scoped read.** Returns the persisted model attached to this scan, or 404 if the scan only has a fly-by model. |
+| `GET` | `/engagements/{id}/threat-model` | `engagements:read` | Read current model + the computed module bias |
+| `POST` | `/engagements/{id}/threat-model` | `engagements:write` | Generate from `target_url` / `asset_types` / `asset_names` |
+| `PUT` | `/engagements/{id}/threat-model` | `engagements:write` | Replace the model JSONB (operator edits) |
+| `DELETE` | `/engagements/{id}/threat-model` | `engagements:write` | Clear the model — adaptive bias stops |
+
+## Report inclusion
+
+When a scan against an engagement with a threat model produces a
+markdown report, a `## Threat model` section is rendered between the
+executive summary and the findings table. Operators get the threat
+model and the findings side-by-side in a single deliverable.
+
+## CLI parity
+
+The local `pencheff threatmodel` command (`pencheff threatmodel --method
+stride|dread`) uses the same matrix as the API service — running it
+locally produces a model in the same shape, so the output of one can
+be loaded into the other via `PUT /engagements/{id}/threat-model`.

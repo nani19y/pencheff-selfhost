@@ -1,0 +1,108 @@
+---
+title: Auto-fix PRs
+---
+
+# Auto-fix PRs
+
+Pencheff turns SAST, DAST, and **SCA** findings into ready-to-merge GitHub
+pull requests. Click _Propose fix_ on any finding and Pencheff:
+
+1. Materialises a working tree of the connected repo.
+2. Generates a unified diff via the appropriate strategy:
+   - **SCA** — deterministic version-bump in the offending manifest.
+   - **SAST** — scanner-native autofix from Semgrep when present;
+     LLM patch otherwise.
+   - **DAST** — provenance-rank candidate handlers, then patch the most
+     likely one.
+3. Opens a branch, commits the diff, pushes, and opens a PR via the
+   GitHub App. The PR body cites the finding, evidence, and remediation
+   guidance.
+
+## SCA: deterministic, free, no LLM
+
+The SCA path is the simplest and the cheapest: Pencheff parses the
+manifest, finds the line, replaces the version, and writes the diff —
+no LLM call, no per-fix cost.
+
+### Supported manifests (9 ecosystems)
+
+| Ecosystem | Manifest |
+| --- | --- |
+| Python  | `requirements.txt`, `pyproject.toml`, `Pipfile` |
+| Node.js | `package.json` |
+| Go      | `go.mod` |
+| Rust    | `Cargo.toml` |
+| Ruby    | `Gemfile` |
+| PHP     | `composer.json` |
+| Java    | `pom.xml` |
+
+### Lockfiles are deliberately not edited
+
+Editing `package-lock.json`, `poetry.lock`, `Cargo.lock`, etc. in place
+would break integrity hashes for most ecosystems. The PR body instructs
+the developer to run the right installer (`npm install`, `poetry lock`,
+`go mod tidy`, …) — the lockfile regenerates correctly that way.
+
+## SAST + DAST: synthesised patches
+
+When no scanner-native autofix exists, Pencheff calls an
+operator-configured chat-completions backend to produce a unified diff.
+Token usage and PAYG cost are recorded in `fix_llm_usage` per call.
+
+## Configuration
+
+Add to `.env` (or set as env vars):
+
+```bash
+# Operator-supplied credentials for the patch-synthesis backend.
+FIX_LLM_API_KEY=sk-...
+
+# Optional overrides
+# FIX_LLM_BASE_URL=
+# FIX_LLM_MODEL=
+# FIX_LLM_REQUEST_TIMEOUT=60.0
+```
+
+## API
+
+- `POST /findings/{kind}/{finding_id}/propose_fix` — generate a draft
+  proposal. `kind` is `sast` or `dast`; SCA findings ride the `dast`
+  kind (Pencheff detects the SCA payload from evidence and routes
+  internally).
+- `POST /fix-proposals/{id}/apply` — open the PR.
+- `POST /fix-proposals/{id}/revert` — close the PR + delete the branch.
+
+See [Findings reference](/reference/findings) for the full API.
+
+## Reliability
+
+Recent improvements to the agentic fixer:
+
+**Runs go to completion.** The per-run token budget cap and the
+month-to-date spend cap that could abort runs mid-flight have been removed.
+The fixer now runs until it either produces a PR or exhausts the model
+context — not until an arbitrary cost threshold is hit.
+
+**npm lockfile regeneration.** SCA fixes for npm CVEs now include a
+`npm audit fix` step that regenerates `package-lock.json` after the version
+bump. This ensures transitive upgrades land in the lockfile where the scanner
+reads them, not just in `package.json`.
+
+**SAST false-positive triage.** After a repo scan, Pencheff runs an
+AI-assisted false-positive classifier over SAST findings. Verified false
+positives (for example, Bandit B608 flagging parameterized SQL queries) are
+suppressed in Pencheff — your source code is not modified. Suppressed findings
+are marked with the classifier's reasoning and can be un-suppressed from the
+findings view.
+
+**GitHub App cleanup.** Disconnecting or uninstalling the GitHub App now
+hard-deletes the disconnected repository records from the workspace.
+
+## What's tested
+
+```bash
+cd apps/api && uv run pytest tests/test_sca_patcher.py
+```
+
+19 unit tests cover all 9 supported manifest formats plus the
+"lockfile rejected" contract.

@@ -1,0 +1,224 @@
+---
+title: Targets API
+---
+
+# Targets API
+
+A **Target** is a single asset you scan. Every scan is scoped to one
+target. Since v0.5.0 a Target can be one of three kinds:
+
+| `kind` | What it is | Source |
+| --- | --- | --- |
+| `url` | Live web application or API endpoint | `POST /targets` |
+| `repo` | Auto-mirrored Repository (read-only marker) | Created by [`/repos`](/repos/connect) endpoints; never via `POST /targets` |
+| `llm` | Chat-completions endpoint subject to red-team probing | `POST /targets` with `kind: "llm"` and `llm_config: {...}` |
+
+Repo-mirror Targets exist so registered repositories appear alongside
+URL targets in `GET /targets`, the integrations target multi-select,
+and the dashboard's *Registered targets* card. Repo scans still flow
+through the `RepoScan` / `RepoFinding` pipeline — the mirror Target is
+display-only.
+
+LLM targets are dispatched through the [LLM red team
+pipeline](/features/llm-redteam) — a single-stage scan that runs all
+10 OWASP LLM Top 10 modules with the configured strategies, judges,
+attacker, and embedder.
+
+## `POST /targets`
+
+Creates a URL target. (Repo targets are created automatically by the
+[`/repos/github`](/repos/connect#option-c--public-github-url) endpoints.)
+
+```http
+POST /targets
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "Staging API",
+  "base_url": "https://staging.example.com",
+  "scope": ["/api", "/app"],
+  "exclude_paths": ["/health", "/logout"],
+  "credentials": {
+    "username": "admin",
+    "password": "..."
+  }
+}
+```
+
+Response: `TargetOut`.
+
+## `GET /targets`
+
+Lists targets for the current workspace — both kinds, sorted by
+`created_at desc`.
+
+## `GET /targets/{id}`
+
+Fetches a single target. Works for both `kind: "url"` and
+`kind: "repo"`.
+
+## `PATCH /targets/{id}`
+
+Updates name / URL / scope / credentials. **Returns 400** when
+`repository_id IS NOT NULL` — repo-mirror targets are managed via
+`/repos/{id}` instead. (The mirror's `name` / `base_url` are pulled
+verbatim from the Repository row to prevent drift.)
+
+## `DELETE /targets/{id}`
+
+Removes a URL target (cascades to scans, findings, reports). **Returns
+400** for repo-mirror targets — delete the underlying repository at
+`DELETE /repos/{id}` and the mirror cascades automatically via the
+`ON DELETE CASCADE` on `targets.repository_id`.
+
+## Schema
+
+```typescript
+type TargetOut = {
+  id: string;           // uuid
+  name: string;
+  base_url: string;
+  scope: string[] | null;
+  exclude_paths: string[] | null;
+  has_credentials: boolean;   // never returns the actual credentials
+  // v0.4.0: repo-mirror metadata
+  repository_id: string | null;       // NULL for non-repo targets
+  // v0.5.0: explicit kind discriminator (no longer derived)
+  kind: "url" | "repo" | "llm";
+  // v0.5.0: returned only for kind == "llm". Provider preset, model
+  // name, system prompt, request_template, response_path, command,
+  // redteam config, thresholds, budget, retries, rate limits.
+  // Secrets (auth headers) live on credentials_encrypted, never here.
+  llm_config: LlmConfig | null;
+  created_at: string;
+};
+
+type LlmConfig = {
+  provider: "openai-chat" | "custom"
+          | "executable" | "websocket"
+          | "bedrock" | "vertex" | "azure-openai" | "browser";
+  model: string | null;
+  system_prompt: string | null;
+  // custom-only
+  request_template: string | null;     // JSON template with {{prompt}} / {{system}} / {{model}}
+  response_path: string | null;        // lightweight JSONPath (dotted attrs + array indices)
+  // executable-only
+  command: string[] | null;
+  // Optional Promptfoo-style red-team config
+  redteam: {
+    strategies?: string[];
+    composite_strategies?: (string | string[])[];
+    languages?: string[];
+    datasets?: string[];
+    guardrails?: (string | object)[];
+    guardrail_bypass?: boolean;
+    iterative?: "static" | "pair" | false;
+    pair_iterations?: number;
+    policies?: object[];
+    intents?: (string | string[] | object)[];
+    variables?: Record<string, unknown>;
+    discovery?: object;
+    llm_synthesis?: { enabled: boolean; n?: number; profile?: object };
+    judge?: object;        // { enabled, provider, endpoint, model, headers, min_confidence, ... }
+    attacker?: object;     // PAIR + synthesis attacker model
+    embedder?: object;     // semantic similarity grader
+    factuality?: { enabled: boolean; kb: string | object[] };
+  } | null;
+  // Limits
+  thresholds: { max_latency_ms?: number; max_tokens_per_call?: number } | null;
+  budget: { max_calls?: number; max_tokens?: number; max_cost_usd?: number;
+            input_cost_per_1k?: number; output_cost_per_1k?: number } | null;
+  // Networking
+  retries?: number;
+  backoff_s?: number;
+  cache?: boolean;
+  cache_size?: number;
+  timeout_s?: number;
+  concurrency?: number;
+  max_rps?: number | null;
+  max_rpm?: number | null;
+  rate_burst?: number | null;
+};
+```
+
+Credentials are Fernet-encrypted at rest and never surfaced in
+response bodies. Modify them only via `POST /targets` or
+`PATCH /targets/{id}`.
+
+## LLM targets
+
+`POST /targets` with `kind: "llm"` registers a chat-completions
+endpoint for [LLM red-team scanning](/features/llm-redteam). The auth
+headers go under `credentials.headers` (any number of arbitrary
+key-value pairs); everything else is non-secret config under
+`llm_config`.
+
+```http
+POST /targets
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "Nemotron — red team",
+  "base_url": "https://openrouter.ai/api/v1/chat/completions",
+  "kind": "llm",
+  "credentials": {
+    "headers": {
+      "Authorization": "Bearer sk-or-v1-...",
+      "HTTP-Referer": "https://example.com",
+      "X-Title": "Pencheff"
+    }
+  },
+  "llm_config": {
+    "provider": "openai-chat",
+    "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "max_rpm": 18,
+    "concurrency": 3,
+    "retries": 3,
+    "budget": { "max_cost_usd": 5.0 },
+    "thresholds": { "max_latency_ms": 30000 },
+    "redteam": {
+      "strategies": ["base64", "jailbreak", "crescendo"],
+      "datasets": ["donotanswer", "harmbench"],
+      "guardrails": ["pii", "secrets", "unsafe-code"],
+      "judge": {
+        "enabled": true,
+        "provider": "openai-moderation",
+        "endpoint": "https://api.openai.com/v1/moderations",
+        "headers": { "Authorization": "Bearer sk-..." }
+      }
+    }
+  }
+}
+```
+
+Validation:
+
+- `kind == "llm"` requires `llm_config` (non-null). Conversely,
+  `llm_config` is rejected when `kind != "llm"`.
+- `provider == "custom"` requires both `request_template` and
+  `response_path`.
+- `provider == "executable"` requires `command: list[str]`.
+- `kind == "llm"` targets cannot be DAST-scanned via `POST /scans`
+  *unless* `llm_config` is populated — incomplete LLM targets
+  return 400 from the scan endpoint.
+
+`PATCH /targets/{id}` accepts an `llm_config` block and replaces
+the previous one wholesale. Setting `clear_credentials: true`
+wipes the auth headers (typical for key rotation).
+
+## DAST scan against a repo-mirror target
+
+`POST /scans` rejects with a 400 when the requested target's
+`repository_id IS NOT NULL`:
+
+```json
+{
+  "detail": "This target is a repository mirror — DAST scans don't apply. Use POST /repos/<repository_id>/scan instead."
+}
+```
+
+The web UI's "Commission scan" modal handles this transparently: when
+a user picks a repo-mirror target, the modal hides the profile picker
+and submits to `/repos/{id}/scan` rather than `/scans`.

@@ -1,0 +1,50 @@
+---
+title: Authentication
+---
+
+# Authentication
+
+Pencheff SaaS uses [Clerk](https://clerk.com) for identity. Once a user
+is signed in, the frontend sends every request with a `Bearer` JWT that
+Clerk issues on the browser side.
+
+## Server-side verification
+
+The FastAPI backend validates the JWT on every request via
+[`auth/deps.py`](https://github.com/Magadha-IG/pencheff/blob/main/apps/api/pencheff_api/auth/deps.py) —
+it checks signature, issuer, audience, expiry, and maps the `sub`
+claim to a `User` row, creating one on first login.
+
+## Calling the API from a script
+
+```bash
+# Fetch a short-lived token from Clerk (machine-to-machine)
+TOKEN=$(curl -sX POST https://api.clerk.com/v1/machine_auth_tokens \
+  -H "Authorization: Bearer $CLERK_M2M_KEY" \
+  -d "{\"subject\":\"user_xxx\"}" | jq -r .token)
+
+# Use it
+curl https://app.pencheff.com/api/scans \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+## Local development
+
+Set these env vars when running the API / web locally:
+
+```
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+CLERK_JWT_KEY=pk_test_jwks_...
+```
+
+The web app uses `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` directly.
+
+## API keys (coming soon)
+
+Long-lived personal access tokens for CI/CD are on the roadmap — track
+[issue #42](https://github.com/Magadha-IG/pencheff/issues/42).
+
+For now, use the MCP / CLI locally with the hosted SaaS' read-only API
+via a Clerk M2M token or the plugin-side-only `interactsh-client`
+callback.

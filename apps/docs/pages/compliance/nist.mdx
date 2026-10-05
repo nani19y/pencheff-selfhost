@@ -1,0 +1,24 @@
+---
+title: NIST 800-53
+---
+
+# NIST 800-53 Rev 5
+
+Pencheff maps findings onto the NIST 800-53 control families most
+exercised by external scans.
+
+| Family | Example controls | Covered by |
+| --- | --- | --- |
+| AC (Access Control) | AC-3, AC-6 | `scan_authz` |
+| AU (Audit & Accountability) | AU-2, AU-3, AU-6 | Passive scanner (log leakage), business-logic audit |
+| CM (Configuration Management) | CM-6, CM-7, CM-8 | `scan_infrastructure`, IaC scanners, ASM |
+| IA (Identification & Authentication) | IA-2, IA-5, IA-8, IA-11 | `scan_auth`, `scan_mfa_bypass`, `scan_oauth` |
+| SC (System & Communications Protection) | SC-7, SC-8, SC-12, SC-13, SC-20, SC-23 | TLS, CORS, SSRF, WebSocket, subdomain takeover |
+| SI (System & Information Integrity) | SI-2, SI-4, SI-10, SI-16 | Injection, deserialization, SCA, patch checks |
+| SA (System & Services Acquisition) | SA-10, SA-11 | SCA + SBOM |
+| RA (Risk Assessment) | RA-5 | `scan_host_vulns`, `scan_authenticated_host` |
+
+## FedRAMP alignment
+
+Pencheff's defaults cover FedRAMP Moderate technical controls; use the
+`compliance-full` profile for Agency / High coverage plus SCA + IaC.

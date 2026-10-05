@@ -1,0 +1,127 @@
+---
+title: Installation
+description: Install Pencheff Studio (macOS), the MCP server, the headless CLI, or sign in to the hosted SaaS — pick whichever fits your workflow.
+---
+
+import { Tabs } from "nextra/components";
+
+# Installation
+
+Pencheff ships in four form factors. Pick whichever fits your workflow —
+they all use the same core engine and finding model.
+
+## 1. Hosted SaaS (recommended for teams)
+
+Open [app.pencheff.com](https://app.pencheff.com) and sign in. Your dashboard
+provides target management, scheduled scans, attack-surface inventory,
+integration wiring, SBOM browsing, and compliance reports.
+
+## 2. Pencheff Studio (macOS desktop)
+
+The native Mac client. Same workspace, same findings, plus three things
+the browser can't do: **on-device repository scanning**, **Downloads-folder
++ macOS posture monitors**, and an **on-device agentic remediation
+runner** that keeps source on your machine.
+
+{/* TODO: replace with the actual CDN / S3 / GitHub Release URL once hosting is decided. */}
+
+[**Download Pencheff Studio.dmg**](https://app.pencheff.com/download/Pencheff-Studio.dmg) — signed by Developer ID, notarised by Apple, stapled. Drag onto Applications, launch, sign in via Clerk.
+
+Read the full guide:
+
+- [Install + sign-in walkthrough →](/desktop/install)
+- [Local repository scanning →](/desktop/local-scanning)
+- [File + device monitors →](/desktop/monitors)
+- [On-device agentic runner →](/desktop/agentic-runner)
+
+## 3. MCP server
+
+```bash
+git clone https://github.com/Magadha-IG/pencheff
+cd pencheff/plugins/pencheff
+pip install -e .
+```
+
+Add this entry to your MCP host config (`~/.config/<host>/mcp.json` or equivalent):
+
+```json
+{
+  "mcpServers": {
+    "pencheff": {
+      "command": "python",
+      "args": ["-m", "pencheff"],
+      "cwd": "/path/to/pencheff/plugins/pencheff"
+    }
+  }
+}
+```
+
+After install, Pencheff registers **82 MCP tools** (recon, scan, exploit,
+mobile static analysis, SCA, IaC, network VA, proxy, fuzzer, ASM,
+integrations) accessible from any MCP-compatible client (Cursor,
+Continue, Cline, Zed, custom MCP hosts).
+
+## 4. Headless CLI (for CI/CD)
+
+```bash
+pip install pencheff
+
+# Or from source:
+git clone https://github.com/Magadha-IG/pencheff
+cd pencheff/plugins/pencheff && pip install -e .
+```
+
+After install, `pip` puts a `pencheff` executable on your `PATH` — this
+is the canonical entry point, exactly like `aws` or `kubectl`. Verify:
+
+```bash
+$ which pencheff
+/usr/local/bin/pencheff
+$ pencheff --version
+pencheff 0.5.0
+$ pencheff --help
+```
+
+Then run:
+
+```bash
+# Quick scan
+pencheff scan --target https://example.com --profile quick
+
+# YAML-driven policy
+pencheff run-policy policies/examples/owasp_top10.yaml
+
+# Fail the CI job if any high-severity findings appear
+pencheff scan --target https://example.com --profile cicd --fail-on high
+```
+
+The legacy `python -m pencheff …` invocation also works (the package
+keeps a valid `__main__` entry), but the bare `pencheff` command is the
+documented form.
+
+## Optional external tools
+
+Pencheff integrates with **116 external security tools** via safe subprocess
+execution (no shell injection). None are required, but installing the ones below
+dramatically widens coverage:
+
+| Tool | What it adds | Install |
+| --- | --- | --- |
+| `trivy` | Container image CVE + config + secret scan | `brew install trivy` |
+| `syft` | Higher-fidelity SBOM generation | `brew install syft` |
+| `checkov` | IaC policy-as-code (Terraform / K8s) | `pip install checkov` |
+| `mitmproxy` | Intercepting passive scan proxy | `pip install mitmproxy` |
+| `subfinder` | Passive subdomain enumeration for ASM | `brew install subfinder` |
+
+Run `check_dependencies` inside a session to see which tools Pencheff detects
+on your system.
+
+## Python requirements
+
+- Python 3.12+
+- `pip install -e .[extras]` for authenticated host scans (impacket-based SMB/WinRM)
+
+## What's next
+
+- [Your first scan →](/getting-started/first-scan)
+- [Concepts: sessions, findings, profiles, policies →](/getting-started/concepts)

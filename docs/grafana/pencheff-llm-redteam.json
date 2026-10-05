@@ -1,0 +1,151 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Total LLM red-team failures",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_ds}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 1},
+            {"color": "red", "value": 5}
+          ]}
+        }
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "pencheff_llm_redteam_failures_total{target=~\"$target\"}", "refId": "A"}]
+    },
+    {
+      "title": "Failures by OWASP LLM category",
+      "type": "bargauge",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_ds}"},
+      "gridPos": {"h": 8, "w": 12, "x": 6, "y": 0},
+      "id": 2,
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true},
+      "targets": [{"expr": "sum by (category) (pencheff_llm_redteam_failures_by_category{target=~\"$target\"})", "legendFormat": "{{category}}", "refId": "A"}]
+    },
+    {
+      "title": "Failures by severity",
+      "type": "piechart",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_ds}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "mappings": [
+            {"options": {"critical": {"color": "red", "index": 0}, "high": {"color": "orange", "index": 1}, "medium": {"color": "yellow", "index": 2}, "low": {"color": "blue", "index": 3}, "info": {"color": "gray", "index": 4}}, "type": "value"}
+          ]
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0},
+      "id": 3,
+      "options": {"displayLabels": ["percent"], "legend": {"displayMode": "list", "placement": "bottom"}, "pieType": "donut", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "sum by (severity) (pencheff_llm_redteam_failures_by_severity{target=~\"$target\"})", "legendFormat": "{{severity}}", "refId": "A"}]
+    },
+    {
+      "title": "Failures by attack strategy",
+      "type": "table",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_ds}"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 4,
+      "options": {"showHeader": true},
+      "targets": [{"expr": "topk(20, sum by (strategy) (pencheff_llm_redteam_failures_by_strategy{target=~\"$target\"}))", "format": "table", "instant": true, "refId": "A"}]
+    },
+    {
+      "title": "Regression rate (7d)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_ds}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"axisLabel": "Failures", "drawStyle": "line", "fillOpacity": 20, "lineInterpolation": "smooth", "showPoints": "auto"}
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 5,
+      "targets": [{"expr": "max_over_time(pencheff_llm_redteam_failures_total{target=~\"$target\"}[1h])", "legendFormat": "{{target}}", "refId": "A"}]
+    },
+    {
+      "title": "Top failed techniques",
+      "type": "table",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_ds}"},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 16},
+      "id": 6,
+      "targets": [{"expr": "topk(10, sum by (technique) (pencheff_llm_redteam_failures_by_strategy{target=~\"$target\"}))", "format": "table", "instant": true, "refId": "A"}]
+    },
+    {
+      "title": "Probe latency p50 / p95 / p99 (ms)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_ds}"},
+      "fieldConfig": {"defaults": {"unit": "ms"}},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 16},
+      "id": 7,
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum by (le) (rate(pencheff_llm_redteam_probe_latency_ms_bucket{target=~\"$target\"}[5m])))", "legendFormat": "p50", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(pencheff_llm_redteam_probe_latency_ms_bucket{target=~\"$target\"}[5m])))", "legendFormat": "p95", "refId": "B"},
+        {"expr": "histogram_quantile(0.99, sum by (le) (rate(pencheff_llm_redteam_probe_latency_ms_bucket{target=~\"$target\"}[5m])))", "legendFormat": "p99", "refId": "C"}
+      ]
+    },
+    {
+      "title": "Token cost trend",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_ds}"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 25},
+      "id": 8,
+      "targets": [{"expr": "increase(pencheff_llm_redteam_cost_usd_total{target=~\"$target\"}[1h])", "legendFormat": "{{target}}", "refId": "A"}]
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["pencheff", "llm-redteam", "owasp-llm-top-10"],
+  "templating": {
+    "list": [
+      {
+        "current": {"text": "default", "value": "default"},
+        "label": "Prometheus datasource",
+        "name": "prometheus_ds",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {"text": "All", "value": ".*"},
+        "datasource": {"type": "prometheus", "uid": "${prometheus_ds}"},
+        "definition": "label_values(pencheff_llm_redteam_failures_total, target)",
+        "includeAll": true,
+        "label": "Target",
+        "multi": true,
+        "name": "target",
+        "options": [],
+        "query": {"qryType": 1, "query": "label_values(pencheff_llm_redteam_failures_total, target)", "refId": "PrometheusVariableQueryEditor-VariableQuery"},
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {"from": "now-7d", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Pencheff — LLM Red Team",
+  "uid": "pencheff-llm-redteam",
+  "version": 1,
+  "weekStart": ""
+}

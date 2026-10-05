@@ -1,0 +1,60 @@
+---
+title: Desktop App Security
+description: Static security analysis of Electron, Java/JAR, .NET, and Qt/native desktop apps — insecure Electron config, dangerous calls, outdated runtimes, and embedded secrets. Never executed.
+---
+
+import { Callout } from "nextra/components";
+
+# Desktop App Security
+
+Pencheff statically analyzes desktop application bundles. It classifies
+the artifact (Electron, Java, .NET, native), unpacks archive-based apps,
+and inspects configuration and dependencies. The binary is **never
+executed** — no detonation sandbox required.
+
+## Register a target
+
+Register a **Desktop Application** target under **Mobile & Client
+Security** with the artifact URL (`.zip`/`.jar`/binary) and its SHA-256,
+then commission a scan. Walkthrough:
+[Desktop app static scanning](/tutorials/desktop-app-static-scanning).
+
+## What it tests
+
+| Sub-type | Checks |
+|----------|--------|
+| **Electron** | Insecure `webPreferences` (`nodeIntegration:true`, `contextIsolation:false`, `sandbox:false`, `webSecurity:false`, `allowRunningInsecureContent`); dangerous calls (`eval`, `child_process`, `shell.openExternal`); outdated Electron major versions |
+| **Java / JAR** | Embedded secrets and dangerous patterns across the unpacked tree |
+| **.NET / archive** | Embedded secrets, configuration exposure |
+| **Native (PE/ELF/Mach-O)** | Printable-string extraction + secrets sweep |
+
+Electron checks align with the
+[Electron Security Checklist](https://www.electronjs.org/docs/latest/tutorial/security).
+Findings are tagged `desktop_misconfig` and `desktop_secrets`, each with
+severity, CWE, the file/setting, and remediation.
+
+<Callout type="warning">
+  **Honest scope.** Archive-based apps (Electron, JAR) get full config +
+  dependency analysis. Opaque native binaries get a strings-based secret
+  sweep; decompiler-grade depth (checksec hardening flags, capa
+  capabilities, .NET/Java decompilation) is beyond this static pass — the
+  report states this per artifact so results are never over-promised.
+</Callout>
+
+## How it works
+
+1. **Classify** — magic-byte sniff (`PK` archive, `MZ` PE, `ELF`,
+   Mach-O) and, for archives, look for `app.asar` / `package.json` /
+   `*.class`.
+2. **Unpack** — archives extracted with zip-slip and zip-bomb guards.
+3. **Analyze** — Electron config + dependency checks on text/asar files;
+   secrets sweep across the tree; strings-based sweep for raw binaries.
+
+## MCP tool
+
+Exposed to MCP hosts as `scan_desktop(session_id, app_path)`.
+
+## See also
+
+* [Tutorial: Desktop app static scanning](/tutorials/desktop-app-static-scanning)
+* [Browser Extension Security](/features/browser-extension)

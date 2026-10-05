@@ -1,0 +1,49 @@
+# Default Helm values for pencheff-admission.
+#
+# The webhook itself is a small Go binary serving HTTPS on port 8443.
+# Cluster operators only need to set ``pencheffApi.url`` (and a token
+# secret name) before installing.
+
+image:
+  repository: ghcr.io/balasriharsha-ch/pencheff-admission
+  tag: 0.1.0
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# The Pencheff API the webhook queries for image verdicts.
+pencheffApi:
+  url: "http://pencheff-api.pencheff.svc.cluster.local:8000/api"
+  tokenSecretName: ""    # name of a Secret with key `token`; leave empty for unauthenticated dev clusters
+  tokenSecretKey: token
+
+# Fail-closed by default — an outage in the Pencheff API does NOT
+# silently let critical-CVE images through. Flip to true if your
+# cluster's availability story can't tolerate that.
+failOpen: false
+
+# TLS — the chart generates a self-signed cert at install time via a
+# pre-install Job. For prod, point ``tls.secretName`` at a cert-manager-
+# issued Secret instead.
+tls:
+  generateSelfSigned: true
+  secretName: pencheff-admission-tls
+
+# Namespace selectors — only Pods in matching namespaces are gated.
+# Empty matchLabels → cluster-wide. Set this to opt in by label.
+namespaceSelector:
+  matchLabels: {}
+
+# Excluded namespaces — never gate kube-system / pencheff itself.
+namespaceExclusions:
+  - kube-system
+  - kube-public
+  - pencheff

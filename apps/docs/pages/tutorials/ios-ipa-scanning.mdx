@@ -1,0 +1,90 @@
+---
+title: Tutorial — iOS IPA security scanning
+description: Static security analysis of an iOS IPA — Info.plist/ATS, URL schemes, Mach-O protections, embedded secrets, and SDK CVEs, mapped to OWASP MASVS. No Mac or jailbreak required.
+---
+
+import { Callout } from "nextra/components";
+
+# Tutorial: iOS IPA security scanning
+
+Statically analyze an iOS app on Linux — no macOS host, no physical
+device, no jailbreak. Pencheff fetches the `.ipa`, parses its plists and
+Mach-O headers, and maps findings to OWASP MASVS.
+
+## Scenario
+
+* **Artifact.** `Acme.ipa`, hosted at a URL you control.
+* **Goal.** Transport-security, URL-scheme, binary-hardening, and
+  secret findings — mapped to OWASP MASVS — for the iOS team.
+
+<Callout type="warning">
+  **FairPlay limit.** App Store IPAs are encrypted (`cryptid=1`), which
+  hides the compiled code section from static analysis. Pencheff flags
+  this in the report and still extracts everything from the plists,
+  resources, entitlements, and Mach-O headers. For full code-level depth,
+  scan a development/enterprise build.
+</Callout>
+
+## Inputs you need
+
+| Item | Where it goes |
+| --- | --- |
+| Artifact URL (`.ipa`) | **Artifact URL** field |
+| SHA-256 of the file | **SHA-256** field — integrity gate |
+
+```bash
+shasum -a 256 Acme.ipa
+```
+
+## Time budget
+
+| Phase | Wall time |
+| --- | --- |
+| Fetch + verify + unpack | 1–2 min |
+| Static analysis (plist, Mach-O, secrets) | 1–2 min |
+| **Total** | **~4 min** |
+
+## Steps
+
+### 1. Register the target
+
+[`app.pencheff.com`](https://app.pencheff.com) → **Register target** →
+**Mobile & Client Security** → **iOS Application**:
+
+* **Name** — `Acme iOS — release`
+* **Artifact URL** — `https://builds.acme.com/Acme.ipa`
+* **SHA-256** — the digest from above
+
+### 2. Run the scan
+
+**Commission scan** from the target page. Pencheff downloads and
+verifies the IPA, unzips it, and parses:
+
+* `Info.plist` — App Transport Security (`NSAllowsArbitraryLoads`),
+  custom URL schemes (`CFBundleURLTypes`), privacy permission strings.
+* The Mach-O binary — PIE, stack canary, and the `cryptid` encryption
+  flag (via LIEF where available; `otool` is used when present).
+* Embedded provisioning profile and bundled framework/SDK versions.
+
+The app is **never executed**.
+
+### 3. Read the findings
+
+| Category | Examples |
+| --- | --- |
+| `mobile_communication` | ATS disabled / arbitrary loads, cleartext endpoints |
+| `mobile_misconfig` | deeplink-hijackable custom URL schemes, missing Mach-O hardening |
+| `mobile_secrets` | API keys / tokens in plists, resources, or strings |
+
+Every finding is mapped to OWASP MASVS with remediation. If the binary
+is FairPlay-encrypted, the report says so explicitly so you know the
+code-level depth was capped.
+
+## Deliverable
+
+A MASVS-mapped findings register exportable to DOCX/JSON/CSV.
+
+## Next
+
+* [Tutorial: Android APK scanning](/tutorials/android-apk-scanning)
+* [Mobile Application Security](/features/mobile-security) — feature reference.

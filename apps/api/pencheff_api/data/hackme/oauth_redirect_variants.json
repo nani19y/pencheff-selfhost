@@ -1,0 +1,34 @@
+[
+  {
+    "name": "exact-match bypass via appended slash",
+    "variant": "{legit}/"
+  },
+  {
+    "name": "subdomain takeover via attacker-owned host",
+    "variant": "https://attacker.example{legit_path}"
+  },
+  {
+    "name": "open redirect chain",
+    "variant": "{legit}?next=https://attacker.example"
+  },
+  {
+    "name": "userinfo abuse",
+    "variant": "{legit}@attacker.example{legit_path}"
+  },
+  {
+    "name": "parser confusion — backslash",
+    "variant": "https://attacker.example\\@{legit_host}{legit_path}"
+  },
+  {
+    "name": "unicode normalisation",
+    "variant": "{legit_with_homoglyphs}"
+  },
+  {
+    "name": "missing state parameter",
+    "drop_param": "state"
+  },
+  {
+    "name": "PKCE downgrade",
+    "drop_param": "code_challenge"
+  }
+]

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pencheff": {
+      "command": "uv",
+      "args": ["run", "--project", ".", "python", "-m", "pencheff"]
+    }
+  }
+}

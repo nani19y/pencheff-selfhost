@@ -1,0 +1,60 @@
+# Pencheff request-throttle policy (AIMD).
+#
+# The Throttle adapter wraps core/http_client.py + tool subprocess invocations
+# and enforces request-rate limits. Logic is classic AIMD (additive increase,
+# multiplicative decrease) borrowed from TCP congestion control. Parameter
+# values below are the policy knobs.
+#
+# Sources:
+# - RFC 5681 §3.1 (TCP slow-start / congestion avoidance) for AIMD constants.
+# - RFC 7231 §6.6.4 (HTTP 503 retry semantics).
+# - RFC 6585 §4 (HTTP 429 + Retry-After).
+
+version: 1
+
+global:
+  initial_rate_rps: 5.0
+  min_rate_rps:     0.2
+  max_rate_rps:     50.0
+  additive_increase_per_sec: 1.0
+  multiplicative_decrease:   0.5
+  jitter_ms_min:   50
+  jitter_ms_max:   200
+  retry_budget:    3
+  request_timeout_seconds: 30
+
+# Per-service overrides — keys map to fingerprint banners returned by
+# core/http_client.py + recon modules.
+services:
+  cloudflare:
+    initial_rate_rps: 2.0
+    max_rate_rps:     10.0
+    multiplicative_decrease: 0.25  # CF aggressively bans, back off harder
+  akamai:
+    initial_rate_rps: 2.0
+    max_rate_rps:     10.0
+  aws_waf:
+    initial_rate_rps: 3.0
+    max_rate_rps:     20.0
+  imperva:
+    initial_rate_rps: 1.0
+    max_rate_rps:     5.0
+  sucuri:
+    initial_rate_rps: 1.0
+    max_rate_rps:     5.0
+
+# Response-code triggers — HTTP status → action.
+status_triggers:
+  "429": { action: backoff, multiplier: 0.5, honor_retry_after: true }
+  "503": { action: backoff, multiplier: 0.5, honor_retry_after: true }
+  "502": { action: backoff, multiplier: 0.7 }
+  "504": { action: backoff, multiplier: 0.7 }
+  "418": { action: stop,    notes: "WAF tea-pot — hard stop" }
+  "401": { action: continue }
+  "403": { action: probe_alt_ua }
+  "999": { action: stop,    notes: "LinkedIn-style blanket block" }
+
+# Latency triggers — when p95 exceeds this many ms over rolling 30s window.
+latency_triggers:
+  - { p95_ms_over: 5000, action: backoff, multiplier: 0.7 }
+  - { p95_ms_over: 10000, action: stop,   notes: "Service severely degraded" }

@@ -1,0 +1,78 @@
+---
+title: Container image scanning
+---
+
+# Container image scanning
+
+Two ways in.
+
+## Inside a repo scan
+
+Connect a GitHub URL or a local folder at **Repos** ([`/repos/connect`](/repos/connect))
+and the scan automatically runs **Trivy IaC** mode against any
+Dockerfile and Kubernetes manifest in the tree, plus **Checkov** for
+container-relevant policy rules (rootless user, image-pinning,
+read-only filesystem, etc.). No extra configuration.
+
+This catches problems at *build-definition* time. For findings against
+a *built image*, use the targeted tool below.
+
+## Targeted: `scan_container_image`
+
+`scan_container_image(session_id, image_ref)` pulls a built container
+image and scans it for CVEs, leaked secrets, and misconfigurations. It
+prefers `trivy` (CVE + secret + misconfig) and falls back to `grype`
+(CVE only).
+
+```text
+scan_container_image(session_id=sid, image_ref='ghcr.io/acme/app@sha256:abc…')
+```
+
+The result is a list of `Finding` records with the same shape as any
+other Pencheff scan:
+
+- `title` — e.g. `"openssl@3.0.10 — CVE-2024-xxxx"`
+- `severity` / `cvss_score`
+- `endpoint` — the image ref
+- `parameter` — `PkgName@InstalledVersion`
+- `references` — vendor advisory URLs
+- `remediation` — the fixed version, if any, plus rebuild/redeploy guidance
+
+## EPSS + KEV enrichment
+
+If the local CVE feed has been refreshed
+(`refresh_cve_feed(force=False)`), every finding gets:
+
+- `epss` — daily prediction of exploit probability (0.0–1.0)
+- `kev` — flagged `true` for CVEs on the CISA Known-Exploited catalog
+- `risk_score = cvss × (1 + epss) × (2 if kev else 1)`
+
+This lets reports sort _by actual risk_, not by CVSS alone — a
+`medium` CVE on the KEV list ranks above an unexploited `high`.
+
+## Layer analysis
+
+Trivy inspects every image layer, so secrets embedded in an intermediate
+build stage are still detected even if a later `RUN rm` removed the file.
+
+## CI/CD usage
+
+```yaml
+# .github/workflows/image-scan.yml
+- name: Pencheff — container scan
+  run: |
+    pencheff scan --profile supply-chain \
+      --image ${{ env.IMAGE_TAG }} \
+      --fail-on critical
+```
+
+## Compliance
+
+Container findings map to:
+
+- OWASP Top 10 A06 — Vulnerable & Outdated Components
+- PCI-DSS 6.2 — Apply security patches
+- NIST 800-53 SA-10, SA-11, SI-2
+- SOC 2 CC7.1, CC8.1
+- ISO 27001 A.8.8, A.8.19
+- HIPAA 164.308(a)(8)

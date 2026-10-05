@@ -1,0 +1,145 @@
+---
+title: Tutorial — Audit-ready compliance bundle
+description: Ship a customer-facing PDF + JSON evidence pack that maps every finding to OWASP, PCI-DSS, NIST, SOC 2, ISO, HIPAA.
+---
+
+# Tutorial: Audit-ready compliance bundle
+
+The dashboard&rsquo;s [compliance mapping
+page](/features/compliance-mapping) is the interactive surface; this
+tutorial walks the same data into a customer-shippable bundle: a
+DOCX / PDF report, a JSON evidence pack, and a CSV the auditor can
+ingest directly.
+
+## Scenario
+
+* **Customer.** A Fortune 500 procurement team running a
+  third-party risk review.
+* **Ask.** &ldquo;Send us your latest scan, mapped to OWASP,
+  PCI-DSS, NIST 800-53, SOC 2, ISO 27001:2022, and HIPAA.&rdquo;
+* **Goal.** A single email with one PDF, one JSON, and one CSV.
+
+## 1. Run the deep scan
+
+Compliance bundles need verified findings, not unverified scanner
+hits. Use the `deep` profile:
+
+```bash
+pencheff scan \
+  --target https://app.acme.com \
+  --profile deep \
+  --output ./reports/ \
+  --format docx,json,csv
+```
+
+`deep` auto-creates a target-pinned engagement, persists a [DREAD
+threat model](/features/threat-model), and runs the active
+verification + chain phase &mdash; so the report carries only
+`true_positive` rows.
+
+## 2. Generate the multi-format report
+
+```bash
+# Markdown report — for consultancies that maintain deliverables in Git.
+curl -X POST -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"format":"markdown"}' \
+  "$PENCHEFF_API_BASE/scans/$SCAN_ID/reports"
+
+# DOCX with workspace branding (logo, colors, opening letter).
+curl -X POST -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"format":"docx"}' \
+  "$PENCHEFF_API_BASE/scans/$SCAN_ID/reports"
+
+# JSON — for the auditor's intake pipeline.
+curl -X POST -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"format":"json"}' \
+  "$PENCHEFF_API_BASE/scans/$SCAN_ID/reports"
+
+# CSV — one column per framework.
+curl -X POST -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"format":"csv"}' \
+  "$PENCHEFF_API_BASE/scans/$SCAN_ID/reports"
+```
+
+Per-workspace branding (logo, colors, opening letter, methodology,
+footer) is configured at `/settings/branding`.
+
+## 3. Pull the compliance JSON
+
+```bash
+curl -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  "$PENCHEFF_API_BASE/scans/$SCAN_ID/compliance" \
+  | jq > acme-compliance.json
+```
+
+The shape (full doc on the [feature
+page](/features/compliance-mapping)):
+
+```json
+{
+  "scan_id": "0f2b…",
+  "target_kind": "url",
+  "frameworks": ["OWASP Top 10", "PCI-DSS", "NIST 800-53",
+                 "SOC 2", "ISO 27001:2022", "HIPAA"],
+  "totals": { "findings": 42, "controls_touched": 17 },
+  "frameworks_summary": { /* per-framework rollup */ },
+  "findings": [ /* per-finding mapping */ ]
+}
+```
+
+The `findings[].compliance` block on every finding mirrors the
+shape the report&rsquo;s appendix renders, so the procurement
+team&rsquo;s automated ingest can keep them in sync.
+
+## 4. Attach the SBOM
+
+For SOC 2 CC7.1 / NIST SR-3 / ISO A.5.21 attestations, attach the
+generated SBOM:
+
+```bash
+curl -X POST -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  "$PENCHEFF_API_BASE/repos/$REPO_ID/sbom"
+
+curl -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  "$PENCHEFF_API_BASE/repos/$REPO_ID/sbom" \
+  -o acme-sbom-cyclonedx.json
+```
+
+## 5. Bundle it
+
+```bash
+mkdir -p acme-bundle
+cp reports/pencheff-acme-app.docx     acme-bundle/01-assessment.docx
+cp acme-compliance.json                acme-bundle/02-compliance.json
+cp reports/pencheff-acme-app.csv       acme-bundle/03-findings.csv
+cp acme-sbom-cyclonedx.json            acme-bundle/04-sbom.cyclonedx.json
+zip -r acme-bundle.zip acme-bundle
+```
+
+That&rsquo;s the deliverable.
+
+## 6. Optional: share-by-link
+
+For LLM scans (and DAST scans where the customer doesn&rsquo;t want
+an account), `POST /scans/{id}/share?ttl_seconds=604800` returns a
+Fernet-encrypted token; the public route
+`GET /share/llm/{token}` renders the report without auth. Token
+expiry is the only revocation.
+
+## Deliverable
+
+A single `acme-bundle.zip` with:
+
+* `01-assessment.docx` &mdash; customer-shipped report.
+* `02-compliance.json` &mdash; per-scan compliance rollup.
+* `03-findings.csv` &mdash; auditor ingest.
+* `04-sbom.cyclonedx.json` &mdash; supply-chain attestation.
+
+## Next
+
+* [Compliance mapping feature reference](/features/compliance-mapping).
+* [CI gate](/tutorials/ci-gate) &mdash; same flow, every PR.

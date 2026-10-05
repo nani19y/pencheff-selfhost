@@ -1,0 +1,101 @@
+---
+title: Network VA — host vulnerability scanning
+---
+
+# Network Vulnerability Assessment
+
+Pencheff ships a host vulnerability assessment engine that complements the web
+DAST with host-level CVE discovery, unauthenticated-service misconfig
+probes, authenticated package audits, and industrial-protocol exposure
+checks.
+
+## Modules
+
+| Module | What it does |
+| --- | --- |
+| `scan_host_vulns` | Pencheff service detection → derive package/version → OSV CVE lookup → EPSS + KEV enrichment. |
+| `scan_network_misconfig` | Unauthenticated probes for Redis, MongoDB, Elasticsearch, Memcached, Docker-over-TCP, MySQL, PostgreSQL, SNMP. |
+| `scan_authenticated_host` | SSH (paramiko) / WinRM / SMB package enumeration → per-package CVE lookup. Use for patch-management visibility. |
+| `scan_industrial_protocols` | Modbus, BACnet, Siemens S7, EtherNet/IP, DNP3 exposure check. Passive exposure check only; never sends protocol commands. |
+| `refresh_cve_feed` | Pulls CISA KEV + EPSS CSV into the local SQLite cache. |
+
+## Example
+
+Host CVE scan:
+
+```text
+scan_host_vulns(session_id=sid, host='10.0.0.42', ports='top-1000')
+→ { findings_added: 12, total: 12 }
+```
+
+Unauthenticated misconfig pass:
+
+```text
+scan_network_misconfig(session_id=sid, host='10.0.0.42')
+→ {
+    findings_added: 3,
+    findings: [
+      "Redis exposed without authentication",
+      "MongoDB accessible without authentication",
+      "Elasticsearch exposed without authentication"
+    ]
+  }
+```
+
+Authenticated host scan with an SSH key:
+
+```text
+# First load credentials
+pentest_configure(session_id=sid, updates={
+  "credentials": {
+    "name": "infra",
+    "username": "deploy",
+    "custom_headers": { "ssh_key_path": "/home/me/.ssh/id_ed25519" }
+  }
+})
+
+# Then run the authenticated scan
+scan_authenticated_host(
+  session_id=sid,
+  host='10.0.0.42',
+  protocol='ssh',
+  credentials_ref='infra'
+)
+→ {
+    findings_added: 18,
+    os_name: "Ubuntu",
+    package_count: 1247
+  }
+```
+
+## How It Fits With Dedicated Network Scanners
+
+| Feature | Dedicated network scanners | Pencheff Network VA |
+| --- | --- | --- |
+| Unauthenticated service probes | Large feed-backed rule libraries | Targeted probes for Redis/Mongo/Elastic/Memcached/Docker/MySQL/PG/SNMP + optional network templates |
+| Authenticated scans | SSH/SMB-based patch audit | SSH (paramiko) / WinRM (pywinrm) / SMB (impacket optional) |
+| CVE feed | Tool-specific CVE and advisory feeds | OSV.dev + CISA KEV + EPSS (daily refresh) |
+| Reporting | Tool-specific report formats | Unified `Finding` model with CVSS + compliance mapping |
+| Integration | Standalone | Plugs into the same session as DAST + SCA + IaC |
+
+Dedicated network-scanning platforms remain the right fit for large-scale
+pure-network scans over millions of assets; Pencheff Network VA is designed
+to be _part of a mixed-surface pentest_ where you want web, network, SCA,
+and IaC findings in one session.
+
+## Compliance mapping
+
+Network VA findings map to:
+
+- OWASP A06 — Vulnerable & Outdated Components
+- A05 — Security Misconfiguration
+- PCI-DSS 2.2, 6.2, 11.3
+- NIST 800-53 SI-2, CM-6, RA-5
+- SOC 2 CC7.1
+- ISO 27001 A.8.8, A.8.9, A.5.32
+- HIPAA 164.308(a)(8)
+
+## What's next
+
+- [EPSS & KEV enrichment](/features/epss-kev)
+- [ASM: find hosts before you scan them](/features/asm)

@@ -1,0 +1,220 @@
+# Connect a repo
+
+Pencheff scans GitHub repositories three ways. Local-folder
+registration was removed in v0.4.0 — the worker can't honestly know
+which paths it'll see at scan time, so all three paths are now
+GitHub-based.
+
+Every connected repo also auto-appears as a [Target](/reference/targets)
+with `kind: "repo"`, so it's listed alongside DAST URL targets in the
+dashboard, the integrations target multi-select, and any other
+consumer of `GET /targets`.
+
+## Option A — Pencheff GitHub App (recommended)
+
+Best for **private repos** and **continuous scanning** (push webhooks,
+fix-PRs in Pro, Dependabot ingest, no token rotation).
+
+1. Sign in at **app.pencheff.com**, open **Repos**, and click
+   **Install Pencheff on GitHub**.
+2. GitHub asks **"Where do you want to install Pencheff?"** — pick the
+   user or organisation that owns the repo.
+3. On the next screen, **"Repository access"**:
+   - **Only select repositories** (recommended) — type each repo name
+     and tick.
+   - **All repositories** — only pick this if you intend Pencheff to
+     scan every repo in the account/org now AND in the future.
+4. Review the requested permissions (table below), then click
+   **Install**.
+5. GitHub redirects back to `/repos/callback`. The new installation
+   appears under **Connected GitHub accounts**.
+6. Click **Sync repos** on the new installation card to pull the repo
+   list. Each synced repo auto-appears under
+   [**Repositories**](/repos/connect) AND under **Registered targets**
+   on the dashboard.
+
+The app uses short-lived installation tokens to clone code and read
+Dependabot alerts — no personal access tokens to rotate.
+
+### Permissions requested + why
+
+| Permission | Level | Why |
+| --- | --- | --- |
+| Contents | Read-only | Clone source for SAST/SCA scans |
+| Metadata | Read-only | Mandatory by GitHub; lists branches, default-branch |
+| Pull requests | Read-only | Tag findings with the PR that introduced them |
+| Issues | Read-only | Cross-reference Dependabot & security advisories |
+| Dependabot alerts | Read-only | Ingest existing alerts so SCA findings land pre-triaged |
+| Secret scanning alerts | Read-only | Surface GitHub-detected secrets alongside our own |
+| Webhooks: Push, PR, Repository | Subscribe | Auto-scan on push/PR; auto-deregister on repo delete |
+
+Pencheff requests **no write permissions** anywhere. The App cannot
+push commits, open issues, comment on PRs, or modify settings. The
+Pro **fix-PR** feature requests `Contents: Read+Write` separately at
+upgrade time and is opt-in per-repo.
+
+### Adding more repos later
+
+Two ways:
+
+- On
+  [github.com/settings/installations](https://github.com/settings/installations)
+  find the Pencheff install → **Configure** → tick the new repo.
+- Back on Pencheff's `/repos` page, click **Sync repos** on the
+  installation card. The new repo appears under *Repositories* and
+  *Registered targets* within seconds.
+
+### Removing access
+
+Uninstall from
+[github.com/settings/installations](https://github.com/settings/installations).
+Already-collected scan history stays in Pencheff so audit trails
+survive — but no future scans will run.
+
+## Option B — Private repo via Personal Access Token
+
+Best when the GitHub App can't be installed (org policy, locked-down
+account) or for one-off scans of a private repo you contribute to.
+
+1. Open **Repos → Connect a GitHub repo**, switch the toggle to
+   **Private (PAT)**.
+2. Paste the repo URL and a Personal Access Token (see below for how
+   to create one).
+3. Click **Connect private repo**. Pencheff validates the token
+   against the GitHub REST API before persisting:
+   - 401 → "PAT is invalid, revoked, or expired"
+   - 403/404 → "Token cannot read &lt;repo&gt;. Check 'Contents: Read'
+     + 'Metadata: Read' (fine-grained) or the 'repo' scope (classic),
+     and that the repo is in the PAT's allowed-repos list."
+
+The token is stored Fernet-encrypted on the Repository row and never
+returned through any API surface. The worker decrypts it at scan time
+and uses it as the `x-access-token` password for `git clone`.
+
+### Creating a fine-grained PAT (recommended)
+
+Per-repo scope and explicit expiry. Always prefer this when the repo
+lives in a personal account or an org that has fine-grained tokens
+enabled.
+
+1. Open
+   [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new).
+2. **Token name:** something identifiable, e.g. `pencheff-acme-api`.
+3. **Resource owner:** the user or organization that owns the repo.
+   (For org repos, fine-grained tokens may need org admin approval —
+   check **Settings → Personal access tokens** on the org.)
+4. **Expiration:** 90 days max is the GitHub default. Pencheff stores
+   the token encrypted but you'll need to rotate it before expiry —
+   re-paste a new token in this form to update.
+5. **Repository access:** select **Only select repositories**, then
+   add the repo (or repos) you want Pencheff to scan. Avoid
+   *All repositories*.
+6. **Repository permissions:**
+   - `Contents` → **Read-only** (required — this is what lets the
+     worker clone)
+   - `Metadata` → **Read-only** (mandatory for fine-grained PATs;
+     auto-selected by GitHub)
+   - Everything else → **No access**
+7. Click **Generate token**. Copy the value that starts with
+   `github_pat_` and paste it into Pencheff.
+
+### Creating a classic PAT
+
+Use this only when the org has fine-grained tokens disabled, or for
+legacy automations. Classic PATs grant org-wide access — they can't be
+scoped per-repo.
+
+1. Open [github.com/settings/tokens/new](https://github.com/settings/tokens/new).
+2. **Note:** `pencheff-acme-api`.
+3. **Expiration:** 90 days or shorter. Classic PATs without expiry
+   are flagged by most compliance frameworks — don't use *No expiration*.
+4. **Scopes:** tick `repo` (the top-level checkbox — this gives clone
+   access plus more than we need; classic PATs unfortunately can't be
+   narrowed). For SSO-protected orgs you'll also need to **Configure
+   SSO → Authorize** for that org after creation.
+5. Click **Generate token**. Copy the value that starts with `ghp_`
+   and paste it into Pencheff.
+
+### Rotating a PAT
+
+Re-register the same repo URL with a new token. Pencheff detects the
+existing Repository row, updates `token_encrypted` in place, and
+keeps the same `repository_id` so previous scan history and the
+mirror Target stay intact.
+
+## Option C — Public GitHub URL
+
+Best for **one-off scans** of an open-source project you don't own —
+no install, no token.
+
+1. In **Repos → Connect a GitHub repo**, leave the toggle on
+   **Public GitHub URL**.
+2. Paste a `https://github.com/owner/repo` URL and click
+   **Connect public repo**.
+3. Pencheff probes the public REST API to confirm the repo exists
+   and is reachable anonymously. Private repos return 404 — switch
+   to Option A or B for those.
+4. The first scan does an unauthenticated shallow clone.
+
+You can disconnect a public-URL repo at any time from the repos table
+— the scan history stays.
+
+## What runs on every scan
+
+Six scanners fan out in parallel against a `.gitignore`-respecting
+staging copy of the repo:
+
+| Scanner | What it finds |
+| --- | --- |
+| **Semgrep OSS** | SAST — multi-language pattern matcher pinned to an explicit OSS Semgrep Registry pack list (no `--config=auto`, no Semgrep Pro). Override packs with `PENCHEFF_SEMGREP_PACKS`. |
+| **Bandit / gosec / Brakeman / ESLint-security** | Per-language SAST — Python, Go, Rails, JS/TS. Each auto-skips when its language isn't present in the tree. |
+| **GHSA Advisory DB** | SCA — every dependency manifest (`package-lock.json`, `go.sum`, `requirements.txt`, `Gemfile.lock`, `Cargo.lock`, …) cross-referenced against the [GitHub Advisory Database](https://github.com/advisories) via osv-scanner. |
+| **gitleaks** | Secret scanning — API keys, tokens, private SSH keys, high-entropy strings. |
+| **YARA** | Malware / backdoor signatures — webshells, JS loaders, miner configs, RCE gadgets. |
+| **Trivy IaC** | Misconfiguration scan over Terraform, CloudFormation, Helm, Kubernetes manifests, Dockerfiles. CIS benchmarks. |
+| **Checkov** | 1,000+ policy-as-code rules over the same IaC surface. |
+
+App-installed repos additionally **ingest Dependabot alerts** delivered
+over the `dependabot_alert` webhook — they merge with the GHSA bucket.
+
+Each finding is normalised into the unified `RepoFinding` model so the
+findings table doesn't care which scanner produced it.
+
+## Attaching a repo to a URL target
+
+URL (DAST) targets can declare one or more **attached repositories** —
+the source code that backs the running app. Pencheff uses the link only
+to surface a deep-link from the URL scan to each repo's own assessment
+page. Attached-repo findings are **not** mixed into the URL scan's
+findings list.
+
+- **Why a link, not an inline merge?** SAST findings (Semgrep,
+  OSV, secrets) and DAST findings have different evidence shapes,
+  different fix cadences, and different reviewers. Mixing them produces
+  a confusing detail page where a SQL-injection-in-source row sits
+  next to a TLS-config-on-staging row. Each surface keeps its own
+  assessment page; the URL scan just points at the repo.
+- **Where to set it.** On a URL target's _Edit_ page, the
+  **Attached repositories** multi-select picks any repo already
+  registered in this workspace. Same-workspace ownership is enforced
+  on both sides.
+- **Where it shows up.** On the URL scan detail page, a **Linked
+  repositories** card appears between the findings table and the
+  reports section. Each row deep-links to `/repos/{repository_id}`.
+- **API.** `GET /scans/{id}/linked-repos` returns the linked repo
+  list as JSON. See the [Scans API reference](/reference/scans).
+
+To run SAST against an attached repo, open it from the link card (or
+from the Repos page) and start a repo scan there.
+
+## Removing access
+
+| Source | How |
+| --- | --- |
+| GitHub App | **Repos → Connected accounts → Disconnect** removes the integration in Pencheff. To revoke on the GitHub side, uninstall from `Settings → Integrations → Applications → Pencheff`. |
+| Private (PAT) | Click **Disconnect** on the repo row. Optionally revoke the PAT at [github.com/settings/tokens](https://github.com/settings/tokens) so even a leaked Pencheff DB couldn't reuse it. |
+| Public URL | Click **Disconnect** on the repo row. |
+
+In all three cases, the auto-mirrored Target row is removed via FK
+cascade, so the repo also disappears from the dashboard's *Registered
+targets* card and from the integrations target multi-select.

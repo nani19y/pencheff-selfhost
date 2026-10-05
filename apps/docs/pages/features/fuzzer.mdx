@@ -1,0 +1,88 @@
+---
+title: Parameter fuzzer
+---
+
+# Parameter fuzzer
+
+Pencheff's fuzzer takes a request template, iterates a wordlist against
+a parameter, and uses **differential analysis** to flag anomalies in the
+unified `Finding` model.
+
+## Bundled wordlists
+
+- `xss-quick` — 18 high-signal XSS probes
+- `sqli-quick` — 18 probe-only SQLi payloads (no destructive statements)
+- `dir-common` — Common path names for FUZZ-style enumeration
+- `common-params` — Common HTTP parameter names
+
+List them from the MCP:
+
+```text
+list_fuzz_wordlists(session_id=sid)
+→ { wordlists: ["common-params", "dir-common", "sqli-quick", "xss-quick"] }
+```
+
+Drop additional lists into `plugins/pencheff/pencheff/modules/fuzzing/wordlists/` to
+extend them.
+
+## Run a fuzz
+
+```text
+fuzz_parameter(
+  session_id=sid,
+  url="https://example.com/search?q=FUZZ",
+  method="GET",
+  param="q",
+  wordlist="xss-quick",
+  encoders=["url", "case-flip"],
+  concurrency=8
+)
+→ {
+    wordlist: "xss-quick",
+    encoders: ["url", "case-flip"],
+    total_results: 72,
+    interesting: 3,
+    findings_added: 3
+  }
+```
+
+## Anomaly classification
+
+The fuzzer establishes a baseline response first, then flags each result
+as **interesting** when:
+
+| Signal | Severity hint |
+| --- | --- |
+| `payload-reflected` | HIGH — likely XSS context |
+| `status-diff` (to 500) | HIGH — server error implies injection |
+| `status-diff` (other) | MEDIUM |
+| `length-diff` ±50 bytes | MEDIUM — possible blind injection |
+| `latency-spike` (3× baseline, >1s) | HIGH — time-based blind SQLi/SSTI |
+| `network-error` | MEDIUM — triggers socket failures |
+
+Each interesting result becomes a `Finding` with full evidence.
+
+## Encoders
+
+Pencheff's payload engine composes encoders in sequence:
+
+| Encoder | Effect |
+| --- | --- |
+| `url` | `<script>` → `%3Cscript%3E` |
+| `double-url` | `%3C` → `%253C` |
+| `base64` | `admin` → `YWRtaW4=` |
+| `unicode` | `a` → `\u0061` |
+| `case-flip` | `admin` → `ADMIN`, `AdMiN`, `aDmIn` |
+| `null-byte` | `id` → `id%00`, `id\x00` |
+| `html-entity` | `<` → `&#60;` |
+
+Compose them by listing multiple encoders — each word expands into the
+full cartesian product.
+
+## Workflow
+
+Pencheff's fuzzer is designed for scheduled and CLI-driven assessment:
+
+- Unified `Finding` output (CVSS, OWASP, compliance mapping)
+- Async concurrency (`httpx`)
+- Replayable via schedules and the CLI for CI automation

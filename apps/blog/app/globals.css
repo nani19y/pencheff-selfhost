@@ -1,0 +1,765 @@
+/* ============================================================================
+ * Pencheff Blog — Sunset Observability
+ * Warm paper, warm ink, ember orange, champagne→amber gilt.
+ * Mirrors apps/web/styles/globals.css.
+ * ========================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap");
+
+:root {
+  --b-ink:       #150F0A;
+  --b-dusk:      #1A0F08;
+  --b-graphite:  #322A20;
+  --b-slate:     #6B5E47;
+  --b-mist:      #B5A993;
+  --b-hairline:  #E8DCC6;
+  --b-paper:     #FFFFFF;
+  --b-vellum:    #FBF6EC;
+  --b-parchment: #FDF8EF;
+
+  --b-orange-50:  #FFF6EE;
+  --b-orange-100: #FFE6D1;
+  --b-orange-200: #FFC79A;
+  --b-orange-300: #FFA158;
+  --b-orange-400: #FB7A1C;
+  --b-orange-500: #E85A06;
+  --b-orange-600: #C44805;
+  --b-orange-700: #9A3604;
+
+  --b-gold-100: #FFF2C7;
+  --b-gold-200: #F8DD85;
+  --b-gold-300: #E5BD63;
+  --b-gold-400: #C9A24E;
+  --b-gold-500: #A8843A;
+  --b-gold-600: #8A6A2A;
+
+  --b-ember:      var(--b-orange-400);
+  --b-ember-deep: var(--b-orange-500);
+  --b-gilt:       var(--b-gold-400);
+  --b-gilt-deep:  var(--b-gold-600);
+
+  --b-shadow-subtle: 0 1px 2px rgba(60,30,8,0.05);
+  --b-shadow-elev:   0 8px 24px -12px rgba(60,30,8,0.18), 0 2px 6px -2px rgba(60,30,8,0.06);
+  --b-shadow-report: 0 24px 60px -30px rgba(60,30,8,0.28);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'Geist', 'Söhne', 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  font-feature-settings: "ss01", "cv11", "tnum";
+  color: var(--b-graphite);
+  background: var(--b-paper);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection { background: var(--b-orange-400); color: var(--b-paper); }
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+.blog-header {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: saturate(1.15) blur(14px);
+  -webkit-backdrop-filter: saturate(1.15) blur(14px);
+  border-bottom: 1px solid var(--b-hairline);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.blog-nav {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0 24px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.blog-logo {
+  color: var(--b-ink);
+  font-family: 'Fraunces', Georgia, ui-serif, serif;
+  font-size: 22px;
+  font-weight: 500;
+  font-variation-settings: "opsz" 48, "SOFT" 30;
+  letter-spacing: -0.025em;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.blog-logo:hover { color: var(--b-ember-deep); }
+
+.blog-nav-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.blog-back-link {
+  color: var(--b-slate);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: color 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.blog-back-link::before {
+  content: "";
+  width: 18px; height: 1px;
+  background: var(--b-gilt);
+}
+.blog-back-link:hover { color: var(--b-ember-deep); }
+
+/* Theme toggle */
+.blog-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background: transparent;
+  color: var(--b-slate);
+  border: 1px solid var(--b-hairline);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+  padding: 0;
+}
+.blog-theme-toggle:hover {
+  color: var(--b-ember-deep);
+  border-color: var(--b-ember);
+  background: rgba(251, 122, 28, 0.06);
+}
+
+/* ── Main ─────────────────────────────────────────────────────────────── */
+.blog-main {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 80px 24px 96px;
+  position: relative;
+}
+
+/* Subtle sunset glow behind content */
+.blog-main::before {
+  content: "";
+  position: absolute;
+  top: -40px;
+  left: -10%;
+  right: -10%;
+  height: 320px;
+  background:
+    radial-gradient(ellipse 60% 60% at 50% 0%, rgba(251,122,28,0.08) 0%, rgba(251,122,28,0) 60%),
+    radial-gradient(ellipse 80% 50% at 90% 30%, rgba(201,162,78,0.06) 0%, rgba(201,162,78,0) 50%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────── */
+.blog-footer {
+  border-top: 1px solid var(--b-hairline);
+  background: linear-gradient(180deg, var(--b-paper) 0%, var(--b-parchment) 100%);
+  text-align: center;
+  padding: 32px 24px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--b-slate);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.blog-footer p { margin: 0; }
+.blog-footer a {
+  color: var(--b-graphite);
+  text-decoration: underline;
+  text-decoration-color: var(--b-gilt);
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+  transition: color 0.15s, text-decoration-color 0.15s;
+}
+.blog-footer a:hover {
+  color: var(--b-ember-deep);
+  text-decoration-color: var(--b-ember);
+}
+
+/* ── Post index ───────────────────────────────────────────────────────── */
+.index-heading {
+  font-family: 'Fraunces', Georgia, ui-serif, serif;
+  font-size: clamp(34px, 4vw, 52px);
+  font-weight: 400;
+  font-variation-settings: "opsz" 144, "SOFT" 50;
+  color: var(--b-ink);
+  margin: 0 0 8px;
+  letter-spacing: -0.024em;
+  line-height: 1.04;
+}
+
+/* Editorial eyebrow above heading */
+.index-heading::before {
+  content: "§ FIELD NOTES";
+  display: block;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  color: var(--b-gilt-deep);
+  margin-bottom: 18px;
+  text-transform: uppercase;
+}
+
+.post-list {
+  list-style: none;
+  margin: 40px 0 0;
+  padding: 0;
+}
+
+.post-card {
+  position: relative;
+  background: var(--b-paper);
+  background-image: linear-gradient(180deg, var(--b-parchment) 0%, var(--b-paper) 25%);
+  border: 1px solid var(--b-hairline);
+  border-radius: 12px;
+  padding: 28px 32px;
+  margin-bottom: 20px;
+  box-shadow: var(--b-shadow-subtle);
+  transition: transform 0.25s cubic-bezier(.22,.61,.36,1),
+              border-color 0.2s,
+              box-shadow 0.25s;
+  overflow: hidden;
+}
+.post-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 24px; right: 24px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--b-gilt) 50%, transparent);
+  opacity: 0.35;
+  transition: opacity 0.3s, background 0.3s, left 0.3s, right 0.3s;
+}
+.post-card:hover {
+  border-color: var(--b-orange-200);
+  box-shadow: var(--b-shadow-elev);
+  transform: translateY(-2px);
+}
+.post-card:hover::before {
+  opacity: 1;
+  background: linear-gradient(90deg, transparent, var(--b-ember) 30%, var(--b-gilt) 70%, transparent);
+  left: 0; right: 0;
+}
+.post-card a {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+
+.post-title {
+  margin: 0 0 8px;
+  font-family: 'Fraunces', Georgia, ui-serif, serif;
+  font-size: 22px;
+  font-weight: 500;
+  font-variation-settings: "opsz" 36, "SOFT" 30;
+  color: var(--b-ink);
+  letter-spacing: -0.014em;
+  line-height: 1.22;
+}
+
+.post-meta {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--b-slate);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin: 0 0 12px;
+}
+
+.post-description {
+  font-family: 'Geist', system-ui, sans-serif;
+  font-size: 15px;
+  color: var(--b-graphite);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.no-posts {
+  text-align: center;
+  padding: 96px 0;
+  color: var(--b-slate);
+}
+.no-posts p {
+  font-family: 'Fraunces', Georgia, ui-serif, serif;
+  font-size: 20px;
+  font-weight: 400;
+  font-variation-settings: "opsz" 36;
+  color: var(--b-graphite);
+  margin: 0 0 12px;
+}
+.no-posts code {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 13px;
+  background: var(--b-vellum);
+  border: 1px solid var(--b-hairline);
+  color: var(--b-orange-700);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* ── Post page ────────────────────────────────────────────────────────── */
+.post-header {
+  margin-bottom: 56px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--b-hairline);
+}
+
+.post-headline {
+  font-family: 'Fraunces', Georgia, ui-serif, serif;
+  font-size: clamp(36px, 5vw, 56px);
+  font-weight: 400;
+  font-variation-settings: "opsz" 144, "SOFT" 50;
+  color: var(--b-ink);
+  margin: 0 0 18px;
+  line-height: 1.04;
+  letter-spacing: -0.028em;
+}
+
+.post-byline {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--b-slate);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.post-byline::before {
+  content: "";
+  width: 22px; height: 1px;
+  background: var(--b-gilt);
+}
+
+/* ── Prose ────────────────────────────────────────────────────────────── */
+.prose {
+  max-width: 72ch;
+  font-family: 'Geist', system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.75;
+  color: var(--b-graphite);
+  font-feature-settings: "ss01", "cv11";
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  font-family: 'Fraunces', Georgia, ui-serif, serif;
+  color: var(--b-ink);
+  letter-spacing: -0.018em;
+  font-variation-settings: "opsz" 72, "SOFT" 30;
+}
+
+.prose h1 {
+  font-size: 32px;
+  font-weight: 500;
+  margin: 2.2em 0 0.6em;
+  letter-spacing: -0.022em;
+}
+.prose h2 {
+  font-size: 26px;
+  font-weight: 500;
+  margin: 2em 0 0.5em;
+}
+.prose h3 {
+  font-size: 20px;
+  font-weight: 500;
+  margin: 1.75em 0 0.4em;
+}
+.prose h4 {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 1.5em 0 0.4em;
+}
+
+.prose p { margin: 0 0 1.4em; }
+
+.prose a {
+  color: var(--b-orange-600);
+  text-decoration: underline;
+  text-decoration-color: var(--b-gold-300);
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+  transition: color 0.15s, text-decoration-color 0.15s;
+}
+.prose a:hover {
+  color: var(--b-ember-deep);
+  text-decoration-color: var(--b-ember);
+}
+
+.prose strong { font-weight: 600; color: var(--b-ink); }
+.prose em { font-style: italic; }
+
+.prose ul,
+.prose ol { margin: 0 0 1.4em; padding-left: 1.6em; }
+.prose li { margin-bottom: 0.5em; }
+.prose li > ul,
+.prose li > ol { margin: 0.5em 0 0; }
+.prose ul li::marker { color: var(--b-gilt); }
+.prose ol li::marker {
+  color: var(--b-gilt-deep);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.9em;
+  font-weight: 500;
+}
+
+.prose blockquote {
+  border-left: 3px solid var(--b-ember);
+  background: var(--b-orange-50);
+  margin: 1.75em 0;
+  padding: 1em 1.5em;
+  color: var(--b-graphite);
+  font-style: italic;
+  font-family: 'Fraunces', Georgia, ui-serif, serif;
+  font-size: 18px;
+  border-radius: 0 6px 6px 0;
+}
+.prose blockquote p { margin: 0 0 0.5em; }
+.prose blockquote p:last-child { margin: 0; }
+
+.prose hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--b-gilt) 30%, var(--b-gilt) 70%, transparent);
+  margin: 3em 0;
+}
+
+/* ── Code ─────────────────────────────────────────────────────────────── */
+.prose code {
+  background: var(--b-parchment);
+  border: 1px solid var(--b-hairline);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.86em;
+  color: var(--b-orange-700);
+  font-weight: 500;
+}
+
+.prose pre {
+  background: var(--b-dusk);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  padding: 22px 26px;
+  overflow-x: auto;
+  margin: 1.75em 0;
+  line-height: 1.65;
+  box-shadow: var(--b-shadow-elev);
+  position: relative;
+}
+.prose pre::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 20px; right: 20px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--b-gilt) 50%, transparent);
+  opacity: 0.3;
+}
+
+.prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13.5px;
+  color: #F5F1E6;
+  font-weight: 400;
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────── */
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.75em 0;
+  font-size: 14.5px;
+  font-family: 'Geist', system-ui, sans-serif;
+  border: 1px solid var(--b-hairline);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.prose th,
+.prose td {
+  border-bottom: 1px solid var(--b-hairline);
+  padding: 11px 16px;
+  text-align: left;
+}
+
+.prose th {
+  background: var(--b-vellum);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--b-slate);
+  border-bottom: 1px solid var(--b-ink);
+}
+
+.prose tbody tr:hover td {
+  background: var(--b-orange-50);
+}
+.prose tbody tr:last-child td { border-bottom: 0; }
+
+/* ── Media ────────────────────────────────────────────────────────────── */
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  margin: 1.5em 0;
+  display: block;
+  box-shadow: var(--b-shadow-elev);
+}
+
+.prose video,
+.prose audio {
+  max-width: 100%;
+  display: block;
+  margin: 1.5em 0;
+  border-radius: 10px;
+}
+
+.prose iframe {
+  max-width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--b-hairline);
+  margin: 1.5em 0;
+  display: block;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .blog-nav { height: 56px; }
+  .blog-logo { font-size: 20px; }
+  .blog-main { padding: 48px 18px 64px; }
+  .prose { font-size: 16px; }
+  .post-headline { font-size: 28px; }
+  .index-heading { font-size: 30px; }
+  .post-card { padding: 22px 22px; }
+}
+
+/* ============================================================================
+ * DARK MODE — "Sunset Observability — Night"
+ * Activates from OS preference or explicit [data-theme="dark"] on <html>.
+ * ========================================================================== */
+
+:root[data-theme="dark"],
+:root.dark {
+  --b-ink:       #FBF6EC;
+  --b-dusk:      #050302;
+  --b-graphite:  #E8DCC6;
+  --b-slate:     #B5A993;
+  --b-mist:      #6B5E47;
+  --b-hairline:  #3D2E1C;
+  --b-paper:     #1A100A;
+  --b-vellum:    #241710;
+  --b-parchment: #1F1308;
+
+  --b-ember:      var(--b-orange-400);
+  --b-ember-deep: var(--b-orange-500);
+  --b-gilt:       var(--b-gold-300);
+  --b-gilt-deep:  var(--b-gold-400);
+
+  --b-shadow-subtle: 0 1px 2px rgba(0,0,0,0.45);
+  --b-shadow-elev:   0 8px 24px -10px rgba(0,0,0,0.6), 0 2px 6px -2px rgba(0,0,0,0.3);
+  --b-shadow-report: 0 28px 70px -28px rgba(0,0,0,0.7);
+
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] body,
+:root.dark body {
+  background: #0E0805;
+  color: var(--b-graphite);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --b-ink:       #FBF6EC;
+    --b-dusk:      #050302;
+    --b-graphite:  #E8DCC6;
+    --b-slate:     #B5A993;
+    --b-mist:      #6B5E47;
+    --b-hairline:  #3D2E1C;
+    --b-paper:     #1A100A;
+    --b-vellum:    #241710;
+    --b-parchment: #1F1308;
+
+    --b-ember:      var(--b-orange-400);
+    --b-ember-deep: var(--b-orange-500);
+    --b-gilt:       var(--b-gold-300);
+    --b-gilt-deep:  var(--b-gold-400);
+
+    --b-shadow-subtle: 0 1px 2px rgba(0,0,0,0.45);
+    --b-shadow-elev:   0 8px 24px -10px rgba(0,0,0,0.6), 0 2px 6px -2px rgba(0,0,0,0.3);
+    --b-shadow-report: 0 28px 70px -28px rgba(0,0,0,0.7);
+
+    color-scheme: dark;
+  }
+  :root:not([data-theme="light"]) body {
+    background: #0E0805;
+    color: var(--b-graphite);
+  }
+}
+
+/* Header — blurred dark */
+:root[data-theme="dark"] .blog-header,
+:root.dark .blog-header,
+:root:not([data-theme="light"]) .blog-header {
+  background: rgba(14,8,5,0.82);
+}
+
+/* Footer wash — dark gradient */
+:root[data-theme="dark"] .blog-footer,
+:root.dark .blog-footer {
+  background: linear-gradient(180deg, #0E0805 0%, #1A100A 100%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .blog-footer {
+    background: linear-gradient(180deg, #0E0805 0%, #1A100A 100%);
+  }
+}
+
+/* Post-card gradient flips to a subtle dark wash */
+:root[data-theme="dark"] .post-card,
+:root.dark .post-card {
+  background-image: linear-gradient(180deg, var(--b-vellum) 0%, var(--b-paper) 60%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .post-card {
+    background-image: linear-gradient(180deg, var(--b-vellum) 0%, var(--b-paper) 60%);
+  }
+}
+
+/* Blockquote — keep ember accent but pull background to subtle ember wash */
+:root[data-theme="dark"] .prose blockquote,
+:root.dark .prose blockquote {
+  background: rgba(251,122,28,0.07);
+  color: var(--b-graphite);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .prose blockquote {
+    background: rgba(251,122,28,0.07);
+    color: var(--b-graphite);
+  }
+}
+
+/* Inline code — readable on dark */
+:root[data-theme="dark"] .prose code,
+:root.dark .prose code {
+  background: var(--b-vellum);
+  border-color: var(--b-hairline);
+  color: var(--b-orange-300);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .prose code {
+    background: var(--b-vellum);
+    border-color: var(--b-hairline);
+    color: var(--b-orange-300);
+  }
+}
+
+/* Pre / code blocks already dark; just tighten the border on dark */
+:root[data-theme="dark"] .prose pre,
+:root.dark .prose pre {
+  background: #0A0503;
+  border-color: rgba(255,255,255,0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .prose pre {
+    background: #0A0503;
+    border-color: rgba(255,255,255,0.05);
+  }
+}
+
+/* Table head row */
+:root[data-theme="dark"] .prose th,
+:root.dark .prose th {
+  background: var(--b-vellum);
+  color: var(--b-slate);
+  border-bottom-color: var(--b-ink);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .prose th {
+    background: var(--b-vellum);
+    color: var(--b-slate);
+    border-bottom-color: var(--b-ink);
+  }
+}
+
+/* Body-link colour on dark */
+:root[data-theme="dark"] .prose a,
+:root.dark .prose a {
+  color: var(--b-orange-300);
+  text-decoration-color: var(--b-gold-400);
+}
+:root[data-theme="dark"] .prose a:hover,
+:root.dark .prose a:hover {
+  color: var(--b-orange-200);
+  text-decoration-color: var(--b-ember);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .prose a {
+    color: var(--b-orange-300);
+    text-decoration-color: var(--b-gold-400);
+  }
+  :root:not([data-theme="light"]) .prose a:hover {
+    color: var(--b-orange-200);
+    text-decoration-color: var(--b-ember);
+  }
+}
+
+/* Selection */
+:root[data-theme="dark"] ::selection,
+:root.dark ::selection {
+  background: var(--b-orange-500);
+  color: var(--b-paper);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) ::selection {
+    background: var(--b-orange-500);
+    color: var(--b-paper);
+  }
+}
+
+/* Switch syntax-highlight stylesheet visually — atom-one-light is loaded for
+ * blog `prose pre code`. Override its dark-on-light tokens so they read on
+ * the dark code block. */
+:root[data-theme="dark"] .prose pre code .hljs-keyword,
+:root.dark .prose pre code .hljs-keyword,
+:root:not([data-theme="light"]) .prose pre code .hljs-keyword { color: #C99AE8 !important; }
+
+:root[data-theme="dark"] .prose pre code .hljs-string,
+:root.dark .prose pre code .hljs-string,
+:root:not([data-theme="light"]) .prose pre code .hljs-string { color: #B5E18A !important; }
+
+:root[data-theme="dark"] .prose pre code .hljs-number,
+:root.dark .prose pre code .hljs-number,
+:root:not([data-theme="light"]) .prose pre code .hljs-number { color: #F4B86B !important; }
+
+:root[data-theme="dark"] .prose pre code .hljs-comment,
+:root.dark .prose pre code .hljs-comment,
+:root:not([data-theme="light"]) .prose pre code .hljs-comment { color: #6B5E47 !important; }
+
+:root[data-theme="dark"] .prose pre code .hljs-title.function_,
+:root[data-theme="dark"] .prose pre code .hljs-title,
+:root.dark .prose pre code .hljs-title.function_,
+:root.dark .prose pre code .hljs-title,
+:root:not([data-theme="light"]) .prose pre code .hljs-title.function_,
+:root:not([data-theme="light"]) .prose pre code .hljs-title { color: #FB7A1C !important; }

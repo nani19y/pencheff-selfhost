@@ -1,0 +1,117 @@
+---
+title: EPSS, KEV & SSVC priority
+---
+
+# EPSS, KEV & SSVC priority
+
+Pencheff enriches every CVE-referenced finding with:
+
+- **EPSS** — the [Exploit Prediction Scoring System](https://www.first.org/epss/)
+  gives a 0.0–1.0 probability that a CVE will be exploited in the wild in the
+  next 30 days. Updated daily.
+- **CISA KEV** — the [Known Exploited Vulnerabilities catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)
+  flags CVEs that are _currently_ being exploited. Federal agencies have a
+  remediation deadline; commercial teams should treat it as an immediate
+  priority.
+
+## Refresh the feeds
+
+```text
+refresh_cve_feed(session_id=sid, force=False)
+→ { epss: 234518, kev: 1164, errors: [] }
+```
+
+The feed is persisted to `~/.pencheff/cve_cache.db` (SQLite) — offline
+scans keep working until you refresh again.
+
+## SSVC decision class
+
+Beyond EPSS + KEV, Pencheff applies CISA's [SSVC](https://www.cisa.gov/sites/default/files/publications/cisa-ssvc-guide.pdf)
+deployer-profile decision tree to produce one of four action classes
+that drive UI prioritisation:
+
+| Class | When | UX colour |
+| --- | --- | --- |
+| **Act**         | KEV-listed CVE — drop everything | red |
+| **Attend**      | Public PoC + high impact OR open exposure | orange |
+| **Track\\***    | No exploitation yet but very-high impact | yellow |
+| **Track**       | Routine — track in the backlog | grey |
+
+The class is computed from `(KEV, EPSS, CVSS, finding category)` —
+zero analyst input — and persisted on every finding row in
+`ssvc_decision`.
+
+## Unified risk score (0–100)
+
+The `risk_score` column is what the dashboard sorts by:
+
+```
+score = clamp(0, 1, (
+            0.50 × (cvss / 10)
+          + 0.25 × epss      (when epss ≥ 0.5)
+          + 0.15             (when KEV)
+          + 0.10             (when reachability == "exploited")
+          + 0.05             (when reachability == "reachable")
+        ) × ssvc_multiplier) × 100
+
+ssvc_multiplier = { Act: 1.00, Attend: 0.85, Track*: 0.70, Track: 0.50 }
+```
+
+A KEV-listed CVSS 6.0 with active exploitation outranks an unexploited
+CVSS 8.5 — that's the whole point. Snyk sorts on CVSS alone, which
+gets this wrong.
+
+The unified `/findings` queue uses `risk_score DESC NULLS LAST` then
+severity then created_at as a stable tiebreaker. See
+[Unified findings stream](/features/findings-stream).
+
+## See enriched findings
+
+```text
+get_findings_enriched(session_id=sid, severity='high')
+→ {
+    count: 12,
+    findings: [
+      {
+        title: "openssl@3.0.10 — CVE-2024-xxxx",
+        cvss_score: 7.5,
+        epss: 0.873,
+        kev: true,
+        kev_entries: [
+          { cve: "CVE-2024-xxxx", short_desc: "…", due_date: "2026-06-15" }
+        ],
+        risk_score: 28.08
+      },
+      …
+    ]
+  }
+```
+
+## Dashboard badges
+
+The finding detail page and the unified `/findings` queue surface a
+**Priority Strip** with up to five chips:
+
+- **Risk** — the 0–100 unified score (heat-mapped: ≥ 65 red, ≥ 30
+  amber, otherwise neutral).
+- **Reachability** — `Exploited` / `Reachable` / `Present` / `Unknown`
+  ([details](/features/reachability)).
+- **SSVC** — `Act` / `Attend` / `Track*` / `Track`.
+- **EPSS NN%** — exploit-prediction percentile.
+- **KEV** — red chip when on the CISA KEV catalog.
+
+Hover any chip for the explanation.
+
+## Compliance and SLAs
+
+The SLA monitor uses severity to set default remediation windows:
+
+| Severity | Default SLA | Typical KEV-override |
+| --- | --- | --- |
+| critical | 1 day | always 1 day |
+| high | 7 days | 1 day when KEV |
+| medium | 30 days | 7 days when KEV |
+| low | 90 days | 30 days when KEV |
+| info | 365 days | n/a |
+
+Override per-finding via `PATCH /findings/{id}` in the SaaS API.

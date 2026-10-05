@@ -1,0 +1,1004 @@
+---
+title: Release notes
+---
+
+# Release notes
+
+## v0.7.0 — IP-clean expansion (2026-05-08)
+
+Closes the four IP-risk surfaces that existed in v0.6 (CodeQL CLI on
+customer code, Semgrep `--config=auto`, Llama Guard licence
+acknowledgement, no DCO / license-audit CI) **and** ships the
+twelve-category gap matrix from the strategic plan: vuln-DB
+aggregator with AI enrichment, partner-pentest integrations, OSS
+probe + DAST rule libraries, runtime LLM guardrail, runtime API
+discovery, GitHub Check Run + SARIF, container admission webhook,
+and supporting docs/UI for everything.
+
+**Phase 0 — IP-risk fixes**
+
+* CodeQL ripped and replaced — Semgrep OSS (pinned packs only) +
+  Bandit + gosec + Brakeman + ESLint-security as the new SAST pack.
+* Semgrep config tightened to an explicit OSS Registry pack list;
+  override via `PENCHEFF_SEMGREP_PACKS`.
+* Llama Guard 3 hardened: opt-in only via
+  `PENCHEFF_LLAMA_GUARD_ENABLED=1`, license notice surfaced in
+  every `JudgeResult.reason`, default judge falls through to
+  Granite Guardian (Apache-2.0).
+* DCO bot enforced on every commit (`.github/workflows/dco.yml`).
+* License-audit CI + auto-generated `THIRD_PARTY_NOTICES.md`
+  (`tools/license_audit.py`).
+* SPDX header check for new/changed files
+  (`tools/spdx_check.py --changed-only`).
+* `NOTICE` and `CONTRIBUTING.md` published.
+
+**Phase 1 — Foundation**
+
+* Refactored CVE feed to a pluggable `BulkFeedSource` protocol; new
+  RustSec (CC0) and GoVulnDB (BSD-3) feeds via the
+  `OsvBulkSource` skeleton (more ecosystems trivial to add).
+* `GET /advisories/{id}` and `GET /advisories?package=&ecosystem=`
+  with AI-enriched exploit walkthrough + fix recipe (Pencheff's
+  answer to Snyk's curated DB; provenance JSONL on every run).
+* Partner pentest integrations — HackerOne / Bugcrowd / Cobalt —
+  with HMAC webhook signing primitive shared with the generic
+  webhook integration.
+* Per-release SBOM published to GitHub Releases on every `v*.*.*`
+  tag, signed with cosign keyless via Sigstore.
+
+**Phase 2 — Probe & rule libraries**
+
+* `pencheff-probes` community LLM red-team corpus with permissive-
+  only JSONL schema + DoNotAnswer importer
+  (`tools/import_donotanswer_probes.py`); HarmBench / AgentHarm /
+  BeaverTails explicitly excluded for license reasons.
+* `pencheff-rules` community DAST rule library — Pencheff Pulse
+  JSON format with the Nuclei→Pulse converter
+  (`tools/nuclei2pulse.py`) plus AI rule synthesiser with strict
+  validator (rejects destructive payloads, disallowed methods,
+  non-permissive PoCs).
+* SAST tree-sitter pack with Solidity sub-pack (4 hand-curated
+  rules); Lua / Scala / Dart / Kotlin / Swift / COBOL / Erlang
+  scaffolded.
+
+**Phase 3 — Runtime + integration surfaces**
+
+* **Pencheff Sentry** — runtime LLM guardrail. HTTP proxy sidecar +
+  LiteLLM plugin + MCP middleware. Blocks prompt injection / PII /
+  unsafe HTML / token-ceiling violations inline. Separate package
+  `pencheff-sentry` on PyPI. ([Docs](/features/sentry))
+* **API discovery from runtime traffic** — synthesises OpenAPI 3.1
+  from captured `ProxyFlow` rows; drift detector emits
+  `api_drift` findings (shadow / phantom / method-drift).
+  ([Docs](/features/api-discovery))
+* **GitHub Check Run + SARIF + Pencheff Suggest** — Check Run with
+  inline annotations on every PR scan, SARIF upload to
+  *Security → Code scanning*, PR-comment suppression command
+  parser. ([Docs](/features/github-check-runs))
+
+**Phase 4 — Container, support, certs**
+
+* Container registry push webhooks for DockerHub / ECR / GCR / ACR
+  (Pub/Sub envelope auto-decoded, Event Grid validation
+  handshake handled). Each push enqueues a Trivy scan.
+* Kubernetes `ValidatingAdmissionWebhook` (Go) — refuses pods
+  whose images carry unfixed critical CVEs. Helm chart
+  published to `oci://ghcr.io/magadha-ig/charts/pencheff-admission`.
+  Fail-closed by default. ([Docs](/features/admission-webhook))
+* "Verify with humans" finding-card flow — submit any finding to
+  HackerOne / Bugcrowd / Cobalt; partner callback flips
+  `verification_status` based on the triager's verdict.
+  ([Docs](/features/partner-triage))
+* Procedural items (trademark searches, GitHub Secret-Scanning
+  Partner program application, SOC 2 + ISO 27001:2022, support-
+  tier hires) tracked in `docs/procedural-checklist.md`.
+
+**Migration — what to do when upgrading**
+
+1. Repo-scan stats keys shift: `stats.codeql` → `stats.semgrep`,
+   `stats.bandit`, `stats.gosec`, `stats.brakeman`, `stats.eslint`.
+   Old `stats.codeql` rows from pre-v0.7 scans stay in the DB; the
+   UI filters them as legacy SAST.
+2. If you opted in to Llama Guard before v0.7, set
+   `PENCHEFF_LLAMA_GUARD_ENABLED=1` to keep using it — the default
+   is now Granite Guardian.
+3. The toolchain Docker image picks up Bandit / gosec / Brakeman /
+   ESLint-security on next rebuild. CodeQL artefacts are dropped.
+4. Run `tools/license_audit.py --write-notices` before your first
+   PR — the auto-generated `THIRD_PARTY_NOTICES.md` is now the
+   source of truth.
+5. New env vars: `PENCHEFF_SEMGREP_PACKS` (override SAST pack
+   list), `PENCHEFF_LLAMA_GUARD_ENABLED` (opt-in Llama Guard
+   judge).
+
+## v0.8.6 — Threat model on every scan, automatically (2026-05-08)
+
+The v0.8.5 work made threat modeling a reusable engagement asset, but
+operators still had to manually generate a model before they got the
+adaptive scan benefit. This release closes the loop: every scan now
+gets a threat model, with two paths chosen by profile.
+
+**Auto-engagement on the deep profile**
+
+Every `--profile deep` scan against a URL with no `engagement_id`:
+
+1. Finds or creates an engagement keyed by `deep-{target_id[:8]}` —
+   one canonical engagement per target, deterministic slug.
+2. Generates and persists a DREAD threat model on that engagement on
+   first run.
+3. Pins the scan to that engagement and uses the model for module
+   priority biasing.
+
+Subsequent deep scans of the same target reuse the same engagement and
+the same threat model — findings accumulate, threat-model edits stick
+across runs.
+
+**Fly-by threat model on every other scan**
+
+`quick`, `standard`, `api-only`, `compliance`, `cicd`: when no engagement
+is supplied, the dispatcher synthesises a DREAD model from the target
+URL on the fly (~1 ms — pure-Python matrix lookup), uses it for the
+module priority bias, and **does not persist** it. The bias is stamped
+into `Scan.summary.threat_model_bias` for the dashboard, but no
+engagement is touched.
+
+**Source label on every scan**
+
+`Scan.summary.threat_model_source` records which path generated the
+bias for forensic clarity:
+
+- `"engagement"` — operator-supplied engagement carried a model.
+- `"auto_engagement"` — deep scan auto-created or reused the engagement.
+- `"fly_by"` — non-deep scan, no persistence.
+
+5 new tests (`apps/api/tests/test_auto_threat_model.py`) cover the
+helper that finds-or-creates the deep-scan engagement, slug-collision
+safety, closed-engagement skipping, and missing-target-metadata
+fallbacks.
+
+## v0.8.5 — Threat modeling, ThreatModelAgent, markdown viewer (2026-05-08)
+
+**Threat modeling — engagement-scoped STRIDE / DREAD with adaptive scan
+profile**
+
+- New: `POST /engagements/{id}/threat-model` generates a deterministic
+  STRIDE or DREAD model from a target URL or explicit asset list.
+  `GET` / `PUT` / `DELETE` complete the CRUD.
+- New: `Engagement.threat_model` JSONB column (migration 0040) and
+  `Engagement.threat_model_updated_at` for staleness signals.
+- **Adaptive scan profile** — when a scan is started against an
+  engagement that has a threat model, the dispatcher reorders the
+  profile's modules so highest-DREAD categories run first. The chosen
+  bias is stamped into `Scan.summary.threat_model_bias` so the
+  dashboard can show *why* a particular module fired first.
+- **`ThreatModelAgent`** added to the swarm's Phase 2 — runs in
+  parallel with the breaker agents as a "lens" (no exclusive scan
+  tools, only the shared `get_findings` / `test_endpoint`). Emits an
+  INFO-severity finding summarising threat coverage per asset.
+- **Web UI** at `/engagements/[id]/threat-model` — table view (STRIDE
+  rows or DREAD scored threats), markdown view, raw-JSON view; one-click
+  Generate / Regenerate / Clear; surfaces the module priority bias.
+- **Report inclusion** — markdown report renders a `## Threat model`
+  section between executive summary and findings when the underlying
+  scan was scoped to an engagement with a model.
+- 18 service tests — STRIDE/DREAD output shape, asset inference, scoring
+  thresholds, module-bias deterministic ordering, markdown rendering,
+  matrix completeness check.
+
+**Markdown viewer in the dashboard**
+
+Finding descriptions, executive summaries, and threat-model output now
+render as proper Markdown:
+
+- GitHub-flavoured tables, strikethrough, task lists (via `remark-gfm`).
+- Fenced code blocks with syntax highlighting (via `rehype-highlight`).
+- ` ```mermaid ` blocks render as SVG diagrams (via `mermaid` v11,
+  dynamic-imported on the client so SSR is unaffected).
+- `<Markdown>` is a reusable component (`apps/web/components/markdown.tsx`)
+  used on the scan-detail and finding-detail pages.
+
+Fixes the bug where the Assessments view rendered `## Proof of impact`,
+pipe-delimited tables, and bullet lists as plain text.
+
+**Pre-existing test fix as a side-effect**
+
+`ActiveDirectoryAgent` and `MobileAppAgent` from v0.8.0 were missing
+entries in `BREAKER_TOOL_ALLOCATIONS`, which made
+`test_admin_access_agent.py` fail with `KeyError: 'ActiveDirectoryAgent'`.
+Empty allocations added; the swarm orchestrator + session-cleanup
+tests are updated for the new total of 13 breakers.
+
+## v0.8.4 — Live CVE / NVD / EPSS / KEV data on every SCA scan (2026-05-08)
+
+The SCA module already queried OSV.dev live per dependency, but EPSS and
+KEV feeds were only refreshed when an operator manually called
+`refresh_cve_feed`, and per-package OSV results were cached forever once
+seen. Now every scan pulls live:
+
+- **NVD 2.0 enrichment** per CVE — CWE list, CPE URIs, NVD-issued CVSS
+  v3.1 score & vector, canonical advisory URL. Cached 14 days
+  (`PENCHEFF_NVD_TTL_DAYS`). Set `NVD_API_KEY` to raise the rate limit
+  from 5/30 s to 50/30 s.
+- **OSV per-package cache** now has a 24 h TTL (`PENCHEFF_OSV_TTL_HOURS`,
+  set to `0` for always-live).
+- **EPSS + CISA KEV** are auto-refreshed at the start of every SCA scan
+  when the local cache is older than `PENCHEFF_FEED_TTL_HOURS`
+  (default 24 h, set to `0` for always-live).
+- **Fail-open semantics** — a network failure during refresh returns the
+  stale-but-known row rather than dropping all SCA findings. Live-data
+  intent fails open, not closed.
+- **Structured finding fields** — `epss`, `epss_percentile`, `kev`,
+  `kev_short_desc`, `kev_due_date`, `cwe_ids`, `advisory_url`,
+  `nvd_cvss_score`, `nvd_cvss_vector`, `fix_version`, `package`,
+  `ecosystem` are now on `Finding.metadata` (no longer buried in
+  description text). The canonical NVD URL is promoted to position 0 of
+  `references` so DOCX / PR comment / finding card renderers link to
+  NVD before OSV.
+
+36 unit tests cover the NVD parser, TTL caching, fail-open paths, and
+the SCA scan-time refresh contract.
+
+## v0.8.3 — `pencheff` CLI is the canonical entry point (2026-05-08)
+
+After `pip install pencheff` the package installer now puts a
+`pencheff` executable on the user's `PATH` — the same shape as `aws`
+or `kubectl`. The `[project.scripts]` entry was already present; this
+release makes it the documented form everywhere.
+
+- Added `pencheff --version` / `-V` for parity with `aws --version`.
+  Reads the installed package metadata via `importlib.metadata`.
+- Replaced every `python -m pencheff …` reference across the GitHub
+  Action, GitLab CI template, Azure DevOps pipeline, Jenkins doc, root
+  + plugin READMEs, and 17 doc pages with the bare `pencheff` form.
+- The legacy `python -m pencheff …` invocation continues to work
+  unchanged — the package keeps a valid `__main__` module.
+- Installation docs now show `which pencheff` + `pencheff --version`
+  as the post-install verification.
+
+## v0.8.2 — API key scope coverage to every public router (2026-05-08)
+
+The default-deny scope layer introduced in v0.8.1 is now wired into
+**every public-facing FastAPI router** — `repos`, `sboms`,
+`dependencies`, `repeater`, `intruder`, `proxy`, `traffic`,
+`engagements`, `schedules`, `notes`, `comments`, `fix-proposals`,
+`dashboard`, and `unified-findings` join the v0.8.1 set
+(`scans`, `findings`, `targets`, `reports`, `assets`, `integrations`).
+
+The advertised scope catalog (37 scopes, 20 categories) now matches
+exactly what the dependency layer enforces — no silent 403s on a route
+that didn't opt in.
+
+- `last_used_at` writes are debounced to one update per 60 s per key —
+  a busy CI key polling every few seconds no longer issues a write
+  per request.
+- Auth-flow integration tests added (21 cases) covering revoked,
+  expired, cross-org, detached-membership, and mismatched-workspace
+  paths, plus `require_scope` and `session_only` invariants.
+- `/repos/install-url` is correctly marked session-only (interactive
+  GitHub App handshake); the `/repos/callback` redirect was already
+  unauthenticated.
+
+## v0.8.1 — Programmatic access: PENCHEFF_API_KEY with scoped permissions (2026-05-07)
+
+**`PENCHEFF_API_KEY` — per-user API keys with fine-grained permissions**
+
+Every user can now mint API keys for scripts, CI pipelines, and
+scheduled jobs. Manage them at **Settings → API keys** in the dashboard.
+
+- **Format** — `pcf_live_<43-char-secret>`. Stored as SHA-256; the
+  plaintext is shown exactly once at creation.
+- **Org-pinned** — every key names exactly one organisation.
+- **Workspace-pinned** — keys may be scoped to a specific workspace
+  (any member can mint these), or left org-wide (`workspace_id: null`,
+  owners and admins only).
+- **Fine-grained scopes** — `category:action` strings.
+  Wildcards: `scans:*`, `*:read`, `*:*`.
+- **Default-deny** — endpoints opt in to scope checks; routers without
+  a `require_scope` declaration reject API-keyed callers regardless of
+  scopes held.
+- **Session-only endpoints** — billing, branding, org admin / member
+  management, and the API-key router itself never accept a key. A
+  leaked key cannot mint more keys, change billing, or modify
+  membership.
+- **Membership re-check on every request** — if the issuing user is
+  removed from the org, all of their keys for that org stop working
+  immediately (no cache).
+- **Audit logged** — `api_key.create`, `api_key.update`, `api_key.revoke`
+  are written to `audit_logs` with the key ID and prefix.
+
+See the [API keys reference](/reference/api-keys) for the full scope
+catalog, recipes (CI/CD, SIEM forwarders, fan-out automation), and
+security notes.
+
+## v0.8.0 — AD/mobile/ASM MCP tools, production hardening, GitLab CI & Azure DevOps (2026-05-07)
+
+**New MCP tools (3)**
+
+- `scan_active_directory(session_id, domain, username, password, dc_ip?, modules?)` —
+  Orchestrated Active Directory enumeration: BloodHound relationship graph,
+  Certipy ESC1–ESC15 certificate template abuse, CrackMapExec/NetExec SMB
+  enumeration, Impacket secretsdump/Kerberoast/AS-REP roast. Selectable via
+  the `modules` list — run one or all four. See [Active Directory docs](/features/active-directory).
+
+- `scan_mobile_app(session_id, apk_path, platform?, modules?, mobsf_url?)` —
+  Static analysis of Android APKs and iOS IPAs: MobSF REST API enrichment,
+  apktool decompile, AndroidManifest.xml security checks (debuggable,
+  allowBackup, cleartext, exported components, minSdkVersion), and jadx-based
+  secrets sweep (15+ patterns including AWS, GCP, Firebase, Stripe, GitHub,
+  JWTs, PEM keys). See [Mobile Security docs](/features/mobile-security).
+
+- `scan_asm(session_id, org, root_domain, modules?)` —
+  Continuous Attack Surface Monitoring: passive subdomain discovery (subfinder
+  + crt.sh), certificate transparency log watch (new issuances in last 7 days),
+  and asset inventory change detection (diffs vs. last snapshot). Results
+  persisted to `~/.pencheff/asm_inventory.db`.
+
+**Agent swarm: 10 → 12 Phase 2 breakers**
+
+- `ActiveDirectoryAgent` — fires `scan_active_directory` when AD credentials
+  are present; analyses BloodHound attack paths, Certipy ESC chains, and
+  SMB share exposure; emits structured findings with step-by-step PoC commands.
+
+- `MobileAppAgent` — fires `scan_mobile_app` against any APK/IPA supplied at
+  session creation; triages MobSF findings by severity; flags hardcoded secrets
+  with smali/Java class path and line number.
+
+**Production API hardening**
+
+- The FastAPI app now refuses to start in `ENVIRONMENT=production` mode if
+  `JWT_SECRET` is still the insecure default or `FERNET_KEY` is empty. This
+  prevents silent misconfiguration in operator deployments.
+
+- Unhandled exception handler now returns `"Internal server error."` in
+  production instead of the full `ExceptionType: message` string, preventing
+  internal stack details from leaking to clients.
+
+**CI/CD integrations**
+
+- **GitLab CI** — reusable `.gitlab-ci.yml` template in `apps/gitlab-ci/`.
+  Include it in any GitLab project; configure via `PENCHEFF_*` CI/CD variables.
+  Runs on MR events and default-branch pushes; report artifact retained 30 days.
+  See [GitLab CI docs](/ci-cd/gitlab-ci).
+
+- **Azure DevOps** — parameterized `azure-pipelines.yml` task in `apps/azure-devops/`.
+  Use via `extends:` or copy the `steps:` section inline. Publishes the report
+  as a build artifact. See [Azure DevOps docs](/ci-cd/azure-devops).
+
+**ASM dashboard tab**
+
+- New `/asm` route in the web dashboard (`apps/web/app/asm/page.tsx`) — shows
+  total asset count, new subdomains in last 24 h, expiring certs, and an asset
+  table with type badges. "Run Discovery" button ready for backend wiring.
+
+**PyPI**
+
+- Published as `pencheff==0.5.0` — `pip install --upgrade pencheff`.
+- MCP tool count: 49 → **52**.
+
+## v0.7.0 — AI agent swarm, consent screen, LLM trace persistence, evidence screenshots (2026-05-06)
+
+Pencheff's single-agent loop is replaced as the default execution path by a
+17-agent parallel swarm. Every scan now requires explicit operator consent, and
+every LLM call made by every agent is persisted for audit and reproduction.
+
+**AI agent swarm**
+
+- New default scan mode: one `ReconAgent` → 10 parallel breaker agents → 6
+  parallel synthesis agents, all coordinated by the swarm orchestrator in
+  `apps/api/pencheff_api/services/agent_runner.py`.
+- The 10 Phase 2 breakers fan out concurrently from a frozen `ReconSnapshot`:
+  `InjectionAgent`, `ClientSideAgent`, `AuthAgent`, `AuthzAgent`, `APIAgent`,
+  `InfraAgent`, `CloudAgent`, `LLMRedTeamAgent`, `SupplyChainAgent`, `K8sAgent`.
+- The 6 Phase 3 synthesis agents read the merged findings in parallel:
+  `ChainAgent`, `ComplianceAgent`, `ProofOfImpactAgent`, `PayloadCraftingAgent`,
+  `EvidenceCaptureAgent`, `AdminAccessAgent`.
+- Typical deep-scan numbers: ~33 min wallclock, ~411 K input / ~86 K output
+  tokens, ~109 LLM calls.
+- See [AI agent swarm](/features/swarm) for full operator documentation.
+
+**Consent screen at scan creation**
+
+- Every `POST /scans` now requires a `consent_payload` field: an authorization
+  statement (≥ 50 chars) and an acknowledged checkbox. The API returns `422` if
+  either is absent.
+- Consent is stored on `Scan.consent_payload` (JSONB) and included in audit exports.
+- The scan-creation UI in the web dashboard presents the disclosed-actions
+  catalogue per agent class before accept.
+
+**LLM trace persistence**
+
+- Every LLM call made by every swarm agent is written to the new
+  `scan_llm_traces` table (agent name, turn, request messages, response,
+  token counts, optional reasoning block).
+- New endpoint `GET /scans/{id}/llm-traces` returns the full trace array for
+  a completed scan. Useful for cost auditing, reproduction, and debugging.
+- Compact summary lines appear in the assessment log per call.
+
+**Evidence screenshots**
+
+- `EvidenceCaptureAgent` (Phase 3) takes a Playwright screenshot per verified
+  high/critical finding with PII redacted.
+- Stored at `~/.pencheff/evidence/<scan_id>/<finding_id>.png` inside the
+  worker container; served via `GET /scans/{id}/evidence/{finding_id}.png`
+  (auth required, 404 if missing).
+
+**New pencheff MCP tools**
+
+- `capture_evidence` — Playwright screenshot of a vulnerable URL with PII redaction.
+- `scan_llm_red_team` — probe an AI/LLM endpoint for prompt injection, jailbreak,
+  and system-prompt extraction using the OWASP LLM Top-10 payload library.
+- `playwright_navigate` — GET-only page navigation inheriting session auth cookies.
+- `playwright_screenshot` — screenshot the current page state.
+- `playwright_enumerate_links` — read-only enumeration of visible links on the active page.
+- `playwright_logout` — log out and close the browser context.
+- `set_auth_state` (orchestrator-internal), `attach_oast` (orchestrator-internal),
+  `import_endpoints` (orchestrator-internal), `copy_finding` (orchestrator-internal),
+  `pentest_destroy` (orchestrator-internal) — used by the swarm orchestrator to
+  manage breaker sessions; not callable by agents.
+
+**Killswitch**
+
+- Set `SWARM_ENABLED=false` on the API container to revert all new scans to the
+  legacy single-agent path immediately. In-flight scans are unaffected.
+
+**What didn't change**
+
+- No breaking changes to the scan creation API request shape beyond the new
+  required `consent_payload` field. Existing integrations (CI scripts, SDK
+  callers) need to add this field; all other fields and defaults are unchanged.
+- The `GET /scans`, `GET /scans/{id}`, `GET /scans/{id}/findings`,
+  `GET /scans/{id}/progress`, and `DELETE /scans/{id}` endpoints are unchanged.
+- Deterministic scan profiles (`deterministic_only`) are unaffected — the swarm
+  only replaces the LLM-driven phase.
+
+## v0.6.0 — Auto-fix PRs, IDE extensions, Triage 2.0, unified findings (2026-05-02)
+
+Closes the Snyk-parity gap on the defensive surface while keeping
+Pencheff's offensive lead.
+
+**Auto-fix PRs for SCA**
+
+- New deterministic version-bump patcher across 9 manifest formats:
+  `requirements.txt`, `pyproject.toml`, `Pipfile`, `package.json`,
+  `go.mod`, `Cargo.toml`, `Gemfile`, `composer.json`, `pom.xml`. SCA
+  findings flow through the existing `propose_fix` → `apply` → PR
+  pipeline with **no LLM cost**. Lockfiles deliberately not edited —
+  the PR body instructs the developer to run the right installer.
+- See [Auto-fix PRs](/features/auto-fix).
+
+**IDE extensions (VSCode + JetBrains)**
+
+- New `pencheff lsp` CLI command starts a hand-rolled Language Server
+  over stdio. Tails `~/.pencheff/history/*.json` and republishes
+  diagnostics whenever scan results change.
+- VSCode extension at `apps/vscode/`; JetBrains plugin at
+  `apps/jetbrains/` (Kotlin + LSP4IJ). Any LSP-aware editor (Neovim,
+  Emacs, …) works via `pencheff lsp` directly.
+- See [IDE extensions](/features/ide).
+
+**EPSS + KEV + SSVC + reachability prioritisation**
+
+- Every finding gets `risk_score` (0–100), `ssvc_decision`
+  (`act` / `attend` / `track_star` / `track`), and `reachability`
+  (`exploited` / `reachable` / `present` / `unknown`) computed at
+  insert from CVSS × EPSS × KEV × SSVC × reachability.
+- Dashboard sorts by `risk_score DESC NULLS LAST`. The Priority
+  Strip surfaces the components inline on every finding card.
+- See [EPSS, KEV & SSVC](/features/epss-kev) and
+  [Reachability classifier](/features/reachability).
+
+**Triage 2.0**
+
+- Pro-tier `POST /findings/{id}/triage` returns a structured
+  walkthrough — `walkthrough` / `blast_radius` / `exploit_scenario` /
+  `fix_outline` / `confidence` — anchored on the live evidence on
+  the finding (DAST request/response, taint trace, EPSS/KEV/SSVC).
+- Cached on `finding.ai_triage`. Reuses the `FIX_LLM_API_KEY` already
+  configured for the auto-fix proposer.
+- See [Triage 2.0](/features/ai-triage).
+
+**Unified findings stream**
+
+- New `GET /unified-findings` merges DAST / SAST / SCA / IaC / secrets
+  into a single sortable, filterable queue. Replaces the
+  scan-by-scan navigation for the "what should I fix first" use case.
+- New dashboard page at `/findings`. Filter chips for source,
+  severity, reachability; pagination with stable order across pages.
+- See [Unified findings stream](/features/findings-stream) and the
+  [API reference](/reference/unified-findings).
+
+**Repository SBOMs**
+
+- New `POST /repos/{repo_id}/sbom` generates an SBOM for the latest commit
+  on the repository’s default branch and stores it on the repository.
+- New `GET /repos/{repo_id}/sbom` returns the latest stored SBOM.
+- Repository pages display the SBOM in both a **Table** view and a raw
+  **JSON** view, with one-click JSON download.
+- A new generation replaces any previous SBOM for that repository.
+- See [SBOM generation](/features/sbom) and the [Repos API](/repos/api).
+
+**Migrations**
+
+- `0026_ssvc_decision` — `findings.ssvc_decision` + index.
+- `0027_reachability` — `findings.reachability` + composite index.
+- `0028_ai_triage` — `findings.ai_triage` JSONB.
+- `0029_drop_unused_tables` — drops legacy tables (no-op for fresh
+  deploys; safety net for partial-migration recovery).
+
+Run `alembic upgrade head` (or rebuild the API container — it runs
+the migration step automatically).
+
+## v0.5.0 — LLM red team: OWASP LLM Top 10 + Crescendo + PAIR + judges + cloud auth (2026-04-29)
+
+A major release. Pencheff gains a third target kind — `llm` — that
+turns a chat-completions endpoint into a fully-instrumented red-team
+target with full OWASP LLM Top 10 (2025) coverage, multi-turn
+escalation, iterative attacker-driven search, optional judge models
+(Llama Guard / Granite Guardian / OpenAI Moderation / executable),
+embedding-similarity grading, KB-grounded factuality checks, and
+mappings to MITRE ATLAS / NIST AI RMF / EU AI Act alongside OWASP.
+
+**New target kind: `llm`**
+
+- `POST /targets` accepts `kind: "llm"` with an `llm_config` block.
+  Provider presets: `openai-chat`, `custom`
+  (request body template + response JSONPath), `executable` (local
+  command, JSON over stdin/stdout), `websocket`, `bedrock`
+  (SigV4 via boto3), `vertex` (Google ADC token caching), `azure-openai`
+  (Entra OAuth), `browser` (Playwright drives a chat UI). Auth
+  headers ride under `credentials.headers` — any number of
+  arbitrary K-V pairs, Fernet-encrypted.
+- The web UI's `/targets/new` and `/targets/{id}/edit` both expose
+  the full LLM form: provider preset, model, system-prompt baseline,
+  dynamic header rows, redteam config, judge / attacker / embedder
+  JSON blocks, thresholds, budget, retries, RPS/RPM caps.
+
+**OWASP LLM Top 10 (2025) coverage**
+
+- New MCP tool `scan_llm_red_team(session_id, categories?,
+  techniques?, max_payloads?)`. Runs all 10 categories: LLM01 prompt
+  injection, LLM02 sensitive information disclosure, LLM03 supply
+  chain, LLM04 data and model poisoning, LLM05 improper output
+  handling, LLM06 excessive agency, LLM07 system prompt leakage,
+  LLM08 vector / embedding weaknesses, LLM09 misinformation, LLM10
+  unbounded consumption. Each category ships a curated YAML payload
+  library; each finding aggregates by `(category, technique)` so
+  reports show one Finding per technique with up to 5 evidence rows
+  rather than N near-duplicate clones.
+- New scan profile shape for LLM kind: `quick` = 25 payloads,
+  `standard` = 75, `deep` = 250. Round-robin across techniques so
+  quick profiles never starve any single technique class.
+
+**Multi-turn Crescendo + PAIR iterative search**
+
+- The `crescendo` strategy is now a real 5-turn TestCase that builds
+  context turn-by-turn. The dispatcher carries assistant replies
+  forward as `messages[]` history; an optional judge can short-
+  circuit a clearly-refusing escalation to save budget.
+- New `redteam.iterative: "pair"` mode — Prompt Automatic Iterative
+  Refinement. With an attacker LLM configured, the loop sends the
+  base prompt, reads the target's reply, asks the attacker to
+  refine, and re-sends until VULNERABLE or `pair_iterations`
+  exhausted. Static-template fallback (`iterative: "static"`)
+  remains for air-gapped environments.
+
+**Strategies + composite stacking**
+
+- 21 deterministic prompt transforms: `base64`, `hex`, `rot13`,
+  `morse`, `leetspeak`, `homoglyph`, `jailbreak`, `authoritative-
+  markup`, `citation`, `best-of-n`, `ascii-smuggling`,
+  `emoji-smuggling`, `image-markdown`, `audio-transcript`,
+  `video-transcript`, `camelcase`, `pig-latin`, `crescendo`, plus
+  user-defined plugin strategies.
+- `composite_strategies` chains transforms left-to-right
+  (`base64+leetspeak`, `jailbreak+ascii-smuggling`, …). Languages
+  wrap each prompt with a target-language directive — non-English
+  locales typically have weaker safeguards.
+
+**Judges + grading**
+
+- `LlmJudge` supports five providers: `openai-chat` (any
+  OpenAI-compatible JSON-grading model), `executable` (local
+  command), `llama-guard` (Llama Guard 3 with the official
+  `safe`/`unsafe S1..S14` parser → OWASP LLM mapping),
+  `granite-guardian` (IBM Granite Guardian 3.x Yes/No protocol),
+  and `openai-moderation` (OpenAI `/moderations` API — recommended
+  for reasoning-model targets because it scores the visible output
+  rather than the chain-of-thought).
+- New `redteam.embedder` block adds embedding-similarity grading.
+  TestCases declare `success_embeddings: [...]`; cosine match
+  against any anchor at ≥ threshold promotes AMBIGUOUS verdicts to
+  VULNERABLE. v1 supports OpenAI-compat `/embeddings` and Cohere
+  `embed`.
+- New `redteam.factuality` block (LLM09 only). KB-grounded
+  contradiction check via the configured judge. KB can be inline,
+  `file://` path, or HTTP URL.
+
+**Attacker-LLM driven synthesis**
+
+- `redteam.llm_synthesis: { enabled: true, n: 10 }` plus an
+  `attacker` block generates *novel* TestCases targeted at the
+  discovered profile — purpose, limitations, tools, user context.
+  One attacker call per scan; cached by profile hash.
+
+**Datasets, guardrails, variables, intents**
+
+- Built-in datasets: `donotanswer`, `harmbench`, `beavertails`,
+  `cyberseceval`, `toxic-chat`. External datasets via `file://` or
+  HTTPS URL (JSON / YAML list).
+- Built-in guardrails: `pii`, `secrets`, `unsafe-code`,
+  `tool-authz`. `guardrail_bypass: true` adds active bypass-template
+  variants.
+- `redteam.variables: {...}` substitutes `{{var}}` placeholders in
+  prompts, turns, system, success indicators, refusal patterns,
+  description, remediation. Useful for application-specific probes.
+- `redteam.policies` and `redteam.intents` accept user-defined
+  policy violations and (multi-turn) intent strings — first-class
+  TestCases dispatched alongside the OWASP modules.
+
+**Operational / cost controls**
+
+- Token-bucket rate limiter is **shared per (endpoint, RPS)** so 10
+  OWASP modules dispatching concurrently respect a single per-key
+  cap. 429 responses honour the upstream `Retry-After` header
+  automatically and stall every concurrent dispatcher to prevent
+  thundering-herd retries.
+- Per-scan budget: `max_calls`, `max_tokens`, `max_cost_usd` —
+  hard kill switch. Per-call `max_latency_ms` and
+  `max_tokens_per_call` thresholds emit explicit LLM10 findings
+  when violated.
+- Retry with exponential backoff (`retries`, `backoff_s`) on
+  429 / 500 / 502 / 503 / 504. In-process LRU cache deduplicates
+  identical probes (`cache`, `cache_size`).
+- New CRITICAL finding `LLM endpoint unreachable / unauthorised`
+  fires when ≥50% of probes return non-2xx (401/403 → CRITICAL,
+  404/429 → HIGH, others → MEDIUM). Closes the "Grade A despite
+  every probe 401'd" silent-fail bug.
+- PII redaction: emails, SSNs, cards, phone numbers, common API
+  key patterns (`sk-…`, `xoxb-…`) are masked in evidence snippets
+  before they reach Findings or the share-by-link route.
+
+**Compliance: AI frameworks**
+
+- Every LLM finding maps to MITRE ATLAS, NIST AI RMF, and EU AI
+  Act alongside OWASP LLM Top 10. Tables in
+  `plugins/pencheff/pencheff/config.py` (`MITRE_ATLAS_MAP`,
+  `NIST_AI_RMF_MAP`, `EU_AI_ACT_MAP`).
+
+**Reporting**
+
+- New renderers: `render_html` (self-contained, embedded CSS, no
+  JS — email-able), `render_csv` (stable columns, Excel-friendly),
+  `render_red_team_markdown`, `render_junit_xml`,
+  `render_prometheus_metrics`. Diff helper
+  `diff_red_team_findings` powers regression detection across runs.
+- New API route `GET /scans/{a}/compare/{b}` returns the structured
+  diff (regressions, fixes, common failures) plus per-side
+  summaries. Web UI at `/scans/compare?a=…&b=…` includes a
+  JUnit-XML download for the regressions list.
+- New API route `POST /scans/{id}/share?ttl_seconds=N` issues a
+  Fernet-encrypted token. Public route `GET /share/llm/{token}`
+  renders HTML / Markdown / CSV / JSON without auth — only valid
+  for `kind: "llm"` scans.
+- Canonical Grafana dashboard at
+  `docs/grafana/pencheff-llm-redteam.json` — eight panels
+  consuming the Prometheus exporter.
+
+**Integrations**
+
+- Slack / webhook / Jira payloads now include a per-OWASP-LLM
+  category breakdown and the top failed techniques when
+  `target.kind == "llm"`. The same generic integration matchers
+  apply (per-target scoping, per-event filtering, severity gating).
+- Scheduled scans now accept LLM targets (validates `llm_config`
+  on schedule create).
+
+**Plugin SDK**
+
+- Three new discovery directories under `~/.pencheff/`:
+  `custom_llm_strategies/`, `custom_llm_judges/`,
+  `custom_llm_providers/`. Drop a Python file with a `name` class
+  attribute and a method matching the protocol; gate discovery on
+  `PENCHEFF_ENABLE_CUSTOM_MODULES=1`. Plugins win over built-ins on
+  name collision so a deployment can override the canonical
+  `jailbreak` template with a deployment-specific one.
+
+**CLI**
+
+- New subcommand `pencheff llm-redteam` with
+  `--strategies`, `--datasets`, `--guardrails`,
+  `--judge-{provider,endpoint,model}`, `--max-rps`,
+  `--max-cost-usd`, `--retries`, `--fail-on`, `--output-format
+  {markdown,json,junit,csv,html,prometheus}`, `--output-file`, and
+  `--compare-to PRIOR_JSON` for CI-friendly regression gating.
+
+**Bug fixes**
+
+- Headers from the `Credentials.headers` schema field now flow
+  correctly into LLM probes. Previously, `CredentialStore.add_from_dict`
+  read from the `custom_headers` dict key but the API schema
+  exposed it as `headers`, causing every LLM probe to ship with no
+  Authorization header → silent 401s on every request.
+
+**Schema migration**
+
+- Migration `0022` adds `kind` (string, indexed) and `llm_config`
+  (JSONB) to the `targets` table; backfills `kind = 'repo'` for any
+  row whose `repository_id IS NOT NULL`. Existing URL targets
+  remain `kind = 'url'`. Adds composite index
+  `ix_targets_workspace_kind_created`.
+
+See [LLM red team feature page](/features/llm-redteam) for the full
+walkthrough, and the [Plugin SDK guide](/plugin-sdk/llm-redteam) for
+custom strategies / judges / providers.
+
+## v0.4.1 — Mobile static analysis, search + pagination across the SaaS UI, Engagements removed (2026-04-28)
+
+A targeted release. Pencheff gains an OWASP-Mobile-Top-10-aware static
+analyzer for APK/IPA files; the SaaS UI gets paginated, searchable
+target and assessment lists everywhere; and the Engagements feature
+(experimental in v0.4.0) is fully removed in favor of the simpler
+target → assessment workflow.
+
+**Mobile static analysis (Phase 1)**
+
+- New MCP tool `scan_mobile_static(session_id, apk_path?, ipa_path?,
+  types?, use_mobsf?)` — analyzes an Android APK or iOS IPA without an
+  emulator or rooted device. Decompiles via `apktool` + `jadx` (Android)
+  or unzips and parses `Info.plist` (iOS), then sweeps for OWASP Mobile
+  Top 10 issues:
+  - **AndroidManifest** — `debuggable=true`, `allowBackup=true`,
+    `usesCleartextTraffic=true`, exported activities/services/receivers/
+    providers without `permission`, missing `networkSecurityConfig`,
+    dangerously low `minSdkVersion`.
+  - **Hardcoded secrets** in jadx-decompiled Java — AWS / Google /
+    Firebase / Slack / GitHub / Stripe / Twilio / SendGrid / Mailgun
+    keys, JWTs, PEM private keys, password assignments.
+  - **Insecure crypto** — DES, 3DES, RC4, ECB mode, MD5, SHA-1,
+    hardcoded `SecretKeySpec` / `IvParameterSpec`, `java.util.Random`.
+  - **Cleartext URLs** in compiled code.
+  - **iOS Info.plist** — `NSAllowsArbitraryLoads` and ATS exceptions
+    for media / WebView, custom URL schemes (deeplink hijacking risk),
+    embedded provisioning profiles.
+  - **iOS binary hardening** — missing PIE flag (via `otool -hv`,
+    macOS only).
+- New scan profile `mobile-static`. Pass `pentest_init(profile=
+  "mobile-static")` then `scan_mobile_static(apk_path=...)`.
+- Compliance maps for `mobile_misconfig`, `mobile_secrets`,
+  `mobile_crypto`, `mobile_storage`, `mobile_communication`, and
+  `mobile_binary` categories added to PCI-DSS, NIST 800-53, SOC 2,
+  ISO 27001:2022, and HIPAA. New `OWASP_MOBILE_TOP_10` (M1–M10) name
+  resolution on every finding.
+- Hardening: `defusedxml` for the manifest parser (no XXE / billion-
+  laughs), zip-slip guard on IPA extraction, 5 MB cap on per-file scans
+  with possessive-quantifier JWT regex (no ReDoS).
+- Tools: `apktool`, `jadx`, `mobsfscan`, `qark`, `aapt`/`aapt2`,
+  `androguard`, `otool`, `class-dump`, and `plistutil` are allow-listed
+  for `run_security_tool`. Set `MOBSF_API_KEY` to opt into MobSF
+  enrichment via `use_mobsf=true`.
+
+**Dynamic instrumentation (Frida / objection / drozer) is Phase 2** and
+remains out of scope for `scan_mobile_static`.
+
+**SaaS UI: search + pagination on every list**
+
+- `/dashboard`, `/targets`, `/scans`, `/targets/{id}`, and
+  `/repos/{id}` now ship a search input (filtering name / URL / kind
+  for targets, and report № / status / grade / target name for
+  assessments) and a paginator on the same row, opposite the search.
+- **Targets paginate at 6 per page**, **assessments at 20**.
+- The paginator is always visible alongside the search — even
+  single-page result sets render `Page 1 of 1` with disabled Prev /
+  Next, so users see the same control whether the workspace has 4
+  assessments or 400.
+
+**Engagements — removed**
+
+- The entire `/engagements` route, the Workbench dropdown entry, and
+  the engagement selector inside the Commission Scan modal are gone.
+  Scans now POST without an `engagement_id`. Findings collected
+  against an Engagement in v0.4.0 are still queryable through the
+  Scans / Targets surface.
+- The Workbench dropdown's `Assets` link is also removed; the `/assets`
+  page itself remains for direct linking and ASM API consumers.
+
+**Tool count**: 49 → **50 MCP tools**, attack modules 53 → **57**.
+
+## v0.4.0 — Engage swarm, lifecycle integrations, repos as targets, PAT private repos (2026-04-28)
+
+Major release. Pencheff gains a 9-phase autonomous engagement, a
+unified target/repo model, and integrations that fire on the full
+finding lifecycle — not just scan completion.
+
+**`pencheff engage` — 9-phase autonomous swarm**
+
+- 30 specialist [playbooks](/cli/reference) registered in
+  `pencheff.playbooks.REGISTRY`. 28 are adapted from
+  [0xSteph/pentest-ai-agents](https://github.com/0xSteph/pentest-ai-agents);
+  two new ones — `crawl_first` and `api_authenticator` — own the
+  HTTP-first reconnaissance + login-discovery flow.
+- **9 phases** (was 7): scope → **crawl** → **auth** → recon → vuln →
+  exploit → postex → detect → report. The two new phases populate
+  `session.discovered.endpoints` with the *real* surface before auth
+  runs, so the auth phase picks a discovered login URL instead of
+  guessing from a static 14-path list, and every downstream module
+  tests the *actual* endpoints rather than just the base URL.
+- **Subdomain fan-out**: `pencheff engage --max-subdomains 100` runs
+  crawl + auth + vuln + exploit on each discovered subdomain, with
+  findings merged back into the master session.
+- **Tier 1 / Tier 2 model** + **OPSEC noise tagging** (quiet / moderate
+  / loud) + **MITRE ATT&CK mapping** on every finding.
+- **Engagement DB** at `~/.pencheff/engagements.db` for cross-session
+  state (engagements, hosts, services, vulns, credentials, chains,
+  session_log).
+
+**SaaS UI: Engage profile**
+
+- "Engage (full swarm)" added to the commission-scan modal — drives
+  the same 9-phase pipeline from the dashboard.
+- **Live progress streaming**: each phase + each playbook + each
+  subdomain emits a scan-log line and an SSE event as it runs. The
+  progress bar moves visibly across the 9 phases instead of frozen at
+  5% for ~10 minutes.
+
+**API-first authentication**
+
+- Default credential-based login replaced Playwright with HTTP API
+  probing across 14 common login endpoints. ~2-second login vs
+  15–30s, no Chromium dep, no SPA hydration races, no Cloudflare
+  Turnstile triggers. Playwright stays as the escape hatch for SSO /
+  SAML / MFA / CAPTCHA flows when explicit `login_steps` are supplied.
+
+**Integrations: lifecycle events + per-target scope**
+
+- **Two new destinations**: [Google Chat](/integrations/google-chat)
+  (webhook) and [Jira](/integrations/jira) (creates one issue per
+  `finding_new`, comments on the existing issue for `finding_changed`
+  when the issue key is on the finding's `external_refs`).
+- **Per-target scope** — every integration carries a `target_ids`
+  array. NULL = all targets; populated = only fire for scans against
+  those targets. Targets here include both DAST URL targets and
+  repo-mirror targets.
+- **Per-event filter** — `events: ["scan_started", "scan_done",
+  "scan_failed", "finding_new", "finding_changed"]`. Wire e.g. a
+  PagerDuty integration scoped to `scan_failed` + `finding_new` for
+  one production target, while a Slack channel takes the full
+  firehose for everything.
+- **Five lifecycle hooks** instead of one. The Celery
+  `notify_event(scan_id, event_type, finding_id?, change_summary?, error?)`
+  task is the single dispatch surface; hooks at scan start /
+  done / failed and at every finding-mutation endpoint
+  (verify, suppress, unsuppress, recheck) enqueue it.
+
+**Repos as first-class Targets**
+
+- New column `targets.repository_id UUID NULL FK → repositories(id)
+  ON DELETE CASCADE`. Every Repository auto-mirrors as a Target row
+  on registration; deleting the Repository cascades to the mirror.
+- Repo-mirror targets show up everywhere URL targets do — the
+  Targets dashboard, the integrations target multi-select,
+  `GET /targets`. They carry `kind: "repo"` so the UI can render a
+  badge and route the commission-scan modal to `/repos/{id}/scan`
+  instead of `/scans`.
+- DAST scan against a repo-mirror target → 400 with a clear pointer
+  to the repo-scan endpoint.
+
+**PAT-authenticated private repos**
+
+- New column `repositories.token_encrypted` for Fernet-encrypted
+  Personal Access Tokens.
+- `POST /repos/github` accepts an optional `token` field. With a token
+  → validates it against the GitHub REST API, persists it encrypted,
+  sets `private=True`. Without a token → existing public-clone
+  behaviour.
+- Repo-scan worker decrypts the PAT and uses it as the
+  `x-access-token` password for `git clone`. Re-registering the same
+  repo URL with a new token rotates the stored credential without
+  disturbing scan history or the mirror Target.
+
+**`/targets/new` and `/repos` redesign**
+
+- "Local folder" registration removed entirely from both pages. The
+  worker can't honestly know which paths it'll see at scan time, so
+  every repo path is now GitHub-based.
+- 3-source picker on `/targets/new` (Repository): **Public GitHub
+  URL** · **Private GitHub (PAT)** · **Pencheff GitHub App**.
+- Same model on `/repos` with a 2-tab toggle (Public / Private PAT)
+  plus the always-on GitHub App card at the top.
+- Detailed inline collapsible instructions for both flows: how to
+  create a fine-grained or classic PAT (with exact scope/permission
+  recommendations) and how to install the Pencheff GitHub App
+  (step-by-step + permissions table + adding more repos later +
+  removing access).
+
+**Migrations**
+
+- `0018` — add `integrations.target_ids` (UUID[]) + `integrations.events`
+  (varchar[]) + GIN indexes.
+- `0019` — add `targets.repository_id` (UUID FK CASCADE) + idempotent
+  backfill of one mirror Target per existing Repository.
+- `0020` — add `repositories.token_encrypted` (bytea NULL).
+
+## v1.0 — Expanded security workflows (2026-04-21)
+
+Major release. Pencheff now covers the full enterprise DAST +
+AppSec surface in one tool.
+
+**SCA + SBOM + IaC + container**
+
+- `scan_dependencies` — parse manifests for npm, PyPI, Go, crates.io,
+  RubyGems, Packagist, Maven → OSV.dev CVE query → EPSS + CISA KEV
+  enrichment.
+- `generate_sbom` — produce SPDX 2.3 + CycloneDX 1.5 natively; prefers
+  `syft` when installed.
+- `check_licenses` — policy-driven license compliance (allows, denies,
+  unknown behaviour).
+- `reachability.annotate` — mark unimported deps as low-reachability
+  to suppress noise.
+- `scan_dockerfile`, `scan_kubernetes`, `scan_terraform`, `scan_helm`,
+  `scan_container_image`.
+
+**Network VA**
+
+- `scan_host_vulns` — Pencheff service detection → CVE lookup.
+- `scan_network_misconfig` — Redis, Mongo, Elastic, Memcached, Docker,
+  MySQL, PG, SNMP.
+- `scan_authenticated_host` — SSH / WinRM / SMB package audit.
+- `scan_industrial_protocols` — Modbus, BACnet, S7, EtherNet/IP, DNP3.
+- Local SQLite CVE cache with EPSS + CISA KEV refresh.
+
+**Intercepting proxy + fuzzer + YAML automation**
+
+- `start_proxy` / `stop_proxy` — mitmproxy + pure-Python fallback.
+- `fuzz_parameter` — request-template differential fuzzer with
+  bundled XSS / SQLi / dir / param wordlists and 7 encoders.
+- `run_policy` — full YAML ScanPolicy schema v1, assertions,
+  thresholds, reports, schedule.
+- New passive scanner with 25+ regex rules across flows + active
+  traffic.
+
+**Attack Surface Management + scheduling + collaboration**
+
+- `asm_discover` — subfinder + crt.sh + optional Shodan.
+- `asm_diff` / `asm_cert_watch` — change detection + CT log watch.
+- Cron-driven scheduled scans (Celery Beat).
+- Finding SLA tracking (severity → due date → hourly breach monitor).
+- Comments, assignment, tags, first-class collab endpoints.
+- 7 integrations: Slack, Teams, Discord, PagerDuty, Opsgenie, Splunk
+  HEC, signed generic webhook.
+
+**Risk scoring**
+
+- EPSS + CISA KEV enrichment on every finding.
+- `risk_score = cvss × (1 + epss) × (2 if kev else 1)` sorts reports
+  by actual exploit likelihood.
+
+**Plugin SDK**
+
+- `BaseTestModule` formalised with lifecycle hooks.
+- Auto-discovery from `~/.pencheff/custom_modules/` behind
+  `PENCHEFF_ENABLE_CUSTOM_MODULES=1`.
+- `pencheff init-module` scaffold generator.
+
+**API + dashboard**
+
+- 9 new DB tables: schedules, assets, integrations, sboms, dependencies,
+  proxy_sessions, finding_comments, finding_assignments, finding_tags.
+- 7 new routers, 4 new Celery tasks (scheduled dispatcher, asset
+  discovery, SLA monitor, integration fan-out).
+- 5 new dashboard pages: /schedules, /assets, /integrations,
+  /sbom/[scanId], /dependencies/[scanId].
+- Nav bar updated with all new links.
+
+**Total**
+
+- MCP tools: 49 → **81**
+- Scan profiles: 6 → **13**
+- External tool allowlist: +14
+- DB tables: +9
+- Next.js pages: +6
+- Compliance frameworks: 6 (OWASP, PCI-DSS, NIST, SOC 2, ISO 27001, HIPAA)
+
+## v0.2.1 — (2026-02-15)
+
+Baseline release — DAST + exploit-first pentest agent.

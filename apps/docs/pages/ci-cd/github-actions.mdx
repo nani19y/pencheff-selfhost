@@ -1,0 +1,124 @@
+---
+title: GitHub Actions
+---
+
+# GitHub Actions
+
+Pencheff ships a reference workflow in
+`.github/workflows/pencheff-scan.yml`. It runs on manual dispatch
+(`workflow_dispatch`), optionally on a schedule, and on pull requests
+that touch infrastructure or dependency files.
+
+## Minimal workflow
+
+```yaml
+name: Pencheff Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: Target URL
+        required: true
+      profile:
+        description: Scan profile
+        default: standard
+        type: choice
+        options: [quick, cicd, standard, api-only, compliance, supply-chain]
+      fail_on:
+        description: Fail on severity
+        default: high
+        type: choice
+        options: [critical, high, medium, low]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+
+      - name: Install Pencheff + optional CLIs
+        run: |
+          pip install pencheff
+          # Optional auxiliary tools:
+          go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+
+      - name: Run scan
+        run: |
+          pencheff scan \
+            --target "${{ github.event.inputs.target_url }}" \
+            --profile "${{ github.event.inputs.profile }}" \
+            --fail-on "${{ github.event.inputs.fail_on }}" \
+            --format json,docx \
+            --output ./reports/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pencheff-report
+          path: reports/
+          retention-days: 30
+
+      - name: Post PR summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          REPORT_DIR: reports/
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync(
+              `${process.env.REPORT_DIR}/findings.json`, 'utf8'));
+            const summary = report.summary;
+            const body = [
+              '## 🔒 Pencheff scan',
+              '',
+              `| Severity | Count |`,
+              `| --- | --- |`,
+              `| Critical | ${summary.critical ?? 0} |`,
+              `| High | ${summary.high ?? 0} |`,
+              `| Medium | ${summary.medium ?? 0} |`,
+              `| Low | ${summary.low ?? 0} |`,
+              '',
+              `Full report: [artifact](${report.html_url ?? '#'})`,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+```
+
+## Pre-built action
+
+Add Pencheff's reference action directly:
+
+```yaml
+- uses: Magadha-IG/pencheff-action@v1
+  with:
+    target: ${{ github.event.pull_request.head.repo.html_url }}
+    profile: cicd
+    fail-on: high
+    jira-project: SEC        # optional
+    slack-webhook: ${{ secrets.SLACK_SEC }}
+```
+
+## Tips
+
+- Cache the `~/.pencheff/cve_cache.db` between runs — makes the first
+  OSV query per unique CVE free:
+
+  ```yaml
+  - uses: actions/cache@v4
+    with:
+      path: ~/.pencheff/cve_cache.db
+      key: pencheff-cve-${{ hashFiles('**/*.lock') }}
+  ```
+
+- Gate merges only on the `cicd` profile — it's tuned to be fast and
+  non-destructive.
+- For compliance evidence, run `compliance-full` nightly via
+  `schedule:` trigger and upload artifacts to your evidence bucket.

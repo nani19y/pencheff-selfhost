@@ -1,0 +1,81 @@
+# Pencheff CVE correlation hints.
+#
+# Lightweight pre-shipped overlay over core/cve_feed.py (which queries NVD
+# and CIRCL live). The CveIntel workflow consults this file FIRST for an
+# instant offline match, then falls back to the live feed. Entries here are
+# only the high-impact vulnerabilities that change pentest playbook
+# behavior — full coverage stays in core/cve_feed.py.
+#
+# Each entry must cite NVD or vendor advisory.
+
+version: 1
+
+products:
+  apache_httpd:
+    matches:
+      - banner_regex: "Apache/2\\.4\\.(\\d+)"
+    versions:
+      "2.4.49":
+        cves:
+          - { id: CVE-2021-41773, severity: critical, summary: "Path traversal + RCE", source: "nvd.nist.gov/vuln/detail/CVE-2021-41773" }
+      "2.4.50":
+        cves:
+          - { id: CVE-2021-42013, severity: critical, summary: "Path traversal + RCE bypass", source: "nvd.nist.gov/vuln/detail/CVE-2021-42013" }
+
+  nginx:
+    matches:
+      - banner_regex: "nginx/1\\.(\\d+)\\.(\\d+)"
+    versions:
+      "1.20.0":
+        cves:
+          - { id: CVE-2021-23017, severity: high, summary: "DNS resolver off-by-one", source: "nvd.nist.gov/vuln/detail/CVE-2021-23017" }
+
+  log4j:
+    matches:
+      - banner_regex: "log4j[- ]?2\\.(\\d+)\\.(\\d+)"
+    versions:
+      "2.0..2.14.1":
+        cves:
+          - { id: CVE-2021-44228, severity: critical, summary: "Log4Shell — JNDI RCE", source: "nvd.nist.gov/vuln/detail/CVE-2021-44228" }
+          - { id: CVE-2021-45046, severity: high,     summary: "Log4Shell incomplete fix", source: "nvd.nist.gov/vuln/detail/CVE-2021-45046" }
+
+  spring:
+    matches:
+      - banner_regex: "Spring/([0-9.]+)"
+    versions:
+      "5.3..5.3.18":
+        cves:
+          - { id: CVE-2022-22965, severity: critical, summary: "Spring4Shell — RCE via dataBinder", source: "tanzu.vmware.com/security/cve-2022-22965" }
+
+  tomcat:
+    matches:
+      - banner_regex: "Apache Tomcat/(\\d+)\\.(\\d+)\\.(\\d+)"
+    versions:
+      "9.0.0..9.0.30":
+        cves:
+          - { id: CVE-2020-1938, severity: high, summary: "Ghostcat — file read via AJP", source: "nvd.nist.gov/vuln/detail/CVE-2020-1938" }
+
+  exchange:
+    matches:
+      - banner_regex: "Microsoft-IIS.*Exchange"
+    versions:
+      "15.1..15.2.221":
+        cves:
+          - { id: CVE-2021-26855, severity: critical, summary: "ProxyLogon SSRF", source: "msrc.microsoft.com/update-guide/vulnerability/CVE-2021-26855" }
+          - { id: CVE-2021-34473, severity: critical, summary: "ProxyShell pre-auth RCE", source: "msrc.microsoft.com/update-guide/vulnerability/CVE-2021-34473" }
+
+  openssh:
+    matches:
+      - banner_regex: "OpenSSH_(\\d+)\\.(\\d+)"
+    versions:
+      "0..7.7":
+        cves:
+          - { id: CVE-2018-15473, severity: medium, summary: "Username enumeration", source: "nvd.nist.gov/vuln/detail/CVE-2018-15473" }
+
+  vmware_vcenter:
+    matches:
+      - banner_regex: "VMware vCenter"
+    versions:
+      "6.5..7.0u2":
+        cves:
+          - { id: CVE-2021-21972, severity: critical, summary: "vCenter unauth file upload + RCE", source: "nvd.nist.gov/vuln/detail/CVE-2021-21972" }

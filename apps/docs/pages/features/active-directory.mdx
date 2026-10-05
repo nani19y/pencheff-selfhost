@@ -1,0 +1,95 @@
+---
+title: Active Directory & Internal Network
+---
+
+# Active Directory & Internal Network
+
+Pencheff includes a dedicated `scan_active_directory` MCP tool that orchestrates BloodHound, Certipy, CrackMapExec (NetExec), and Impacket into a single enumeration pass against an Active Directory environment.
+
+## When to use it
+
+Use `scan_active_directory` after gaining a foothold (or in an assumed-breach / red-team engagement) to:
+
+- Map attack paths from any domain account to Domain Admin
+- Find ADCS certificate template misconfigurations (ESC1–ESC15)
+- Enumerate SMB shares, accessible services, and reachable DCs
+- Collect NTLM hashes and Kerberos tickets for offline cracking
+
+## Prerequisites
+
+```bash
+# BloodHound collection
+pip install bloodhound
+
+# Certipy — certificate template abuse
+pipx install certipy-ad
+
+# NetExec (preferred) or CrackMapExec
+pipx install netexec
+
+# Impacket suite
+pip install impacket
+```
+
+Verify at runtime with `check_dependencies`.
+
+## Basic usage
+
+```text
+scan_active_directory(
+  session_id = sid,
+  domain     = "corp.local",
+  username   = "jsmith",
+  password   = "Password1!",
+  dc_ip      = "10.0.0.1",
+  modules    = ["bloodhound", "certipy", "crackmapexec", "impacket"]
+)
+```
+
+## Module breakdown
+
+| Module | Tool | What it does |
+|--------|------|--------------|
+| `bloodhound` | bloodhound-python | Collects AD relationships (users, groups, ACLs, trusts) and packages them as a BloodHound-ready ZIP. Reveals shortest paths to Domain Admin. |
+| `certipy` | certipy-ad | Scans all certificate templates for ESC1–ESC15 misconfigurations. ESC1 (enrollee supplies SAN) and ESC8 (Web Enrollment + NTLM relay) are the highest-value findings. |
+| `crackmapexec` | nxc / crackmapexec | SMB share enumeration — finds readable/writable shares, password-policy data, and signed/unsigned SMB status. |
+| `impacket` | impacket-secretsdump | DCSync attack — extracts all NTLM hashes from the domain controller (requires Domain Admin or equivalent rights). Also calls `GetUserSPNs` (Kerberoasting) and `GetNPUsers` (AS-REP roasting). |
+
+## Interpreting BloodHound output
+
+The BloodHound collection ZIP should be imported into the BloodHound GUI for graph analysis. Key queries to run after import:
+
+- **Shortest path to Domain Admins** — any path from your current account
+- **Kerberoastable accounts** — service accounts with SPNs and weak passwords
+- **Unconstrained delegation** — computers that can impersonate any user
+- **AdminSDHolder misuse** — protected objects with unexpected ACEs
+
+## Certipy ESC findings
+
+| ESC | Condition | Impact |
+|-----|-----------|--------|
+| ESC1 | Enrollee can supply arbitrary SAN | Enroll as any domain user → full domain takeover |
+| ESC2 | Template allows any purpose + client auth | Same as ESC1 via secondary enroll |
+| ESC3 | Enrollment agent template + agent-restricted template | Enroll on behalf of any user |
+| ESC4 | Vulnerable ACLs on template (WriteDacl/WriteOwner/GenericAll) | Rewrite template → ESC1 |
+| ESC6 | `EDITF_ATTRIBUTESUBJECTALTNAME2` flag on CA | ESC1 on every template |
+| ESC8 | CA Web Enrollment enabled + NTLM relay possible | Full domain compromise via relay |
+
+## Swarm integration
+
+When a full swarm scan (`profile=deep`) is run, the `ActiveDirectoryAgent` breaker automatically calls `scan_active_directory` if AD credentials were supplied at session creation. It analyses the BloodHound and Certipy output and produces structured findings with step-by-step PoC commands for the blue team.
+
+## Example finding
+
+```json
+{
+  "title": "ESC1: Enrollable template 'WebServer' allows SAN specification",
+  "severity": "critical",
+  "category": "active_directory",
+  "owasp_category": "A01",
+  "cvss_score": 9.8,
+  "description": "The 'WebServer' certificate template allows enrollees to specify a Subject Alternative Name. Any domain user can request a certificate for 'administrator@corp.local' and authenticate as Domain Admin.",
+  "remediation": "Disable 'Supply in the request' for the SAN field on the WebServer template. Require CA Manager approval for sensitive templates. Enable Certificate Authority audit logging.",
+  "poc": "certipy req -u jsmith@corp.local -p Password1! -target dc01.corp.local -template WebServer -upn administrator@corp.local"
+}
+```

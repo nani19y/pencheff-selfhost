@@ -1,0 +1,34 @@
+apiVersion: pencheff/v1
+kind: ScanPolicy
+metadata:
+  name: owasp-top-10
+  description: Balanced web assessment with OWASP Top 10 category mapping.
+spec:
+  targets:
+    - url: https://example.com
+      scope: []
+      exclude_paths: [/logout, /admin/destroy]
+  auth:
+    kind: credentials
+    values: {}  # override per environment
+  modules:
+    - { name: scan_waf,            depth: quick }
+    - { name: scan_injection,      depth: standard }
+    - { name: scan_client_side,    depth: standard }
+    - { name: scan_auth,           depth: standard }
+    - { name: scan_authz,          depth: standard }
+    - { name: scan_infrastructure, depth: standard }
+    - { name: scan_api,            depth: standard }
+    - { name: scan_business_logic, depth: standard }
+    - { name: scan_advanced,       depth: standard }
+  assertions:
+    - { id: no_critical, condition: "critical == 0" }
+    - { id: no_high_above_5, condition: "high <= 5" }
+  thresholds:
+    fail_on: high
+  reports:
+    - { format: docx, path: "./reports/" }
+    - { format: json, path: "./reports/" }
+  schedule:
+    cron: "0 2 * * *"
+    enabled: false

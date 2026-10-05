@@ -1,0 +1,43 @@
+---
+title: Microsoft Teams
+---
+
+# Microsoft Teams integration
+
+Pencheff posts a MessageCard via a Teams Incoming Webhook (legacy
+Connector — the "Workflows" equivalent also accepts the same payload
+shape).
+
+## Setup
+
+1. In the target channel, click **… → Connectors → Incoming Webhook**
+   (or **Workflows → Post to a channel when a webhook request is received**).
+2. Copy the URL.
+3. In Pencheff: **Dashboard → Integrations → Connect → Microsoft Teams**.
+   Paste the URL, set severity filter, save.
+
+## Via API
+
+```http
+POST /integrations
+{
+  "kind": "teams",
+  "name": "#secops",
+  "severity_filter": "high",
+  "config": { "webhook_url": "https://outlook.office.com/webhook/..." }
+}
+```
+
+## Via MCP
+
+```text
+export_to_teams(
+  session_id=sid,
+  webhook_url="https://outlook.office.com/webhook/...",
+  severity_filter="high"
+)
+```
+
+The card theme colour flips to red for any critical finding, amber
+otherwise. Up to 5 findings are listed with CVSS + endpoint; full
+findings are available via the dashboard link in the card header.

@@ -1,0 +1,93 @@
+[project]
+name = "pencheff-api"
+version = "0.1.0"
+description = "Pencheff SaaS API"
+readme = "README.md"
+license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "Bala Sriharsha", email = "balasriharsha.ch@gmail.com" }]
+classifiers = [
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pencheff",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "asyncpg>=0.29.0",
+    "psycopg[binary]>=3.2.0",
+    "alembic>=1.13.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+    "argon2-cffi>=23.1.0",
+    "pyjwt>=2.8.0",
+    "authlib>=1.3.0",
+    # Required by starlette's SessionMiddleware (itsdangerous is a soft
+    # dep starlette doesn't pull by default).
+    "itsdangerous>=2.2.0",
+    "cryptography>=42.0.0",
+    "celery[redis]>=5.4.0",
+    "redis>=5.0.0",
+    "httpx>=0.27.0",
+    "stripe>=10.0.0",
+    "weasyprint>=62.0",
+    "sse-starlette>=2.1.0",
+    "email-validator>=2.1.0",
+    # Cron expression parser for scheduled scans
+    # (services/scheduler.compute_next_run). Was a silent dependency gap
+    # until 2026-05-16 — without it, every daily schedule fell back to
+    # ``+1 hour`` and fired hourly on a drifting offset.
+    "croniter>=2.0.0",
+    # Used by repo_scan_task to honour .gitignore when staging files for
+    # scanners. Same parser black / pre-commit / Snyk use.
+    "pathspec>=0.12.0",
+    # OpenTelemetry — drives the end-to-end observability pipeline (spans,
+    # logs, metrics) when ``PENCHEFF_OBSERVABILITY_ENABLED=true``. Default
+    # is off so vanilla deployments pay zero overhead until an operator
+    # opts in. Custom Postgres exporter (observability/exporter.py) uses
+    # raw asyncpg to break the SQLAlchemy-instrumentation recursion cycle.
+    "opentelemetry-sdk>=1.27.0",
+    "opentelemetry-api>=1.27.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.27.0",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
+    "opentelemetry-instrumentation-asyncpg>=0.48b0",
+    "opentelemetry-instrumentation-celery>=0.48b0",
+    "opentelemetry-instrumentation-redis>=0.48b0",
+    "opentelemetry-instrumentation-logging>=0.48b0",
+    "opentelemetry-proto>=1.27.0",
+    "opentelemetry-semantic-conventions>=0.48b0",
+    # Security Lake — OCSF normalization. ``ocsf-json-schema`` ships the
+    # packaged OCSF 1.3.0 schema and generates self-contained Draft-2020-12
+    # JSON Schema per class offline (no schema.ocsf.io runtime dependency);
+    # we validate normalized events against it with ``jsonschema``.
+    "ocsf-json-schema>=1.1.0",
+    "jsonschema>=4.20.0",
+    # Security Lake — Apache Iceberg client (local SqlCatalog for dev/tests,
+    # R2 Data Catalog REST for prod). Pulls pyarrow.
+    "pyiceberg[pyarrow,sql-sqlite]>=0.11.0",
+    # Security Lake — query engine: scans org-partitioned Arrow tables with
+    # SQL (dedup, aggregation, json_extract for /findings, /trends, /correlate).
+    "duckdb>=1.5.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "httpx>=0.27.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pencheff_api"]
+
+[tool.pytest.ini_options]
+markers = [
+    "live: live integration tests that require a running toolchain (off-CI)",
+]
+
+[tool.uv.sources]
+pencheff = { path = "../../plugins/pencheff", editable = true }

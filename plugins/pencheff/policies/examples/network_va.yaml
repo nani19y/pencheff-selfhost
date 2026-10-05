@@ -1,0 +1,17 @@
+apiVersion: pencheff/v1
+kind: ScanPolicy
+metadata:
+  name: network-va
+  description: Host vulnerability assessment. No web-DAST modules.
+spec:
+  targets:
+    - url: ${TARGET_HOST}
+  modules:
+    - { name: scan_host_vulns,         params: { ports: "top-1000" } }
+    - { name: scan_network_misconfig,  params: {} }
+  assertions:
+    - { id: no_critical, condition: "critical == 0" }
+  thresholds:
+    fail_on: high
+  reports:
+    - { format: json, path: "./reports/" }

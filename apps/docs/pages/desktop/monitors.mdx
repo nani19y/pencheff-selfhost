@@ -1,0 +1,112 @@
+---
+title: File + device monitors
+description: Desktop-only Pencheff Studio surfaces — Downloads-folder quarantine auditing and macOS security posture checks.
+---
+
+# File + device monitors
+
+Two Studio screens cover workstation hygiene — the parts of your security
+posture that live on the laptop you're reading this on, not in the cloud.
+Both are **desktop-only**; there's no web equivalent because the data
+sources (filesystem extended attributes, `defaults` keys, IORegistry
+properties) only exist on the machine itself.
+
+## File Monitor — Downloads quarantine + suspicious binaries
+
+**Studio → File Monitor**.
+
+A passive audit of `~/Downloads` (and any other directories you add) that
+flags:
+
+- Files still carrying the `com.apple.quarantine` extended attribute —
+  i.e. binaries you've downloaded but never opened.
+- Executables (`.app`, `.dmg`, `.pkg`, Mach-O binaries) that arrived
+  unsigned, ad-hoc signed, or signed by a Developer ID the system can't
+  verify.
+- Files matching YARA rules from the bundled malware-family pack.
+- Files referenced by recent macOS `XProtect` updates.
+
+For each flagged file you can:
+
+- **Inspect** — see the codesign chain, the originating URL recorded in
+  the `LSQuarantineDataURLString` attribute, the SHA-256, and the
+  first-seen timestamp.
+- **Quarantine** — move the file into Studio's holding directory
+  (`~/Library/Application Support/com.pencheff.studio/quarantine/`) so
+  Spotlight stops indexing it and LaunchServices stops auto-opening it.
+- **Delete** — confirmation-gated; uses `srm` if available, `rm` otherwise.
+- **Ignore** — adds a sha256 to the per-workspace ignore list so the file
+  stops showing up on subsequent passes.
+
+Scans are on-demand by default. Enable **Watch this folder** to get a
+filesystem-event-driven incremental refresh whenever a new file lands.
+
+### Watched folders
+
+| Path | What we look for |
+| --- | --- |
+| `~/Downloads` | Quarantine-flagged binaries, unsigned executables |
+| `~/Desktop` | Stray installers, `.pkg` from non-vendor sources |
+| Any added path | Same rule set |
+
+Adding `/Applications` is technically allowed but produces a lot of noise
+— legitimately-installed apps don't carry quarantine attrs after first
+launch, but their signatures may still trip "ad-hoc signing" flags for
+homebrew-bottled binaries. We recommend leaving `/Applications` off and
+using `spctl --assess` ad-hoc for that case.
+
+## Device Monitor — macOS security posture
+
+**Studio → Device Monitor**.
+
+A single-screen dashboard of the macOS-level controls auditors care about.
+Each control is queried locally — no profile, no MDM agent, no API call.
+
+| Control | What we check | Source |
+| --- | --- | --- |
+| **FileVault** | Enabled, recovery-key location known | `fdesetup status` |
+| **Firewall** | Enabled, stealth mode on, signed-app exceptions list | `defaults read /Library/Preferences/com.apple.alf` |
+| **Gatekeeper** | Enabled, in `developer-id` mode (not "Anywhere") | `spctl --status` + `spctl --master-disable` check |
+| **SIP** | Enabled | `csrutil status` |
+| **Screen lock** | Required immediately after sleep / screensaver | `defaults read com.apple.screensaver askForPasswordDelay` |
+| **Software Update** | Auto-install of security updates on, OS within N versions of current | `softwareupdate --schedule` + `sw_vers` |
+| **Remote Login (SSH)** | Off, or limited to known users | `systemsetup -getremotelogin` |
+| **Remote Management** | Off | `kickstart -status` |
+| **XProtect signatures** | Up to date (within 7 days) | `/Library/Apple/System/Library/CoreServices/XProtect.bundle` mtime |
+| **Find My Mac** | On | `defaults read /Library/Preferences/com.apple.FindMy.plist` |
+| **Time Machine** | Configured, last backup within 7 days | `tmutil status` + `tmutil destinationinfo` |
+
+Each row links to a one-line remediation — either a `defaults write`
+command you can copy, a Settings deep-link
+(`x-apple.systempreferences:com.apple.…`), or an MDM policy snippet for
+operators who manage fleets via Jamf / Kandji / Mosyle.
+
+### Compliance mapping
+
+The Device Monitor rows are pre-mapped to:
+
+- **CIS macOS Benchmark v3** (sections 2.1 – 2.10)
+- **SOC 2 CC6.1, CC6.6, CC7.2** (logical access, system operations)
+- **ISO 27001 A.8.1, A.8.2** (asset management)
+- **PCI-DSS 1.2, 2.2, 8.2** (network, secure configurations,
+  authentication)
+
+These mappings feed the same compliance dashboard the web app uses, so
+your workstation posture shows up next to your application findings in
+the same evidence bundle.
+
+### What this is not
+
+- Not an EDR. Studio does not block processes, kill them, or hook
+  syscalls.
+- Not a replacement for an MDM. If your org runs Jamf / Kandji, the MDM
+  remains the source of truth — Studio's checks are a read-only audit
+  view.
+- Not a continuous monitor in the background. Device Monitor runs when
+  you open the screen or click **Re-check now**; we don't ship a daemon.
+
+## See also
+
+- [On-device agentic runner →](/desktop/agentic-runner)
+- [Compliance mapping →](/features/compliance-mapping)
+- [Studio install + sign-in →](/desktop/install)

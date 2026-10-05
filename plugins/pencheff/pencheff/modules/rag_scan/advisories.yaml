@@ -1,0 +1,105 @@
+# Vector-DB / RAG-provider exposure-posture advisories and pinned CVEs.
+# Refreshable: add new entries as vendors publish CVEs or posture guidance.
+# Each entry shape:
+#   id:               unique slug
+#   provider_match:   regex matched against RagManifest.provider (case-insensitive)
+#   vulnerable_below: (optional) semver; finding fires only when detected < this
+#   cve:              (optional) CVE identifier
+#   cvss:             (optional) CVSS v3.x base score
+#   severity:         critical | high | medium | low | info
+#   cwe:              (optional) CWE identifier
+#   title:            short human-readable title
+#   description:      explanatory prose
+#   remediation:      actionable fix guidance
+#   reference:        canonical upstream URL
+
+# ── Posture advisories (no vulnerable_below — fire on any detection) ─────────
+
+- id: weaviate-unauth-posture
+  provider_match: "(?i)weaviate"
+  cvss: 5.3
+  severity: medium
+  cwe: "CWE-306"
+  title: "Weaviate self-hosted: verify authentication is enforced"
+  description: >
+    Self-hosted Weaviate instances are often deployed without API-key or OIDC
+    authentication enabled. An unauthenticated attacker on the same network
+    can read, modify, or delete all vector data and schemas. Weaviate ships
+    auth disabled by default; operators must opt-in via AUTHENTICATION_APIKEY_*
+    or AUTHENTICATION_OIDC_* environment variables.
+  remediation: >
+    Enable API-key or OIDC authentication (AUTHENTICATION_APIKEY_ENABLED=true
+    or AUTHENTICATION_OIDC_ENABLED=true). Restrict network exposure with a
+    firewall; never bind 0.0.0.0 in production without auth.
+  reference: "https://weaviate.io/developers/weaviate/configuration/authentication"
+
+- id: chroma-unauth-posture
+  provider_match: "(?i)chroma(db)?"
+  cvss: 5.3
+  severity: medium
+  cwe: "CWE-306"
+  title: "ChromaDB self-hosted: verify authentication is enforced"
+  description: >
+    ChromaDB's default server mode exposes all collections, embeddings, and
+    metadata without any authentication. Self-hosted ChromaDB instances that
+    are network-reachable allow any client to read or overwrite the entire
+    vector store. Auth support was introduced in v0.4.x but is not on by
+    default in most deployment templates.
+  remediation: >
+    Enable token-based auth (CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER and
+    CHROMA_SERVER_AUTH_PROVIDER environment variables) or place the instance
+    behind a reverse proxy with authentication. Audit network exposure.
+  reference: "https://docs.trychroma.com/production/administration/auth"
+
+- id: qdrant-unauth-posture
+  provider_match: "(?i)qdrant"
+  cvss: 5.3
+  severity: medium
+  cwe: "CWE-306"
+  title: "Qdrant self-hosted: verify API-key authentication is enforced"
+  description: >
+    Qdrant self-hosted deployments run without API-key authentication unless
+    explicitly configured. An unauthenticated attacker who can reach the REST
+    or gRPC port can enumerate collections, extract embeddings, and run
+    arbitrary vector queries. Qdrant's official Docker images bind 0.0.0.0
+    by default.
+  remediation: >
+    Set api_key in qdrant's config.yaml or via the QDRANT__SERVICE__API_KEY
+    environment variable. Restrict the service port to trusted networks.
+  reference: "https://qdrant.tech/documentation/guides/security/"
+
+- id: milvus-unauth-posture
+  provider_match: "(?i)milvus"
+  cvss: 5.3
+  severity: medium
+  cwe: "CWE-306"
+  title: "Milvus self-hosted: verify authentication is enforced"
+  description: >
+    Milvus ships with authentication disabled by default. Without auth, any
+    client that reaches the gRPC (19530) or REST (9091) port can perform
+    collection CRUD, vector search, and data deletion across all tenants.
+    Multi-tenant isolation is only available through Milvus role-based access
+    control, which requires auth to be enabled first.
+  remediation: >
+    Enable authentication in milvus.yaml (common.security.authorizationEnabled: true)
+    and create per-service users with minimal privileges. Restrict network access.
+  reference: "https://milvus.io/docs/authenticate.md"
+
+# ── Version-pinned CVEs (vulnerable_below set — fire only on old versions) ───
+
+- id: qdrant-path-traversal-cve
+  provider_match: "(?i)qdrant"
+  vulnerable_below: "1.7.0"
+  cve: "CVE-2024-32197"
+  cvss: 7.5
+  severity: high
+  cwe: "CWE-22"
+  title: "Qdrant < 1.7.0: path traversal in snapshot restore endpoint"
+  description: >
+    Qdrant versions prior to 1.7.0 contain a path-traversal vulnerability in
+    the snapshot restore endpoint. An attacker with network access to the
+    REST API can supply a crafted snapshot URL to read arbitrary files from the
+    host filesystem, potentially exposing credentials, config files, or model
+    data stored on the same server.
+  remediation: "Upgrade Qdrant to >= 1.7.0."
+  reference: "https://github.com/qdrant/qdrant/security/advisories/GHSA-hf5w-2qh2-42v3"

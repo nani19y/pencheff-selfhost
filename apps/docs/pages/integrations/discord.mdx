@@ -1,0 +1,40 @@
+---
+title: Discord
+---
+
+# Discord integration
+
+Pencheff posts an embeds-based message to any Discord channel via a
+standard webhook.
+
+## Setup
+
+1. In the target channel: **Edit Channel → Integrations → Webhooks → New Webhook**
+2. Copy the webhook URL.
+3. In Pencheff: **Dashboard → Integrations → Connect → Discord**. Paste,
+   set severity filter, save.
+
+## Via API
+
+```http
+POST /integrations
+{
+  "kind": "discord",
+  "name": "#alerts",
+  "severity_filter": "high",
+  "config": { "webhook_url": "https://discord.com/api/webhooks/..." }
+}
+```
+
+## Via MCP
+
+```text
+export_to_discord(
+  session_id=sid,
+  webhook_url="https://discord.com/api/webhooks/...",
+  severity_filter="high"
+)
+```
+
+Embeds use severity-coloured sidebars (red / amber / blue) so you can
+triage at a glance. Up to 5 findings are embedded per message.

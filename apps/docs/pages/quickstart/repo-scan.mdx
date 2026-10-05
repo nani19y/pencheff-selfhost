@@ -1,0 +1,138 @@
+---
+title: Quickstart — Repo scan
+description: SAST · SCA · IaC · secrets in one command against a GitHub repo.
+---
+
+import { Callout, Tabs } from "nextra/components";
+
+# Quickstart: Repo scan
+
+Connect a GitHub repository once, scan on every push, get SAST + SCA
++ IaC + secrets findings in the same unified queue as DAST. Six
+scanners fan out in parallel against a `.gitignore`-respecting copy of
+the repo.
+
+## 1. Connect a repo
+
+| Path | Best for | What you get |
+| --- | --- | --- |
+| **Pencheff GitHub App** *(recommended)* | Private repos, continuous scanning | Push webhooks, scoped per-repo permissions, Dependabot alert ingest, no token rotation |
+| **Personal Access Token** | Single private repo, no GH App | One repo per token, manual re-scan |
+| **Public URL** | Public open-source repos | Anonymous clone, manual re-scan |
+
+See [Connect a repo](/repos/connect) for the click-by-click flow.
+Once connected, the repo also auto-mirrors as a `Target` row with
+`kind: "repo"`, so it shows up everywhere DAST URLs do.
+
+## 2. Run it
+
+<Tabs items={["SaaS Dashboard", "CLI", "MCP host"]}>
+<Tabs.Tab>
+
+1. Open **Repos** in the dashboard.
+2. Click **Scan now** on the row you want to test &mdash; or wait for
+   the next push to fire the webhook.
+3. The scan runs in the queue you can also see at `/scans`. When it
+   finishes, click into it for the unified findings table.
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+```bash
+# Trigger a remote re-scan against the connected repo.
+curl -X POST -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  "$PENCHEFF_API_BASE/repos/$REPO_ID/scan"
+
+# Then list recent scans for the same repo.
+curl -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  "$PENCHEFF_API_BASE/repos/$REPO_ID/scans" | jq
+```
+
+The [`pencheff-action` GitHub Action](/ci-cd/github-actions) wraps the
+URL-scan flow inside a workflow and posts a Markdown summary on the PR
+diff. Repo scans run automatically on push events when the
+Pencheff GitHub App is installed.
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+```text
+> Scan the github.com/acme-co/api repo with all default scanners.
+```
+
+The MCP host calls `scan_repository` &mdash; it fans the work out
+across the SAST pack (Semgrep / Bandit / gosec / Brakeman /
+ESLint-security / tree-sitter), Trivy (SCA + IaC + container),
+Checkov, gitleaks, and YARA in parallel. Findings stream back
+through `get_findings`.
+
+</Tabs.Tab>
+</Tabs>
+
+## Scanners on every repo scan
+
+| Scanner | What it finds | License |
+| --- | --- | --- |
+| **Semgrep OSS** (SAST) | Multi-language pattern rules across an explicit OSS pack list (`p/owasp-top-ten`, `p/security-audit`, `p/cwe-top-25`, `p/secrets`, `p/jwt`, `p/django`, `p/flask`, `p/express`, `p/nodejs`, `p/golang`, `p/r2c-security-audit`). No `--config=auto`, no Pro rules. Override via `PENCHEFF_SEMGREP_PACKS`. | LGPL-2.1 (subprocess-only) |
+| **Bandit** (SAST, Python) | Python-specific issues — hard-coded passwords, weak crypto, shell injection, deserialisation. | Apache-2.0 |
+| **gosec** (SAST, Go) | Go-specific G-rules — sql injection, unsafe rand, weak crypto. Auto-skipped on no-Go trees. | Apache-2.0 |
+| **Brakeman** (SAST, Rails) | Rails-specific issues — mass assignment, SSL config, Rails-idiomatic command injection. Auto-skipped on non-Rails Ruby. | MIT |
+| **ESLint-security** (SAST, JS/TS) | `detect-object-injection`, `detect-eval-with-expression`, `detect-non-literal-regexp`, `detect-unsafe-regex`, etc. Pinned flat config — ignores any `.eslintrc` in the target. | MIT / Apache-2.0 |
+| **Tree-sitter pack** (SAST, niche) | Solidity ships at v0.7 (4 hand-curated rules). Lua / Scala / Dart / Kotlin / Swift / COBOL / Erlang scaffolded — drop a `queries.scm` + `rules.json` in. | MIT (queries) |
+| **Trivy** (SCA + IaC + secrets + container) | Dependency CVEs, IaC misconfigs (Terraform, K8s, CloudFormation, Helm), embedded secrets, container image issues. Pulls live OSV / NVD / EPSS / KEV data. | Apache-2.0 |
+| **Checkov** (IaC) | 1,000+ policy rules for Terraform, K8s, ARM, Bicep, OpenAPI. | Apache-2.0 |
+| **OSV-Scanner / pip-audit / npm-audit** (SCA) | Per-package vuln list reconciled with the SCA freshness layer. | Apache-2.0 / Apache-2.0 / Artistic-2.0 |
+| **Detect-Secrets / gitleaks** (secrets) | Hardcoded API keys, tokens, private keys. | Apache-2.0 / MIT |
+
+> **CodeQL was removed in v0.7** — its CLI is not licensed for
+> commercial use on third-party code, and Pencheff scans customer
+> code. The SAST pack above replaces it under permissive licenses
+> only.
+
+## Cross-scanner correlation
+
+A correlation service emits cross-references when two scanners flag
+the same root cause (shared CWE / shared CVE / route-token semantic
+match) so the unified findings stream collapses duplicates instead of
+stacking them.
+
+## Triggers
+
+* **Webhooks** &mdash; `push` events from connected GitHub Apps re-scan
+  the affected repo automatically.
+* **Manual** &mdash; `POST /repos/{id}/scan` from CLI / API / dashboard.
+* **CI/CD** &mdash; the [`pencheff-scan` GitHub Action](/ci-cd/github-actions)
+  wraps the scan and posts a Markdown summary on the PR diff.
+* **Dependabot ingest** &mdash; when the GitHub App is installed,
+  Dependabot alerts are pulled in and reconciled against new SCA
+  findings.
+
+<Callout type="info">
+  **Live CVE data on every SCA scan.** OSV.dev per-package, NVD 2.0
+  per-CVE (CWE / CPE / NVD-CVSS), EPSS exploit-prediction, and CISA
+  KEV active-exploitation flags. Refreshed automatically when the
+  local cache is stale (defaults: 24 h on OSV / EPSS / KEV, 14 d on
+  NVD). Set any TTL to `0` to force live every scan.
+</Callout>
+
+## Read the result
+
+* Findings appear in the unified queue keyed `(repository_id,
+  scanner, rule_id)`.
+* Each row carries `severity`, `file_path:line_start`, `cve` (when
+  the scanner is SCA), `package@installed_version` and the proposed
+  `fixed_version` if one exists.
+* The DOCX / Markdown / JSON / CSV exporter renders all six scanner
+  outputs into one report.
+* Click **View compliance mapping** on the assessment page to open
+  the per-scan compliance rollup &mdash; the same six frameworks used
+  for URL DAST scans.
+
+## Next
+
+* [Tutorial: monorepo + GH App](/tutorials/monorepo-repo-scan) &mdash;
+  end-to-end, including pinning a default branch and ignoring vendor
+  paths.
+* [SBOM generation](/quickstart/sbom) &mdash; spit out CycloneDX 1.5 /
+  SPDX 2.3 from the same manifest parsers.
+* [Compliance mapping](/quickstart/compliance).

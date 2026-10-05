@@ -1,0 +1,80 @@
+---
+title: Unified findings stream
+---
+
+# Unified findings stream
+
+A single sortable, filterable queue across **SAST, DAST, SCA, IaC, and
+secrets** — no more "click into a scan, then its findings" friction
+when you just want to know "what should I fix first?"
+
+Lives at [`/findings`](https://app.pencheff.com/findings) in the
+dashboard.
+
+## What it does
+
+- Pulls from both the `findings` table (DAST + SCA from live scans)
+  and `repo_findings` table (SAST + SCA + secrets + IaC from repo
+  scans).
+- Projects them to a common shape and merges.
+- Sorts by Pencheff's [unified `risk_score`](/features/epss-kev)
+  (CVSS × EPSS × KEV × SSVC × reachability) — `NULL` last, then
+  severity, then created_at.
+- Paginates with stable order across pages.
+
+## Filters
+
+The dashboard's filter chips translate one-to-one to query params:
+
+```
+GET /unified-findings
+  ?source=sast        # also: dast, sca, iac, secret (multi-select)
+  &severity=critical  # critical | high | medium | low | info
+  &reachability=exploited
+  &include_suppressed=false
+  &target_id=<uuid>   # restrict to one target
+  &limit=50&offset=0
+```
+
+Server-side filters fire before the merge, so paginated results stay
+consistent.
+
+## Source mapping
+
+Pencheff projects each underlying row to a single `source` label so
+filters work uniformly:
+
+| `source` | From `findings` rows where… | From `repo_findings` rows where… |
+| --- | --- | --- |
+| `dast` | `category != "components"` | — |
+| `sca`  | `category == "components"` | `scanner` ∈ `osv`, `ghsa`, `pip-audit`, `npm-audit` |
+| `sast` | — | `scanner` ∈ `semgrep`, `bandit`, `gosec`, `brakeman`, `eslint`, `treesitter:*`, `ruff`. (Legacy `codeql` rows from pre-v0.7 scans still classify as SAST.) |
+| `secret` | — | `scanner` ∈ `gitleaks`, `detect-secrets` |
+| `iac`  | — | `scanner` ∈ `trivy_iac`, `checkov` |
+
+## Drill-through
+
+Each row in the list is a hyperlink. The unified item carries enough
+metadata for the dashboard to deep-link:
+
+- `findings`-table rows → `/findings/<id>` → redirector that resolves
+  the `scan_id` and forwards to the scan-scoped detail page.
+- `repo_findings`-table rows → `/repos/...` (the existing repo finding
+  detail page).
+
+## Risk-first by default
+
+The default sort is descending `risk_score`. A KEV-listed CVSS 6.0
+beats an unexploited CVSS 8.5 — that's what Snyk gets wrong by sorting
+on CVSS alone. See [EPSS, KEV, SSVC](/features/epss-kev) for the full
+priority formula.
+
+## What's tested
+
+```bash
+cd apps/api && uv run pytest tests/test_unified_findings.py
+```
+
+12 unit tests cover the projection logic + sort key (risk_score desc,
+severity tiebreaker, recency tiebreaker) + ecosystem-aware source
+mapping.

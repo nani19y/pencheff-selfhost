@@ -1,0 +1,211 @@
+---
+title: Compliance mapping (per-scan)
+description: Per-scan compliance rollup across URL, Repo, and LLM targets — same shape, same UI, same report appendix.
+---
+
+# Compliance mapping
+
+Every scan in Pencheff carries a compliance rollup that fans every
+active finding out across the frameworks that match the target&rsquo;s
+asset class. The rollup is deterministic (no LLM), recomputed on read,
+and consumable from the web UI, the JSON / CSV / DOCX / Markdown
+exports, and the public REST API.
+
+This page documents the per-scan feature. For framework-by-framework
+deep dives see the [Compliance overview](/compliance/overview).
+
+## Per-target framework set
+
+| Target kind | Frameworks emitted |
+| --- | --- |
+| URL (DAST) | OWASP Top 10 (2021) · PCI-DSS 4.0 · NIST 800-53 Rev 5 · SOC 2 · ISO 27001:2022 · HIPAA |
+| Repo (SAST · SCA · IaC · secrets) | Same six. RepoFinding rows infer a category from scanner + rule_id. |
+| LLM (red team) | OWASP LLM Top 10 (2025) · MITRE ATLAS · NIST AI Risk Management Framework · EU AI Act |
+
+The framework set is fixed per target kind &mdash; the API does not
+let a caller request HIPAA controls for an LLM endpoint, since none of
+the LLM finding categories map onto HIPAA controls.
+
+## Endpoints
+
+| Method | Path | Scope | What it does |
+| --- | --- | --- | --- |
+| `GET` | `/scans/{id}/compliance` | `scans:read` | Per-scan rollup for a URL or LLM scan. Returns 404 if the scan is not in the caller&rsquo;s workspace. |
+| `GET` | `/repos/scans/{id}/compliance` | `repos:read` | Per-scan rollup for a repository scan. RepoFinding rows are normalised into the same wire shape. |
+
+The two endpoints return the **identical** JSON envelope so the same
+web component, JSON exporter, and report appendix can consume any scan
+id without branching by target kind.
+
+## Output shape
+
+```json
+{
+  "scan_id": "0f2b…",
+  "target_kind": "url",
+  "frameworks": [
+    "OWASP Top 10",
+    "PCI-DSS",
+    "NIST 800-53",
+    "SOC 2",
+    "ISO 27001:2022",
+    "HIPAA"
+  ],
+  "totals": {
+    "findings": 42,
+    "controls_touched": 17
+  },
+  "frameworks_summary": {
+    "OWASP Top 10": {
+      "controls": [
+        {
+          "id": "A03: Injection",
+          "control": "A03",
+          "title": "Injection",
+          "finding_count": 5,
+          "severity_breakdown": {
+            "critical": 1,
+            "high": 3,
+            "medium": 1,
+            "low": 0,
+            "info": 0
+          },
+          "finding_ids": ["…", "…", "…"]
+        }
+      ],
+      "covered": 7,
+      "total": 10
+    }
+  },
+  "findings": [
+    {
+      "id": "…",
+      "title": "Reflected XSS in /search",
+      "severity": "high",
+      "category": "xss",
+      "owasp_category": "A03: Injection",
+      "scanner": null,
+      "compliance": {
+        "OWASP Top 10": ["A03: Injection"],
+        "PCI-DSS": ["6.5.7"],
+        "NIST 800-53": ["SI-10"],
+        "SOC 2": ["CC6.1", "CC6.6"],
+        "ISO 27001:2022": ["A.8.28"],
+        "HIPAA": ["164.312(a)(2)(iv)", "164.312(c)(1)"]
+      }
+    }
+  ]
+}
+```
+
+`covered / total` reads `7 / 10` for OWASP Top 10 (10 fixed
+categories) and `7 / 7` for PCI-DSS &mdash; control catalogues
+without a fixed denominator surface the count of unique controls fired
+by this scan instead of an artificial percentage.
+
+## Suppressed findings are excluded
+
+Both endpoints filter `suppressed = false` server-side. A finding
+that operators marked `accepted_risk` / `wont_fix` /
+`false_positive` / `duplicate` / `out_of_scope` does not appear in
+`controls`, the per-control severity breakdown, or `findings[]`.
+This matches the behaviour of the default DOCX report and the
+unified findings stream &mdash; suppressed findings stay in the
+database for audit history but never show up on a fresh-eye
+review.
+
+If you need to compare suppressed-vs-active counts for an internal
+audit, list suppressed findings via the regular `/findings`
+endpoint with `include_suppressed=true`.
+
+## How the mapping works
+
+1. **Findings → category.**
+   * URL / LLM scans: `Finding.category` (`injection`, `xss`,
+     `auth`, `crypto`, `components`, `secrets`, `cloud`, …) plus
+     `Finding.owasp_category` (`A03: Injection` / `LLM01: Prompt
+     Injection`).
+   * Repo scans: `RepoFinding` does not carry an explicit category
+     column, so the rollup service infers one from the scanner that
+     produced the row plus a few well-known tokens in `rule_id`
+     (`xss`, `sql`, `injection`, `ssrf`, `crypto`, `secret`, `auth`,
+     `path-trav`, &hellip;). The mapping table lives in
+     [`apps/api/pencheff_api/services/compliance.py`](https://github.com/Magadha-IG/pencheff/blob/main/apps/api/pencheff_api/services/compliance.py).
+2. **Category → control fan-out.** Per-framework maps live next to
+   the category mapper so a SQL-injection finding (`category:
+   "injection"`) lights up `A03 / 6.5.1 / SI-10 / CC6.1 / A.8.24 /
+   164.312(a)(2)(iv)` on a single read.
+3. **Severity rollup.** Each control bucket records a per-severity
+   breakdown so the report can highlight `A03: Injection (3 critical
+   · 1 high)` without re-querying the finding table.
+
+LLM red-team findings carry `owasp_category` keyed `LLM01..LLM10`, and
+each LLM category fans out separately into MITRE ATLAS / NIST AI RMF /
+EU AI Act articles &mdash; LLM07 (System Prompt Leakage), for example,
+lights up `AML.T0057 · AML.T0058 / MAP 2.3 · MEASURE 2.8 · MANAGE 4.1
+/ Article 13 · Article 15 · Article 55`.
+
+## Web UI
+
+Every completed scan exposes a **§ Compliance mapping** card on its
+assessment page (`/scans/{id}` and `/repos/scans/{id}`) with a button
+that opens the dedicated compliance render:
+
+| Surface | Path |
+| --- | --- |
+| URL / LLM scan | `/scans/{id}/compliance` |
+| Repo scan | `/repos/scans/{id}/compliance` |
+
+The compliance page mirrors the layout of `/scans/{id}/threat-model`:
+
+* A summary strip (`Findings`, `Controls touched`, `Frameworks`,
+  `Target`).
+* A horizontal framework picker that switches between the six (or
+  four, for LLM) frameworks without a page reload.
+* A control table with finding counts and a severity ribbon
+  (C / H / M / L / I).
+* A per-finding mapping table for auditors who want to see the
+  forward direction (`finding → controls`) instead of the reverse
+  (`control → findings`).
+
+## Report inclusion
+
+When the DOCX / Markdown / CSV / JSON exporter runs against a scan,
+the compliance rollup is rendered into a `Compliance` appendix that
+sits between the executive summary and the findings register. The
+appendix lists every control that fired, the count of findings per
+control, and the severity breakdown.
+
+The same rollup also drops a `compliance` key on every finding in the
+JSON / CSV exports so a downstream pipeline can ingest mappings
+without re-running the categoriser.
+
+## CLI parity
+
+The CLI exposes the same rollup via `pencheff scan --output-format
+json` (look under `compliance` on each finding and `compliance_summary`
+at the top level) and via `pencheff llm-redteam --output-format json`
+for LLM scans.
+
+```bash
+pencheff scan \
+  --target https://example.com \
+  --profile standard \
+  --output-format json \
+  --output-file scan.json
+
+jq '.compliance_summary | keys' scan.json
+# ["OWASP Top 10","PCI-DSS","NIST 800-53","SOC 2","ISO 27001:2022","HIPAA"]
+```
+
+## See also
+
+* [Compliance overview](/compliance/overview) &mdash; the framework
+  catalogue and per-framework deep dives.
+* [Threat modeling](/features/threat-model) &mdash; the sister
+  per-scan feature; `/scans/{id}/threat-model` is the precedent this
+  page mirrors.
+* [LLM Red Team](/features/llm-redteam) &mdash; the source of LLM01-10
+  findings that drive the AI compliance fan-out.
+* [Repo scanning](/repos/connect) &mdash; the source of SAST · SCA ·
+  IaC · secrets findings that drive the repo-scan rollup.

@@ -1,0 +1,79 @@
+---
+title: Firmware, IoT & OT Security
+description: Static analysis of firmware/embedded images — embedded keys & certificates, default/hardcoded credentials, insecure services, cleartext endpoints, secrets, and vulnerable components. No device, flashing, or network probing.
+---
+
+import { Callout } from "nextra/components";
+
+# Firmware, IoT & OT Security
+
+Pencheff statically analyzes firmware and embedded images for IoT and OT
+devices — cameras, drones, robot vacuums, routers, PLCs, and controllers.
+You upload the firmware image; the device itself is never touched, flashed,
+or network-probed.
+
+## Register a target
+
+Under **OT / IoT & Hardware Security**, register one of:
+
+* **Firmware / Embedded** — any firmware/embedded image.
+* **IoT Device** — consumer/industrial IoT firmware (camera, drone, vacuum,
+  router); accepts optional vendor/model/device-class labels.
+* **OT / ICS / SCADA** — controller/PLC firmware or config export.
+
+Provide a direct artifact URL (`.bin`/`.img`/`.hex` or a packed archive) and
+its **SHA-256**, then commission a scan. Walkthroughs:
+[Firmware scanning](/tutorials/firmware-scanning) ·
+[IoT device scanning](/tutorials/iot-device-scanning).
+
+<Callout type="warning">
+  **Static-only by design.** Pencheff does not perform active probing of a
+  live device or industrial network — active OT/ICS testing (Modbus/DNP3/S7
+  writes, PLC interaction) can disrupt physical processes. Firmware review is
+  the safe way to assess these devices.
+</Callout>
+
+## What it tests
+
+| Check | Severity | Why |
+|-------|----------|-----|
+| Embedded private key (PEM) | Critical | Shared across every unit — breaks TLS/SSH/signing fleet-wide |
+| Hardcoded OS credentials (`/etc/shadow` hashes) | High | Shared, offline-crackable root/login |
+| Default/hardcoded credentials (`admin:admin`) | High | The #1 IoT compromise vector (Mirai-class) |
+| Telnet / debug service | Medium | Cleartext remote-access backdoor |
+| Embedded certificate | Low | Review for an accompanying private key |
+| Cleartext HTTP endpoint | Low | MITM-able update/telemetry channel |
+| Component version banners | Info | BusyBox/Dropbear/OpenSSL/lighttpd → CVE matching |
+| Hardcoded secrets (API keys) | High | Exposed cloud/service credentials |
+
+Findings are tagged `firmware_creds`, `firmware_crypto`, `firmware_secrets`,
+`firmware_communication`, `firmware_misconfig`, and `firmware_components`,
+each with severity, CWE, and CVSS.
+
+## How it works
+
+1. **Component map** — `binwalk` (when present on the worker) identifies
+   embedded filesystems, kernels, and archives. Skipped gracefully if
+   binwalk is unavailable; string-level analysis still runs.
+2. **Content analysis** — printable strings are extracted from the image and
+   scanned for the checks above. This works with or without binwalk and
+   across binwalk versions.
+3. **Secrets sweep** — the shared secret-pattern set runs over the strings.
+
+The image is **never flashed or executed**.
+
+## MCP tool
+
+Exposed to MCP hosts as `scan_firmware(session_id, firmware_path)`.
+
+## Getting firmware
+
+Most consumer IoT firmware is downloadable from the vendor's update/support
+site, capturable from the device's OTA update request, or extractable from a
+flash dump. Once you have the `.bin`/`.img` (or a packed archive), register it
+with its SHA-256.
+
+## See also
+
+* [Tutorial: Firmware scanning](/tutorials/firmware-scanning)
+* [Tutorial: IoT device scanning](/tutorials/iot-device-scanning)

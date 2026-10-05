@@ -1,0 +1,206 @@
+[
+  {
+    "id": "exposed-env-file",
+    "info": {
+      "name": "Environment File Exposed",
+      "severity": "critical",
+      "description": "A dotenv-style configuration file appears publicly reachable.",
+      "remediation": "Remove environment files from public web roots and rotate exposed secrets.",
+      "tags": ["exposure", "files", "secrets"],
+      "references": ["https://owasp.org/Top10/A05_2021-Security_Misconfiguration/"],
+      "classification": {
+        "cwe-id": ["CWE-200", "CWE-538"],
+        "cvss-score": 9.1,
+        "cvss-metrics": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"
+      }
+    },
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/.env",
+        "matchers": [
+          {"condition": "and"},
+          {"type": "status", "status": [200]},
+          {"type": "regex", "regex": ["(?m)^(APP_KEY|SECRET_KEY|DATABASE_URL|AWS_ACCESS_KEY_ID|DB_PASSWORD)="]}
+        ],
+        "extractors": [
+          {"type": "regex", "name": "keys", "regex": ["(?m)^([A-Z0-9_]{4,})="]}
+        ]
+      }
+    ]
+  },
+  {
+    "id": "git-config-exposed",
+    "info": {
+      "name": "Git Configuration Exposed",
+      "severity": "high",
+      "description": "Git metadata appears publicly reachable.",
+      "remediation": "Remove .git metadata from deployments or block access at the server.",
+      "tags": ["exposure", "git", "files"],
+      "classification": {
+        "cwe-id": ["CWE-200", "CWE-548"],
+        "cvss-score": 7.5,
+        "cvss-metrics": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
+      }
+    },
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/.git/config",
+        "matchers": [
+          {"condition": "and"},
+          {"type": "status", "status": [200]},
+          {"type": "word", "words": ["[core]", "repositoryformatversion"], "condition": "and"}
+        ]
+      }
+    ]
+  },
+  {
+    "id": "swagger-ui-exposed",
+    "info": {
+      "name": "Swagger UI Exposed",
+      "severity": "info",
+      "description": "Swagger UI appears publicly reachable.",
+      "remediation": "Confirm API documentation is intended to be public and does not disclose sensitive endpoints.",
+      "tags": ["api", "swagger", "exposure"],
+      "classification": {
+        "cwe-id": ["CWE-200"],
+        "cvss-score": 0.0
+      }
+    },
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/swagger-ui/",
+        "matchers": [
+          {"type": "word", "words": ["Swagger UI"]}
+        ]
+      }
+    ]
+  },
+  {
+    "id": "openapi-json-exposed",
+    "info": {
+      "name": "OpenAPI Specification Exposed",
+      "severity": "info",
+      "description": "An OpenAPI specification appears publicly reachable.",
+      "remediation": "Confirm API schemas are intended to be public.",
+      "tags": ["api", "openapi", "exposure"],
+      "classification": {
+        "cwe-id": ["CWE-200"],
+        "cvss-score": 0.0
+      }
+    },
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/openapi.json",
+        "matchers": [
+          {"condition": "and"},
+          {"type": "status", "status": [200]},
+          {"type": "word", "words": ["openapi"]}
+        ]
+      }
+    ]
+  },
+  {
+    "id": "spring-actuator-env",
+    "info": {
+      "name": "Spring Actuator Environment Exposed",
+      "severity": "high",
+      "description": "Spring Boot actuator environment data appears exposed.",
+      "remediation": "Restrict actuator endpoints and sanitize environment output.",
+      "tags": ["spring", "actuator", "exposure"],
+      "references": ["https://docs.spring.io/spring-boot/reference/actuator/endpoints.html"],
+      "classification": {
+        "cwe-id": ["CWE-200"],
+        "cvss-score": 7.5,
+        "cvss-metrics": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
+      }
+    },
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/actuator/env",
+        "matchers": [
+          {"condition": "and"},
+          {"type": "status", "status": [200]},
+          {"type": "word", "words": ["propertySources"]}
+        ]
+      }
+    ]
+  },
+  {
+    "id": "apache-server-status",
+    "info": {
+      "name": "Apache Server Status Exposed",
+      "severity": "high",
+      "description": "Apache mod_status appears exposed.",
+      "remediation": "Restrict mod_status to trusted networks or disable it.",
+      "tags": ["apache", "exposure"],
+      "references": ["https://httpd.apache.org/docs/current/mod/mod_status.html"],
+      "classification": {
+        "cwe-id": ["CWE-200"],
+        "cvss-score": 5.3,
+        "cvss-metrics": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+      }
+    },
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/server-status",
+        "matchers": [
+          {"condition": "and"},
+          {"type": "status", "status": [200]},
+          {"type": "word", "words": ["Apache Server Status"]}
+        ]
+      }
+    ]
+  },
+  {
+    "id": "jenkins-interface",
+    "info": {
+      "name": "Jenkins Interface Present",
+      "severity": "medium",
+      "description": "A Jenkins interface appears reachable.",
+      "remediation": "Restrict Jenkins exposure and enforce strong authentication.",
+      "tags": ["jenkins", "admin", "exposure"],
+      "classification": {
+        "cwe-id": ["CWE-200", "CWE-284"],
+        "cvss-score": 5.3
+      }
+    },
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/jenkins/",
+        "matchers": [
+          {"type": "word", "words": ["Jenkins"]}
+        ]
+      }
+    ]
+  },
+  {
+    "id": "wordpress-readme",
+    "info": {
+      "name": "WordPress readme.html Exposed",
+      "severity": "info",
+      "description": "WordPress readme file appears exposed.",
+      "remediation": "Remove readme.html if version disclosure is a concern.",
+      "tags": ["wordpress", "exposure"],
+      "classification": {
+        "cwe-id": ["CWE-200"],
+        "cvss-score": 0.0
+      }
+    },
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/readme.html",
+        "matchers": [
+          {"type": "word", "words": ["Welcome to WordPress"]}
+        ]
+      }
+    ]
+  }
+]

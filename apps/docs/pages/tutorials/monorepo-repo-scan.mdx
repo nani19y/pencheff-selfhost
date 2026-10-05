@@ -1,0 +1,119 @@
+---
+title: Tutorial — Monorepo repo scan
+description: Connect a multi-language monorepo, prune vendor paths, and read the unified findings.
+---
+
+# Tutorial: Monorepo repo scan
+
+Six scanners fan out in parallel against a clone of the connected
+repo. This tutorial covers the bits that matter when the repo is a
+big polyglot monorepo: language detection, exclude paths, default
+branch pinning, and reading the unified findings.
+
+## Scenario
+
+* **Repo.** `github.com/acme-co/platform` &mdash; ~1.5M LOC across
+  Python (50%), TypeScript (35%), Go (10%), Terraform / Helm (5%).
+* **Constraint.** The vendored copy of `node_modules/` and a giant
+  Python pip cache should never be scanned.
+* **Goal.** A scan that finishes inside the 30-min CI budget and
+  routes findings to the right team.
+
+## 1. Connect via the GitHub App
+
+The GitHub App is the only path that surfaces Dependabot alerts and
+fix-PRs. PAT and public-URL paths work too but ship without the
+webhook + fix-PR features.
+
+1. Sign in at [`app.pencheff.com`](https://app.pencheff.com), open
+   **Repos**, click **Install Pencheff on GitHub**.
+2. Pick the **acme-co** organisation, **Only select repositories**
+   &rarr; `platform`. Approve.
+3. The new install card shows up under **Connected GitHub accounts**.
+   Click **Sync repos**.
+
+The repo auto-mirrors as a `Target` row with `kind: "repo"`, so it
+appears in the dashboard, the integrations target multi-select, and
+the unified findings stream.
+
+## 2. Pin the default branch
+
+```bash
+curl -X PATCH -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"default_branch": "main"}' \
+  "$PENCHEFF_API_BASE/repos/$REPO_ID"
+```
+
+Vendor pruning is automatic &mdash; every scanner honours
+`.gitignore`. For files that aren&rsquo;t gitignored but should
+still be ignored (vendored code, generated dirs, large fixtures),
+add them to `.gitignore` or use a per-scanner suppression on the
+findings they produce.
+
+## 3. Trigger the scan
+
+```bash
+curl -X POST -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  "$PENCHEFF_API_BASE/repos/$REPO_ID/scan"
+```
+
+After this point every `push` to the default branch fires a webhook
+that auto-triggers a re-scan with the same settings.
+
+## 4. Read the unified findings
+
+The scan opens under `/repos/scans/{id}`. The page lists the six
+scanners that ran and the count each produced; the unified findings
+table de-duplicates rows that two scanners flagged for the same
+root cause.
+
+| Scanner | Typical signal in this monorepo |
+| --- | --- |
+| **Semgrep OSS** | Insecure JWT verification in the TypeScript edge service |
+| **Bandit** | Use of `subprocess.shell=True` in a Python admin script |
+| **gosec** | Weak rand seeded with `time.Now()` in a Go session id generator |
+| **Trivy** (SCA) | A handful of HIGH CVEs from `urllib3` &lt; 1.26.18 |
+| **Trivy IaC + Checkov** | EKS pod-security-policy violations under `infra/k8s/` |
+| **gitleaks** | One private key checked in to a test fixture |
+| **YARA** | Known JS loader signature in a vendored chunk &mdash; suppress with an exclude path |
+
+## 5. Open the compliance + SBOM
+
+* `/repos/scans/{id}/compliance` &mdash; the per-scan rollup, same
+  six frameworks as URL DAST scans. RepoFinding rows infer their
+  category from the scanner that produced them, so the rollup
+  speaks the OWASP-Top-10 / PCI-DSS dialect even though the source
+  data is SAST + SCA + IaC.
+* **Generate SBOM** on the repo page &mdash; CycloneDX 1.5 + SPDX
+  2.3 from the same manifest parsers that drove SCA.
+
+## 6. Route by team
+
+Configure two Slack integrations &mdash; one per team &mdash; under
+**Settings &rarr; Integrations**, each scoped to the repo&rsquo;s
+target id and the relevant event filter (`finding_new`,
+`finding_changed`) plus a severity gate. Per-target scoping is
+already supported by the integrations layer; the routing rule is
+&ldquo;target id + event + severity.&rdquo;
+
+For finer-grained routing &mdash; e.g. `services/api/` to
+`#platform-eng` and `services/web/` to `#frontend` &mdash; the
+integration matcher today operates at target granularity, so split
+the monorepo across two Pencheff repo targets that share the same
+GitHub repo if the finer routing matters more than the unified
+view.
+
+## Deliverable
+
+* A repo scan that runs in under 30 minutes on every push.
+* A compliance rollup the security review checklist can consume
+  directly.
+* A live SBOM matching every SCA finding.
+* Per-team Slack routing.
+
+## Next
+
+* [Tutorial: SCA + supply chain](/tutorials/sca-supply-chain).
+* [Tutorial: IaC + cloud hardening](/tutorials/iac-cloud-hardening).
+* [Tutorial: SBOM as evidence](/tutorials/sbom-evidence).

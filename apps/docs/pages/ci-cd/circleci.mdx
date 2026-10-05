@@ -1,0 +1,29 @@
+---
+title: CircleCI
+---
+
+# CircleCI
+
+```yaml
+version: 2.1
+jobs:
+  pencheff:
+    docker: [{ image: cimg/python:3.12 }]
+    steps:
+      - checkout
+      - run: pip install pencheff
+      - run:
+          name: Scan
+          command: |
+            pencheff scan \
+              --target "$TARGET_URL" \
+              --profile cicd \
+              --fail-on high \
+              --format json,docx \
+              --output ./reports/
+      - store_artifacts: { path: reports }
+
+workflows:
+  security:
+    jobs: [pencheff]
+```

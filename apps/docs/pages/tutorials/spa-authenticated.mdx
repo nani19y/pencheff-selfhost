@@ -1,0 +1,120 @@
+---
+title: Tutorial — SPA + authenticated crawl
+description: Drive a real browser through a single-page app, then run a deep DAST scan on the discovered routes.
+---
+
+import { Callout } from "nextra/components";
+
+# Tutorial: SPA + authenticated crawl
+
+A modern single-page app returns a blank shell to a curl-based
+crawler. This tutorial uses the Playwright login-macro + the deep
+profile to:
+
+1. Drive a real browser through the SAML / OIDC / form login.
+2. Crawl every client-side route the app renders.
+3. Run the full attack surface (auth / authz / injection / SSRF /
+   client-side / business-logic) against the discovered routes.
+
+## Scenario
+
+* **Target.** `https://app.acme.com` &mdash; React SPA, OIDC login,
+  admin dashboard at `/admin`.
+* **Login flow.** Click **Sign in** &rarr; redirected to
+  `https://login.acme.com/oidc` &rarr; type `analyst` /
+  `$ACME_PASSWORD` &rarr; consent &rarr; bounced back as
+  `?code=...` &rarr; SPA exchanges for a session cookie.
+* **Goal.** Find the IDOR + JWT-alg-none on the admin dashboard
+  that vanilla DAST tools miss because they never log in.
+
+## 1. Record a login macro
+
+Recording a login macro is a UI-driven flow &mdash; Pencheff opens a
+real Chromium so you can demonstrate the login by hand. Two surfaces
+are supported:
+
+* **Dashboard.** Open the target&rsquo;s **Authentication** card and
+  click **Record login**. A headed browser opens; sign in. The
+  captured macro is stored on the target.
+* **MCP host.** Call the `record_login_macro` tool. Same headed
+  browser, same captured macro &mdash; only the trigger surface
+  changes.
+
+Either way, the captured macro travels with the target so every
+subsequent scan replays it without re-recording.
+
+## 2. Run a deep scan against the target
+
+```bash
+pencheff scan \
+  --target https://app.acme.com \
+  --profile deep \
+  --output ./reports/ \
+  --format docx \
+  --save-history
+```
+
+What `deep` adds over `standard`:
+
+* Playwright crawler executes JavaScript and harvests client-side
+  routes, hash routes, and lazy-loaded chunks.
+* `scan_business_logic` enumerates state-machine bypass attempts
+  (re-submit a paid order, cancel-then-replay, …).
+* `exploit_chain_suggest` + `test_chain` propose and verify
+  multi-step attacks across the discovered surface.
+* The dispatcher auto-creates an engagement, persists a [DREAD
+  threat model](/features/threat-model), and biases module priority
+  toward the highest-scoring STRIDE category.
+
+## 3. Watch what the crawler discovered
+
+The assessment page&rsquo;s **§ Recon** card lists every URL the
+Playwright crawler reached, the HTTP method, and which auth state
+was active when it was hit. Use it to diff *expected* vs *actual*
+attack surface &mdash; new routes since the last scan jump out.
+
+## 4. Verify the headline findings
+
+A typical SPA delivery surfaces three kinds of headline finding:
+
+* **JWT-alg-none in `/api/admin/users`.** `scan_auth` flags the
+  vulnerable verifier; `test_endpoint` re-issues the token with
+  `alg: "none"` and proves admin access.
+* **IDOR in `/api/orders/{id}`.** Two browser sessions, two user
+  accounts &mdash; the multi-credential support lets the engine
+  test cross-tenant access automatically.
+* **Reflected XSS in the search modal.** Found by the Playwright
+  DOM-XSS sink scanner, not the HTTP-only one.
+
+<Callout type="warning">
+  **Do not re-record the macro on every scan.** The macro is durable
+  across token rotation as long as the login flow shape is
+  unchanged. Re-record only when the IdP changes its UI.
+</Callout>
+
+## 5. Open the threat model + compliance
+
+`deep` against a URL auto-creates a target-pinned engagement (slug
+`deep-{target_id[:8]}`) and persists a DREAD threat model on it.
+Subsequent deep scans of the same target reuse it.
+
+* `/scans/{id}/threat-model` &mdash; full STRIDE / DREAD render.
+* `/scans/{id}/compliance` &mdash; OWASP + PCI-DSS + NIST + SOC 2 +
+  ISO + HIPAA rollup. The compliance page&rsquo;s framework picker
+  is where the customer&rsquo;s auditor will live.
+
+## Deliverable
+
+* `pencheff-acme-spa.docx` &mdash; the customer DOCX, including the
+  threat-model section and the compliance appendix.
+* `pencheff-acme-spa.json` &mdash; same data, machine-readable, via
+  `pencheff scan --format json`.
+* The login macro stays attached to the target; subsequent scans
+  reuse it automatically.
+
+## Next
+
+* [Tutorial: API + OpenAPI seed](/tutorials/api-pentest) &mdash;
+  scope a scan around an API spec instead of a crawl.
+* [Authentication reference](/features/authentication) &mdash; every
+  login-macro knob.

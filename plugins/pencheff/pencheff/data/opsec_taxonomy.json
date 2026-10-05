@@ -1,0 +1,19 @@
+{
+  "quiet": [
+    "recon_passive", "osint", "whois", "dns_lookup", "cert_transparency",
+    "wayback", "engagement_plan", "threat_model", "stig_lookup", "report",
+    "memory", "bug_bounty_format", "detection_rule_synthesis"
+  ],
+  "moderate": [
+    "recon_active", "scan_pulse", "scan_infrastructure", "scan_api",
+    "scan_client_side", "scan_authz", "scan_oauth", "scan_business_logic",
+    "scan_cloud", "scan_websocket", "scan_subdomain_takeover",
+    "scan_file_handling", "test_endpoint", "browser_crawl"
+  ],
+  "loud": [
+    "scan_injection", "scan_advanced", "scan_auth", "scan_mfa_bypass",
+    "credential_test", "exploit_chain", "ad_kerberoast", "ad_secretsdump",
+    "ad_dcsync", "wireless_capture", "wireless_evil_twin", "wireless_deauth",
+    "social_engineer_send"
+  ]
+}

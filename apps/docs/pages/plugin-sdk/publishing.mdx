@@ -1,0 +1,52 @@
+---
+title: Publishing a custom module
+---
+
+# Publishing a custom module
+
+## Option A — share as a git repo
+
+Teammates clone into their `~/.pencheff/custom_modules/`:
+
+```bash
+cd ~/.pencheff/custom_modules
+git clone https://github.com/your-org/pencheff-modules.git
+export PENCHEFF_ENABLE_CUSTOM_MODULES=1
+```
+
+Any file in the clone's root is auto-discovered.
+
+## Option B — PyPI
+
+Package a proper Python distribution so anyone can `pip install` it.
+The module loader also inspects every installed package — if your
+package declares a `pencheff.plugins` entry point, it gets registered
+on startup without copying files.
+
+```toml
+# pyproject.toml
+[project]
+name = "pencheff-robots-check"
+version = "1.0.0"
+
+[project.entry-points."pencheff.plugins"]
+robots_check = "pencheff_robots_check:RobotsCheck"
+```
+
+Then:
+
+```bash
+pip install pencheff-robots-check
+```
+
+## Option C — upstream into the main plugin
+
+Open a PR against
+[pencheff](https://github.com/Magadha-IG/pencheff) — well-scoped,
+tested modules are welcome. See `CONTRIBUTING.md` for the criteria
+(unit tests, compliance mapping entries, fixture updates).
+
+## Release-note template
+
+Include a one-paragraph description, default severity, OWASP category,
+and a link to the test fixture that demonstrates the check firing.

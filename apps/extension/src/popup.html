@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Pencheff Proxy</title>
+  <style>
+    body { font: 13px/1.4 system-ui, sans-serif; width: 320px; margin: 0; padding: 12px; }
+    h1 { font-size: 14px; margin: 0 0 8px; text-transform: uppercase; }
+    label { display: block; font-size: 11px; text-transform: uppercase; margin-top: 8px; }
+    input { width: 100%; box-sizing: border-box; padding: 4px 6px; border: 1.5px solid #000; }
+    button { padding: 4px 10px; border: 1.5px solid #000; background: #fce985; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .status { padding: 6px; border: 1.5px solid #000; background: #f7f3e3; margin-top: 10px; font-size: 12px; }
+    code { font-size: 11px; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>Pencheff Proxy</h1>
+  <div id="status" class="status">Not paired.</div>
+  <label>API base URL</label>
+  <input id="apiBase" placeholder="https://api.example.com" />
+  <label>Ingest token (from engagement → Install extension page)</label>
+  <input id="pairing" placeholder="paste long token here" />
+  <div style="margin-top: 8px; display: flex; gap: 6px;">
+    <button id="pair">Pair</button>
+    <button id="pause">Pause</button>
+  </div>
+  <div style="margin-top: 10px; font-size: 11px; color: #555;">
+    Captured this session: <code id="sent">0</code>
+  </div>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

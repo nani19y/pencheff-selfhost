@@ -1,0 +1,253 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pencheff
+      POSTGRES_PASSWORD: pencheff
+      POSTGRES_DB: pencheff
+    ports:
+      - "5432:5432"
+    volumes:
+      # pg18 stores data under /var/lib/postgresql/<major>/docker/, so the
+      # mount point is the parent dir (was /var/lib/postgresql/data on
+      # pg16-). See https://github.com/docker-library/postgres/pull/1259.
+      - pg_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pencheff"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    restart: unless-stopped
+    # Default self-hosted API image is lean — it ships only first-party
+    # Pencheff code and permissively-licensed runtime dependencies. To bundle
+    # optional auxiliary tools (ffuf, semgrep,
+    # subfinder, gitleaks, etc.) locally for development, add:
+    #   -f docker-compose.toolchain.yml
+    # WARNING: the toolchain image redistributes copyleft and commercial-
+    # restricted binaries. Review THIRD_PARTY_NOTICES.md and each tool's
+    # license before publishing the resulting image to a public registry.
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file:
+      # Root ``.env`` is the canonical source. ``apps/api/.env`` is kept as
+      # an optional override for secrets you don't want at the repo root
+      # (CI, multi-tenant setups). Both are optional so the stack still
+      # boots in a fresh clone.
+      - path: .env
+        required: false
+      - path: apps/api/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://pencheff:pencheff@postgres:5432/pencheff
+      REDIS_URL: redis://redis:6379/0
+      WORKER_ALWAYS_ON: ${WORKER_ALWAYS_ON:-true}
+      WORKER_IDLE_GRACE_SECONDS: ${WORKER_IDLE_GRACE_SECONDS:-30}
+      WORKER_COMPOSE_PROJECT: ${WORKER_COMPOSE_PROJECT:-pencheff}
+      WORKER_COMPOSE_SERVICE: ${WORKER_COMPOSE_SERVICE:-worker}
+      # Env-driven so prod sets the real origins/base-url in the VM .env
+      # (defaults keep local dev working). This retires the previous
+      # VM-local docker-compose.yml edit that hand-removed these lines.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-["http://localhost:3000"]}
+      WEB_BASE_URL: ${WEB_BASE_URL:-http://localhost:3000}
+      # Pencheff scanning engine — operator-supplied chat-completions
+      # backend. Defaults are set in pencheff_api/config.py.
+      AGENT_LLM_API_KEY: ${AGENT_LLM_API_KEY:-}
+      AGENT_LLM_BASE_URL: ${AGENT_LLM_BASE_URL:-}
+      AGENT_LLM_MODEL: ${AGENT_LLM_MODEL:-}
+      # Dispatch tuning — when true, every scan runs the deterministic
+      # populator first and hands the populated session to the engine.
+      AGENT_DISPATCH_BETA_OVERRIDE: ${AGENT_DISPATCH_BETA_OVERRIDE:-true}
+      FREE_PLAN_OPTION_3_QUOTA: ${FREE_PLAN_OPTION_3_QUOTA:-10}
+      # Triage / grading backend — operator-supplied. Used for automated
+      # false-positive triage and audit-style executive grading.
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      # Fix-LLM — powers the auto-fix proposer (Phase 1.1) AND the AI
+      # Triage 2.0 walkthroughs (Phase 2.6). Defaults target DeepSeek's
+      # OpenAI-compatible endpoint; override per-tenant via env.
+      FIX_LLM_API_KEY: ${FIX_LLM_API_KEY:-}
+      FIX_LLM_BASE_URL: ${FIX_LLM_BASE_URL:-https://api.deepseek.com/v1}
+      FIX_LLM_MODEL: ${FIX_LLM_MODEL:-deepseek-v4-flash}
+      FIX_LLM_REQUEST_TIMEOUT: ${FIX_LLM_REQUEST_TIMEOUT:-60.0}
+      TRIAGE_LLM_MODEL: ${TRIAGE_LLM_MODEL:-deepseek-chat}
+      # Set to ``true`` to unlock AI features (AI Triage 2.0) for orgs
+      # on the Free plan. Useful for self-hosted deployments and
+      # evaluators.
+      AI_FREE_TIER_ENABLED: ${AI_FREE_TIER_ENABLED:-false}
+      # Resend — transactional email for org invitations. When unset,
+      # services/email.py logs a warning and the invite endpoint still
+      # returns the raw token so the inviter can copy-share the link.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-Pencheff <no-reply@pencheff.com>}
+      EMAIL_APP_URL: ${EMAIL_APP_URL:-}
+      # Security Lake (OCSF Iceberg). Defaults mirror config.py — a LOCAL,
+      # per-container SQLite catalog. api and worker are SEPARATE containers
+      # with separate filesystems, so the sql default is NOT a shared lake:
+      # the worker would write findings the api can't read. For a real
+      # multi-container lake, set LAKE_CATALOG_TYPE=rest + the R2_* creds in
+      # the VM .env (see docs/.../security-lake-deploy.md) and both api and
+      # worker point at the same Cloudflare R2 Data Catalog.
+      LAKE_CATALOG_TYPE: ${LAKE_CATALOG_TYPE:-sql}
+      LAKE_CATALOG_URI: ${LAKE_CATALOG_URI:-sqlite:////tmp/pencheff_lake/catalog.db}
+      LAKE_WAREHOUSE: ${LAKE_WAREHOUSE:-file:///tmp/pencheff_lake/warehouse}
+      LAKE_NAMESPACE: ${LAKE_NAMESPACE:-pencheff}
+      LAKE_TABLE: ${LAKE_TABLE:-findings}
+      LAKE_CATALOG_TOKEN: ${LAKE_CATALOG_TOKEN:-}
+      R2_ENDPOINT_URL: ${R2_ENDPOINT_URL:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+    # Explicit DNS — Docker's default ``embedded DNS resolver`` falls
+    # back to the host's resolver via ``/etc/resolv.conf``. On
+    # locked-down VPS hosts (Hostinger, OVH, Contabo, …) the host's
+    # resolver often points at an internal IP that's unreachable from
+    # inside the container's bridge network, leaving every outbound
+    # call timing out at the connect() stage. Pin to public resolvers
+    # so the container can reach api.deepseek.com / api.github.com
+    # regardless of host config.
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
+      - 8.8.8.8
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - reports:/tmp/pencheff-reports
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn pencheff_api.main:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    restart: unless-stopped
+    # The worker runs repository scanners, so the default self-hosted
+    # stack uses the toolchain image. The API service remains lean.
+    # CodeQL currently requires an amd64 Linux userland; on Apple Silicon
+    # this forces emulation so repo scans can run CodeQL instead of
+    # marking it as skipped.
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.toolchain
+    env_file:
+      # Mirror the api service — root ``.env`` first, optional
+      # ``apps/api/.env`` override.
+      - path: .env
+        required: false
+      - path: apps/api/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://pencheff:pencheff@postgres:5432/pencheff
+      REDIS_URL: redis://redis:6379/0
+      WORKER_ALWAYS_ON: ${WORKER_ALWAYS_ON:-true}
+      WORKER_IDLE_GRACE_SECONDS: ${WORKER_IDLE_GRACE_SECONDS:-30}
+      WORKER_COMPOSE_PROJECT: ${WORKER_COMPOSE_PROJECT:-pencheff}
+      WORKER_COMPOSE_SERVICE: ${WORKER_COMPOSE_SERVICE:-worker}
+      # Triage / grading backend — operator-supplied
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      # Pencheff scanning engine — operator-supplied
+      AGENT_LLM_API_KEY: ${AGENT_LLM_API_KEY:-}
+      AGENT_LLM_BASE_URL: ${AGENT_LLM_BASE_URL:-}
+      AGENT_LLM_MODEL: ${AGENT_LLM_MODEL:-}
+      AGENT_DISPATCH_BETA_OVERRIDE: ${AGENT_DISPATCH_BETA_OVERRIDE:-true}
+      FREE_PLAN_OPTION_3_QUOTA: ${FREE_PLAN_OPTION_3_QUOTA:-10}
+      # Fix-LLM — kept in parity with the api service so the worker can
+      # construct the same settings object (FixLLMClient is read-only
+      # here today, but recheck/active-verify tasks may call it later).
+      FIX_LLM_API_KEY: ${FIX_LLM_API_KEY:-}
+      FIX_LLM_BASE_URL: ${FIX_LLM_BASE_URL:-https://api.deepseek.com/v1}
+      FIX_LLM_MODEL: ${FIX_LLM_MODEL:-deepseek-v4-flash}
+      FIX_LLM_REQUEST_TIMEOUT: ${FIX_LLM_REQUEST_TIMEOUT:-60.0}
+      TRIAGE_LLM_MODEL: ${TRIAGE_LLM_MODEL:-deepseek-chat}
+      AI_FREE_TIER_ENABLED: ${AI_FREE_TIER_ENABLED:-false}
+      # Resend — same keys as the API service. The worker doesn't send
+      # invites today, but is the natural home for future async email
+      # work (finding-discovered notifications, scan-completed digests),
+      # so we wire the keys here for parity.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-Pencheff <no-reply@pencheff.com>}
+      EMAIL_APP_URL: ${EMAIL_APP_URL:-}
+      # Security Lake — MUST match the api service exactly so both point at
+      # the same catalog/warehouse. The worker is the only writer (ingest
+      # tasks); the api reads. With the sql default they use separate local
+      # filesystems and do NOT share data — set LAKE_CATALOG_TYPE=rest + R2_*
+      # in the VM .env for a real shared lake.
+      LAKE_CATALOG_TYPE: ${LAKE_CATALOG_TYPE:-sql}
+      LAKE_CATALOG_URI: ${LAKE_CATALOG_URI:-sqlite:////tmp/pencheff_lake/catalog.db}
+      LAKE_WAREHOUSE: ${LAKE_WAREHOUSE:-file:///tmp/pencheff_lake/warehouse}
+      LAKE_NAMESPACE: ${LAKE_NAMESPACE:-pencheff}
+      LAKE_TABLE: ${LAKE_TABLE:-findings}
+      LAKE_CATALOG_TOKEN: ${LAKE_CATALOG_TOKEN:-}
+      R2_ENDPOINT_URL: ${R2_ENDPOINT_URL:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+    # Explicit DNS — same reasoning as the api service: VPS hosts often
+    # have a host-level resolver that's unreachable from container
+    # bridge networks, so we pin to public DNS so outbound HTTPS calls
+    # (LLM providers, GitHub clone-and-push, OSV.dev queries) resolve.
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
+      - 8.8.8.8
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - reports:/tmp/pencheff-reports
+    # ``-B`` runs the embedded beat scheduler (periodic tasks: zombie-scan
+    # recovery, scheduled-scan dispatch, SLA monitor, retention prune, weekly
+    # digest). Beat is only enabled in always-on mode — in on-demand mode the
+    # worker is started/stopped on demand (so beat would be unreliable) and the
+    # always-on API process drives the periodic tasks instead. Gating it here
+    # keeps the two modes mutually exclusive and avoids double-dispatch.
+    # ``$$`` escapes compose substitution so the shell reads WORKER_ALWAYS_ON at runtime.
+    # ``$$`` escapes compose substitution so the shell reads
+    # WORKER_ALWAYS_ON at runtime.
+    command:
+      - sh
+      - -c
+      - >
+        celery -A pencheff_api.tasks.celery_app.celery_app worker
+        --loglevel=info
+        --concurrency=${WORKER_CONCURRENCY:-2}
+        --queues core,cat_code_supply
+        $$([ "$${WORKER_ALWAYS_ON:-true}" = "true" ] && echo -B)
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  pg_data:
+  reports:

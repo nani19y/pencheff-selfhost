@@ -1,0 +1,617 @@
+/* ============================================================================
+ * Pencheff Docs — Sunset Observability theme overlay for Nextra 3.x
+ * Mirrors the web app's palette: warm paper, warm ink, ember orange brand,
+ * champagne→amber gilt highlights.
+ * ========================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+/* ── Palette tokens (mirror apps/web/styles/globals.css) ── */
+:root {
+  --doc-ink: #150f0a;
+  --doc-dusk: #1a0f08;
+  --doc-graphite: #322a20;
+  --doc-slate: #6b5e47;
+  --doc-mist: #b5a993;
+  --doc-hairline: #e8dcc6;
+  --doc-paper: #ffffff;
+  --doc-vellum: #fbf6ec;
+  --doc-parchment: #fdf8ef;
+
+  --doc-orange-50: #fff6ee;
+  --doc-orange-100: #ffe6d1;
+  --doc-orange-200: #ffc79a;
+  --doc-orange-300: #ffa158;
+  --doc-orange-400: #fb7a1c;
+  --doc-orange-500: #e85a06;
+  --doc-orange-600: #c44805;
+  --doc-orange-700: #9a3604;
+
+  --doc-gold-50: #fffbed;
+  --doc-gold-100: #fff2c7;
+  --doc-gold-200: #f8dd85;
+  --doc-gold-300: #e5bd63;
+  --doc-gold-400: #c9a24e;
+  --doc-gold-500: #a8843a;
+  --doc-gold-600: #8a6a2a;
+
+  --doc-ember: var(--doc-orange-400);
+  --doc-ember-deep: var(--doc-orange-500);
+  --doc-gilt: var(--doc-gold-400);
+  --doc-gilt-deep: var(--doc-gold-600);
+
+  /* Nextra primary → ember orange */
+  --nextra-primary-hue: 22;
+  --nextra-primary-saturation: 92%;
+  --nextra-primary-lightness: 51%;
+
+  /* Nextra background → paper */
+  --nextra-bg: 255 255 255;
+
+  --doc-shadow-elev: 0 8px 24px -12px rgba(60, 30, 8, 0.18);
+  --doc-shadow-ember: 0 12px 32px -16px rgba(232, 90, 6, 0.32);
+}
+
+/* ── Base typography ── */
+html {
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11", "tnum";
+  color: var(--doc-graphite);
+  background: var(--doc-paper);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--doc-paper);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  color: var(--doc-ink) !important;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+h1 {
+  font-size: 2.4rem;
+  line-height: 1.06;
+  letter-spacing: -0.022em;
+}
+h2 {
+  font-size: 1.65rem;
+  line-height: 1.18;
+}
+h3 {
+  font-size: 1.28rem;
+  line-height: 1.3;
+}
+h4 {
+  font-size: 1.1rem;
+  line-height: 1.35;
+}
+
+::selection {
+  background: var(--doc-orange-400);
+  color: var(--doc-paper);
+}
+
+code,
+kbd,
+pre {
+  font-family: "JetBrains Mono", "Geist Mono", ui-monospace, monospace;
+  font-size: 0.86em;
+}
+
+/* ── Navbar ── */
+.nextra-nav-container {
+  background: var(--doc-paper) !important;
+  border-bottom: 1px solid var(--doc-hairline) !important;
+  box-shadow: none !important;
+}
+.nextra-nav-container-blur {
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: saturate(1.15) blur(14px);
+  -webkit-backdrop-filter: saturate(1.15) blur(14px);
+  border-bottom: 1px solid var(--doc-hairline) !important;
+}
+
+/* Top-nav links */
+.nextra-nav-container a,
+.nextra-nav-container button {
+  color: var(--doc-graphite) !important;
+  font-weight: 500;
+}
+.nextra-nav-container a:hover {
+  color: var(--doc-ember-deep) !important;
+}
+
+/* ── Sidebar ── */
+.nextra-sidebar-container {
+  background: var(--doc-paper) !important;
+  border-right: 1px solid var(--doc-hairline) !important;
+}
+
+.nextra-sidebar-container a,
+.nextra-sidebar-container button {
+  color: var(--doc-slate) !important;
+  font-family: "IBM Plex Sans", system-ui, sans-serif !important;
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  border-radius: 6px !important;
+  transition:
+    color 0.15s,
+    background-color 0.15s;
+}
+
+.nextra-sidebar-container a:hover,
+.nextra-sidebar-container button:hover {
+  color: var(--doc-ink) !important;
+  background: var(--doc-parchment) !important;
+}
+
+/* Active sidebar item — ember accent */
+.nextra-sidebar-container a[class*="active"],
+.nextra-sidebar-container li[class*="active"] > a {
+  color: var(--doc-orange-700) !important;
+  font-weight: 600 !important;
+  background: var(--doc-orange-50) !important;
+  border-left: 2px solid var(--doc-ember) !important;
+  padding-left: 12px !important;
+}
+
+/* Sidebar section headings */
+.nextra-sidebar-container h6,
+.nextra-sidebar-container [class*="separator"] {
+  color: var(--doc-slate) !important;
+  font-family: "JetBrains Mono", monospace !important;
+  font-size: 10px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.18em !important;
+  font-weight: 500 !important;
+}
+
+/* ── TOC (right rail) ── */
+.nextra-toc {
+  border-left: 1px solid var(--doc-hairline) !important;
+}
+
+.nextra-toc a {
+  color: var(--doc-slate) !important;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 12.5px;
+  font-weight: 400;
+  transition: color 0.15s;
+}
+
+.nextra-toc a:hover {
+  color: var(--doc-ember-deep) !important;
+}
+.nextra-toc a[class*="active"] {
+  color: var(--doc-ember-deep) !important;
+  font-weight: 600 !important;
+}
+
+/* ── Links in article body ── */
+article a,
+.nextra-content a {
+  color: var(--doc-orange-600);
+  text-underline-offset: 4px;
+  text-decoration-color: var(--doc-gold-300);
+  text-decoration-thickness: 1px;
+  transition:
+    color 0.15s,
+    text-decoration-color 0.15s;
+}
+
+article a:hover,
+.nextra-content a:hover {
+  color: var(--doc-ember-deep);
+  text-decoration-color: var(--doc-ember);
+}
+
+/* ── Callout / note boxes ── */
+.nextra-callout {
+  border-color: var(--doc-hairline) !important;
+  background: var(--doc-vellum) !important;
+  border-radius: 8px !important;
+}
+/* Info callout — ember tint */
+.nextra-callout[class*="info"] {
+  background: var(--doc-orange-50) !important;
+  border-color: var(--doc-orange-200) !important;
+  border-left: 3px solid var(--doc-ember) !important;
+}
+/* Warning callout — gilt tint */
+.nextra-callout[class*="warning"] {
+  background: var(--doc-gold-50) !important;
+  border-color: var(--doc-gold-200) !important;
+  border-left: 3px solid var(--doc-gilt) !important;
+}
+
+/* ── Code blocks ── */
+pre {
+  background: var(--doc-dusk) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--doc-shadow-elev);
+}
+
+/* Inline code in paragraphs */
+:not(pre) > code {
+  background: var(--doc-parchment) !important;
+  border: 1px solid var(--doc-hairline) !important;
+  color: var(--doc-orange-700) !important;
+  padding: 1px 6px !important;
+  border-radius: 4px !important;
+  font-size: 0.86em !important;
+}
+
+/* ── Banner (top promo strip) ── */
+.nextra-banner-container {
+  background: linear-gradient(
+    90deg,
+    var(--doc-ink) 0%,
+    var(--doc-dusk) 50%,
+    var(--doc-ink) 100%
+  ) !important;
+  color: var(--doc-paper) !important;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 13px;
+  border-bottom: 1px solid var(--doc-orange-700);
+  position: relative;
+}
+.nextra-banner-container::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--doc-gilt) 30%,
+    var(--doc-ember) 50%,
+    var(--doc-gilt) 70%,
+    transparent
+  );
+  opacity: 0.6;
+}
+
+.nextra-banner-container a {
+  color: var(--doc-orange-200) !important;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--doc-gilt);
+  font-weight: 500;
+}
+.nextra-banner-container a:hover {
+  color: var(--doc-paper) !important;
+}
+
+/* ── Search ── */
+.nextra-search input {
+  border: 1px solid var(--doc-hairline) !important;
+  background: var(--doc-paper) !important;
+  color: var(--doc-ink) !important;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  border-radius: 6px !important;
+  font-size: 13.5px;
+}
+
+.nextra-search input:focus {
+  border-color: var(--doc-ember) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(251, 122, 28, 0.18) !important;
+}
+
+.nextra-search input::placeholder {
+  color: var(--doc-mist) !important;
+}
+
+/* ── Footer ── */
+footer {
+  border-top: 1px solid var(--doc-hairline) !important;
+  background: linear-gradient(
+    180deg,
+    var(--doc-paper) 0%,
+    var(--doc-parchment) 100%
+  ) !important;
+  color: var(--doc-slate) !important;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 13px;
+}
+
+footer a {
+  color: var(--doc-slate) !important;
+  transition: color 0.15s;
+}
+
+footer a:hover {
+  color: var(--doc-ember-deep) !important;
+}
+
+/* ── Tables ── */
+.nextra-content table,
+article table {
+  border: 1px solid var(--doc-hairline) !important;
+  border-radius: 6px !important;
+  overflow: hidden;
+}
+.nextra-content thead,
+article thead {
+  background: var(--doc-vellum) !important;
+}
+.nextra-content th,
+article th {
+  font-family: "JetBrains Mono", monospace !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.18em !important;
+  color: var(--doc-slate) !important;
+  font-weight: 500 !important;
+}
+.nextra-content tbody tr:hover td,
+article tbody tr:hover td {
+  background: var(--doc-orange-50) !important;
+}
+
+/* ── Horizontal rule with gilt accent ── */
+.nextra-content hr,
+article hr {
+  border: 0;
+  border-top: 1px solid var(--doc-hairline);
+  height: 1px;
+  margin: 2.5em 0;
+  position: relative;
+}
+
+/* ── Anchor links on headings (hash icon) ── */
+.nextra-content h2 a,
+.nextra-content h3 a,
+.nextra-content h4 a {
+  color: var(--doc-gilt-deep) !important;
+}
+
+/* ── "Next page / Prev page" pagination footer ── */
+.nextra-content [class*="nextra-nav-button"] {
+  border: 1px solid var(--doc-hairline) !important;
+  background: var(--doc-paper) !important;
+  color: var(--doc-graphite) !important;
+  border-radius: 8px !important;
+  transition: all 0.2s;
+}
+.nextra-content [class*="nextra-nav-button"]:hover {
+  border-color: var(--doc-ember) !important;
+  color: var(--doc-ember-deep) !important;
+  transform: translateY(-1px);
+  box-shadow: var(--doc-shadow-elev);
+}
+
+/* ── DARK MODE — neutral near-black + coral accent (dev-docs) ──────────── */
+.dark {
+  /* Neutral surfaces */
+  --doc-ink: #f5f5f7; /* headings */
+  --doc-dusk: #0a0a0c; /* deepest (code) */
+  --doc-graphite: #d8d8de; /* body text */
+  --doc-slate: #9a9aa4; /* secondary / sidebar inactive */
+  --doc-mist: #6c6c77;
+  --doc-hairline: #26262c;
+  --doc-paper: #131316; /* raised surface */
+  --doc-vellum: #1a1a1f;
+  --doc-parchment: #151519;
+
+  /* Accent ramp → coral-red. Overriding the orange ramp re-points every
+   * dark rule that references --doc-orange-* / --doc-ember to coral. */
+  --doc-orange-50: #2a1512;
+  --doc-orange-100: #4a201a;
+  --doc-orange-200: #ffb3a8;
+  --doc-orange-300: #ff8073; /* links / active / hover text on dark */
+  --doc-orange-400: #ff5c4d; /* primary accent */
+  --doc-orange-500: #f2422f;
+  --doc-orange-600: #e0402f;
+  --doc-orange-700: #ff8073;
+
+  --doc-ember: #ff5c4d;
+  --doc-ember-deep: #f2422f;
+  --doc-gilt: #ff8073;
+  --doc-gilt-deep: #ff5c4d;
+
+  --nextra-bg: 12 12 14;
+  --nextra-primary-hue: 8;
+  --nextra-primary-saturation: 100%;
+  --nextra-primary-lightness: 67%;
+  color-scheme: dark;
+
+  --doc-shadow-elev: 0 8px 24px -10px rgba(0, 0, 0, 0.7);
+  --doc-shadow-ember: 0 12px 32px -16px rgba(242, 66, 47, 0.4);
+}
+
+.dark body,
+.dark html {
+  background: #0c0c0e !important;
+  color: var(--doc-graphite) !important;
+}
+
+/* Nav + blur layer */
+.dark .nextra-nav-container,
+.dark .nextra-nav-container-blur {
+  background: rgba(12, 12, 14, 0.82) !important;
+  border-bottom-color: var(--doc-hairline) !important;
+}
+
+.dark .nextra-nav-container a,
+.dark .nextra-nav-container button {
+  color: var(--doc-graphite) !important;
+}
+
+/* Sidebar */
+.dark .nextra-sidebar-container {
+  background: #0c0c0e !important;
+  border-right-color: var(--doc-hairline) !important;
+}
+
+.dark .nextra-sidebar-container a,
+.dark .nextra-sidebar-container button {
+  color: var(--doc-slate) !important;
+}
+
+.dark .nextra-sidebar-container a:hover,
+.dark .nextra-sidebar-container button:hover {
+  color: var(--doc-ink) !important;
+  background: var(--doc-vellum) !important;
+}
+
+.dark .nextra-sidebar-container a[class*="active"],
+.dark .nextra-sidebar-container li[class*="active"] > a {
+  color: var(--doc-orange-300) !important;
+  background: rgba(251, 122, 28, 0.1) !important;
+  border-left-color: var(--doc-ember) !important;
+}
+
+/* TOC */
+.dark .nextra-toc {
+  border-left-color: var(--doc-hairline) !important;
+}
+.dark .nextra-toc a {
+  color: var(--doc-slate) !important;
+}
+.dark .nextra-toc a:hover,
+.dark .nextra-toc a[class*="active"] {
+  color: var(--doc-orange-300) !important;
+}
+
+/* Headings */
+.dark h1,
+.dark h2,
+.dark h3,
+.dark h4,
+.dark h5,
+.dark h6 {
+  color: var(--doc-ink) !important;
+}
+
+/* Body links */
+.dark article a,
+.dark .nextra-content a {
+  color: var(--doc-orange-300);
+  text-decoration-color: var(--doc-gold-400);
+}
+.dark article a:hover,
+.dark .nextra-content a:hover {
+  color: var(--doc-orange-200);
+  text-decoration-color: var(--doc-ember);
+}
+
+/* Callouts */
+.dark .nextra-callout {
+  border-color: var(--doc-hairline) !important;
+  background: var(--doc-vellum) !important;
+  color: var(--doc-graphite) !important;
+}
+.dark .nextra-callout[class*="info"] {
+  background: rgba(251, 122, 28, 0.08) !important;
+  border-color: rgba(251, 122, 28, 0.3) !important;
+  color: var(--doc-orange-200) !important;
+}
+.dark .nextra-callout[class*="warning"] {
+  background: rgba(201, 162, 78, 0.08) !important;
+  border-color: rgba(201, 162, 78, 0.3) !important;
+  color: var(--doc-gold-200) !important;
+}
+
+/* Code blocks — pre stays dark; brighten inline code */
+.dark pre {
+  background: #0d0d10 !important;
+  border-color: rgba(255, 255, 255, 0.05) !important;
+  box-shadow: var(--doc-shadow-elev);
+}
+
+.dark :not(pre) > code {
+  background: var(--doc-vellum) !important;
+  border-color: var(--doc-hairline) !important;
+  color: var(--doc-orange-300) !important;
+}
+
+/* Banner stays dark — refresh the underline gradient */
+.dark .nextra-banner-container {
+  background: linear-gradient(
+    90deg,
+    #0a0a0c 0%,
+    #0c0c0e 50%,
+    #0a0a0c 100%
+  ) !important;
+}
+.dark .nextra-banner-container a {
+  color: var(--doc-orange-300) !important;
+}
+
+/* Search input */
+.dark .nextra-search input {
+  background: var(--doc-vellum) !important;
+  color: var(--doc-ink) !important;
+  border-color: var(--doc-hairline) !important;
+}
+.dark .nextra-search input:focus {
+  border-color: var(--doc-ember) !important;
+  box-shadow: 0 0 0 3px rgba(251, 122, 28, 0.22) !important;
+}
+.dark .nextra-search input::placeholder {
+  color: var(--doc-mist) !important;
+}
+
+/* Footer */
+.dark footer {
+  background: linear-gradient(180deg, #0c0c0e 0%, #131316 100%) !important;
+  border-top-color: var(--doc-hairline) !important;
+  color: var(--doc-slate) !important;
+}
+.dark footer a {
+  color: var(--doc-slate) !important;
+}
+.dark footer a:hover {
+  color: var(--doc-orange-300) !important;
+}
+
+/* Tables */
+.dark .nextra-content table,
+.dark article table {
+  border-color: var(--doc-hairline) !important;
+}
+.dark .nextra-content thead,
+.dark article thead {
+  background: var(--doc-vellum) !important;
+}
+.dark .nextra-content th,
+.dark article th {
+  color: var(--doc-slate) !important;
+}
+.dark .nextra-content tbody tr:hover td,
+.dark article tbody tr:hover td {
+  background: rgba(251, 122, 28, 0.08) !important;
+}
+
+/* Page-nav pagination buttons */
+.dark .nextra-content [class*="nextra-nav-button"] {
+  background: var(--doc-vellum) !important;
+  border-color: var(--doc-hairline) !important;
+  color: var(--doc-graphite) !important;
+}
+.dark .nextra-content [class*="nextra-nav-button"]:hover {
+  border-color: var(--doc-ember) !important;
+  color: var(--doc-orange-300) !important;
+}
+
+/* Heading anchor hash icon */
+.dark .nextra-content h2 a,
+.dark .nextra-content h3 a,
+.dark .nextra-content h4 a {
+  color: var(--doc-gold-400) !important;
+}

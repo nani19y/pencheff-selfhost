@@ -1,0 +1,146 @@
+---
+title: Tutorial — LLM A/B regression gate
+description: Run the same red-team suite against an old + new model and gate deployment on regressions.
+---
+
+import { Callout } from "nextra/components";
+
+# Tutorial: LLM A/B regression gate
+
+Use Pencheff&rsquo;s `--compare-to` flag and the scan-comparison
+endpoint to gate model upgrades on safety regressions. Same prompts,
+two models, one diff.
+
+## Scenario
+
+* **Today.** Production runs `acme-copilot-prod` (Llama 3.3 70B).
+* **Tomorrow.** A PR proposes a swap to `acme-copilot-next`
+  (Mixtral 8x22B). The eval team says it&rsquo;s smarter; the
+  safety team wants proof it&rsquo;s not less safe.
+* **Goal.** A side-by-side diff that fails the merge if any new
+  failure techniques appear.
+
+## 1. Baseline scan against the current model
+
+```bash
+pencheff llm-redteam \
+  --target https://copilot.acme.com/api/chat/completions \
+  --provider openai-chat \
+  --model acme-copilot-prod \
+  --header "Authorization=Bearer $COPILOT_TOKEN" \
+  --profile standard \
+  --strategies 'base64,jailbreak,crescendo,leetspeak' \
+  --datasets 'donotanswer,harmbench' \
+  --judge-provider openai-moderation \
+  --judge-endpoint https://api.openai.com/v1/moderations \
+  --output-format json \
+  --output-file baseline.json
+```
+
+Persist `baseline.json` &mdash; this is the source of truth for
+&ldquo;the current model passes today.&rdquo; Re-run the baseline
+only when the system prompt or guardrails change.
+
+## 2. Candidate scan with `--compare-to`
+
+The CLI computes the regression diff inline when you point it at
+the previous run with `--compare-to`:
+
+```bash
+pencheff llm-redteam \
+  --target https://copilot.acme.com/api/chat/completions \
+  --provider openai-chat \
+  --model acme-copilot-next \
+  --header "Authorization=Bearer $COPILOT_TOKEN" \
+  --profile standard \
+  --strategies 'base64,jailbreak,crescendo,leetspeak' \
+  --datasets 'donotanswer,harmbench' \
+  --judge-provider openai-moderation \
+  --judge-endpoint https://api.openai.com/v1/moderations \
+  --compare-to baseline.json \
+  --output-format json \
+  --output-file candidate.json \
+  --fail-on high
+```
+
+The output JSON now carries a `regression` block alongside the
+candidate&rsquo;s findings:
+
+```json
+{
+  "regression": {
+    "regressions": [
+      {"owasp": "LLM01", "technique": "direct_override",
+       "baseline_failures": 2, "candidate_failures": 7}
+    ],
+    "fixes": [
+      {"owasp": "LLM05", "technique": "xss_markdown",
+       "baseline_failures": 4, "candidate_failures": 0}
+    ],
+    "common_failures": [
+      {"owasp": "LLM07", "technique": "completion_shotgun",
+       "baseline_failures": 3, "candidate_failures": 3}
+    ]
+  }
+}
+```
+
+## 3. Or compare from the API
+
+When both scans landed on the SaaS dashboard, pull the diff from
+the public endpoint:
+
+```bash
+curl -s -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  "$PENCHEFF_API_BASE/scans/$BASELINE_SCAN_ID/compare/$CANDIDATE_SCAN_ID" \
+  | jq
+```
+
+The web UI exposes the same diff at
+`/scans/compare?a=$BASELINE&b=$CANDIDATE`.
+
+## 4. Gate the merge
+
+The CLI&rsquo;s `--fail-on high` already exits non-zero on any
+HIGH+ candidate finding. Layer a regression check on top with
+plain `jq`:
+
+```bash
+test "$(jq '.regression.regressions | length' candidate.json)" -eq 0 || {
+  echo "::error::LLM safety regressions detected"
+  exit 1
+}
+```
+
+## 5. Share-by-link to the safety reviewer
+
+```bash
+curl -X POST -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  "$PENCHEFF_API_BASE/scans/$CANDIDATE_SCAN_ID/share?ttl_seconds=604800"
+```
+
+Returns a Fernet-encrypted token. The public route
+`GET /share/llm/{token}` renders the report as HTML / Markdown /
+CSV / JSON without auth &mdash; token expiry is the only revocation.
+
+<Callout type="info">
+  **Why share-by-link instead of an account invite?** Safety
+  reviewers are usually external and short-engagement. The token
+  is scoped to one scan, expires automatically, and revoking is a
+  single endpoint.
+</Callout>
+
+## Deliverable
+
+* A CI gate the platform team trusts (no regressions &rarr; merge).
+* A share-link the safety reviewer can open without an account.
+* The candidate scan&rsquo;s [compliance
+  rollup](/features/compliance-mapping) on the LLM framework set,
+  ready to drop into the AI risk register.
+
+## Next
+
+* [Compliance overview](/compliance/overview) &mdash; the AI
+  framework deep-dives.
+* [Grafana dashboard](/features/llm-redteam#grafana-dashboard)
+  &mdash; trend the failure rate over time.

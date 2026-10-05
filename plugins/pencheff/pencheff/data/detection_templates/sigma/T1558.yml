@@ -1,0 +1,20 @@
+title: Kerberoasting Activity (T1558.003)
+id: pencheff-t1558-{{rule_uuid}}
+status: experimental
+description: Anomalous TGS-REP requests for many SPNs from a single account.
+references:
+  - https://attack.mitre.org/techniques/T1558/003/
+tags:
+  - attack.credential_access
+  - attack.t1558.003
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4769
+    TicketEncryptionType: '0x17'
+  condition: selection
+falsepositives:
+  - Legitimate service initialization
+level: high

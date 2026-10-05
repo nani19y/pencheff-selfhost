@@ -1,0 +1,76 @@
+---
+title: External tool integration
+---
+
+# Working with external tools
+
+`run_security_tool(session_id, tool, args, timeout=120)` executes any
+allow-listed tool via safe `subprocess` (no shell). Pencheff integrates
+auxiliary tools across every phase of a pentest. Core port mapping, SQLi,
+web exposure, and template detection are handled by Pencheff first-party
+engines.
+
+## Network
+
+`masscan`, `naabu`, `fping`, `unicornscan`, `netcat`, `hping3`,
+
+
+## Vulnerability scanning
+
+`openvas`, `gvm-cli`, `skipfish`, `vega`.
+
+## Password cracking
+
+`john`, `hashcat`, `rcrack`, `hydra`, `medusa`, `l0phtcrack`,
+`cowpatty`, `aircrack-ng`, `ophcrack`.
+
+## Exploitation
+
+`msfconsole`, `msfvenom`, `setoolkit`, `beef-xss`,
+`armitage`, `zap-cli`, `zaproxy`, `commix`.
+
+## Directory / web
+
+`ffuf`, `gobuster`, `dirb`, `wfuzz`, `feroxbuster`, `dirsearch`,
+`whatweb`, `wafw00f`, `wpscan`, `dalfox`, `xsstrike`.
+
+## Recon
+
+`subfinder`, `amass`, `fierce`, `dnsrecon`, `sublist3r`, `knockpy`,
+`dnsenum`, `theHarvester`, `maltego`, `recon-ng`, `sherlock`,
+`spiderfoot`.
+
+## TLS
+
+`sslscan`, `testssl`, `sslyze`, `openssl`.
+
+## SCA / IaC / container (new in v1)
+
+`syft`, `grype`, `trivy`, `checkov`, `hadolint`, `tfsec`, `kubesec`,
+`osv-scanner`, `cyclonedx-cli`, `dependency-check`, `helm`, `gitleaks`.
+
+## Intercepting proxy (new in v1)
+
+`mitmdump`, `mitmproxy`.
+
+## Invocation
+
+```text
+pencheff sqli --url "https://target/login?user=test" --profile deep \
+  --risk 2 --level 4 --traffic-log .pencheff/sqli-evidence.jsonl
+```
+
+Pencheff only executes tools from the allow-list in
+[`server.py`](https://github.com/Magadha-IG/pencheff/blob/main/plugins/pencheff/pencheff/server.py).
+There is no shell interpolation — `args` is passed as a list directly
+to `subprocess`.
+
+## Which tools are installed?
+
+```text
+check_dependencies(session_id=sid)
+→ {
+"ffuf": true,
+    "trivy": false, "hadolint": true, ...
+  }
+```

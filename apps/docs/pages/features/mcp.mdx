@@ -1,0 +1,86 @@
+---
+title: MCP — drive Pencheff from your IDE
+---
+
+# MCP — drive Pencheff from your IDE
+
+Pencheff runs a remote **Model Context Protocol (MCP)** server at
+`mcp.pencheff.com`. Connect it to **Claude Code, Cursor, Codex, or any
+MCP-capable IDE** and drive the full Pencheff engine — reconnaissance,
+scanning, verification, exploitation, reporting, and repository scan/fix —
+without leaving your editor. Findings and scans sync straight to your Pencheff
+dashboard.
+
+## Why use Pencheff over MCP
+
+- **Your IDE's model does the orchestration.** The IDE agent (Claude, GPT,
+  Gemini…) decides which Pencheff tools to run and chains them; Pencheff
+  executes the actual security work.
+- **No Pencheff AI quota or credits consumed for IDE-driven work.** When your
+  plan's monthly AI quota is spent — or your credits run out — you can keep
+  scanning and fixing through MCP. The reasoning and code fixes run on **your
+  IDE's own model**, so Pencheff charges nothing for them. Results still land in
+  the dashboard. (See the callout at the bottom.)
+- **Local or server-side.** Let the worker clone + scan a repo, or have your IDE
+  agent scan/fix a repo **locally with its own model** and sync the results up.
+
+## Connect
+
+**Claude Code**
+
+```bash
+claude mcp add --transport http pencheff https://mcp.pencheff.com/mcp
+```
+
+Authenticate with your Pencheff (Clerk) account when prompted. **Cursor / Codex
+/ other IDEs:** add an MCP server entry pointing at
+`https://mcp.pencheff.com/mcp` (streamable HTTP, OAuth via Clerk).
+
+## Scan a repository
+
+Just ask your IDE: _"Scan `github.com/acme/api` with pencheff."_ Your agent
+calls the **`scan_repository`** tool → Pencheff clones the repo and runs the
+full SAST toolchain (Semgrep, Bandit, gitleaks, gosec, osv-scanner, ESLint, …)
+**on the Pencheff worker**, registers it as a `source_code` target, and the
+findings appear in your dashboard. No local toolchain required.
+
+## Local scan + fix with your own model
+
+Two prompts let your IDE do the work locally, using its own model — nothing is
+sent to Pencheff's LLM:
+
+- **`/pencheff:pencheff_scan_source <repo>`** — your IDE agent clones the repo
+  locally, runs SAST with its own tools, calls **`ingest_findings`** to sync the
+  results to the UI, then deletes the clone.
+- **`/pencheff:pencheff_fix_all <repo>`** — your IDE agent fixes the findings in
+  your local checkout using its **own model + edit tools**, runs your linters,
+  opens **one pull request** with `gh`, and cleans up. Pencheff's fix LLM is
+  never used.
+
+## The full toolset
+
+The MCP server exposes 60+ tools, including `recon_passive` / `recon_active`,
+`scan_api`, `scan_websocket`, `scan_injection`, `run_graphql_cop` / `run_inql`
+(GraphQL), `test_endpoint`, `exploit_finding`, `get_findings`, `create_report`,
+`scan_repository`, and `ingest_findings`. Your agent composes them like any
+other MCP tools.
+
+<div style={{ border: "1px solid var(--x-color-border, #e5e7eb)", borderRadius: 8, padding: "1rem 1.25rem", marginTop: "1.5rem" }}>
+
+### 💡 Out of AI quota or credits? Use MCP.
+
+If your plan's monthly **AI quota** is exhausted, or your **credits** are used
+up, in-app scans fall back to the deterministic engine and Fix-all is paused.
+You can keep going through MCP instead: connect your IDE to `mcp.pencheff.com`
+and run `scan_repository` / `pencheff_fix_all`. Because the IDE's own model does
+the reasoning and the fixes, **no Pencheff AI quota or credits are consumed** —
+and the findings and PRs still sync back to your dashboard.
+
+</div>
+
+## Related
+
+- [IDE extensions (VSCode + JetBrains)](/features/ide) — the LSP-based inline
+  experience (separate from MCP).
+- [Auto-fix PRs](/features/auto-fix) — server-side fix generation (uses your
+  plan's fix LLM / credits).

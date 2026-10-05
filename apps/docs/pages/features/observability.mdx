@@ -1,0 +1,297 @@
+---
+title: Observability (OpenTelemetry → Postgres)
+---
+
+# Observability
+
+End-to-end **traces**, **logs**, **metrics**, and a tamper-evident
+**audit trail** across every Pencheff surface — FastAPI + Celery
+workers + the MCP plugin + every external tool subprocess
+(nmap, sqlmap, nikto, hydra, nuclei, ffuf) + LLM agent turns +
+HTTP fan-out — backed by your existing Postgres with **7-day retention**
+by default.
+
+Off by default. Flip one env var to turn it on; vanilla deployments
+pay zero overhead.
+
+## At a glance
+
+| Pillar | What it captures | Where it lives |
+| --- | --- | --- |
+| **Traces** | Every scan, every HTTP request, every subprocess, every LLM call | `otel_spans` |
+| **Logs** | Structured app logs with `trace_id` correlation | `otel_logs` |
+| **Metrics** | RED + USE: error rate, latency p50/p95/p99, queue depth | `otel_metrics` |
+| **Audit** | Every mutating API call (POST/PUT/PATCH/DELETE), sha256 hash chain | `audit_logs` |
+
+All four tables live in your existing Postgres database. The three
+OTel signal tables are partitioned by day so retention is a metadata-only
+`DROP TABLE` rather than a multi-million-row `DELETE`.
+
+## Configuration
+
+Every knob is an env var with a sensible default. Add to `.env`:
+
+```ini
+# Master kill-switch. False (default) keeps every observability hook
+# in a no-op state — zero overhead, zero new spans.
+PENCHEFF_OBSERVABILITY_ENABLED=false
+
+# Head sampler ratio (0.0–1.0). ParentBased so the root scan span is
+# always sampled even when child sampling is dialled down.
+PENCHEFF_OBSERVABILITY_SAMPLE_RATIO=1.0
+
+# Telemetry retention — spans, logs, metrics. Hourly Celery beat
+# DROPs partitions older than this.
+PENCHEFF_OBSERVABILITY_RETENTION_DAYS=7
+
+# Audit-log retention. Independent knob because compliance frameworks
+# (SOC2 / ISO 27001) usually require longer than telemetry.
+PENCHEFF_AUDIT_RETENTION_DAYS=7
+
+# Resource attribute attached to every signal.
+PENCHEFF_OBSERVABILITY_SERVICE_NAME=pencheff-api
+
+# Plugin-side: where the MCP plugin ships traces over OTLP/HTTP.
+# Empty = local-only (~/.pencheff/logs/otel-YYYYMMDD.jsonl).
+PENCHEFF_OBSERVABILITY_OTLP_URL=
+PENCHEFF_OBSERVABILITY_OTLP_TOKEN=
+PENCHEFF_OBSERVABILITY_LOCAL_DIR=
+```
+
+## Turning it on
+
+```bash
+# 1. Flip the kill-switch in .env
+PENCHEFF_OBSERVABILITY_ENABLED=true
+
+# 2. Apply migration 0041 (otel tables) and 0042 (audit hash chain)
+cd apps/api && alembic upgrade head
+
+# 3. Restart API + Celery
+docker compose restart api worker beat
+```
+
+Within seconds, every scan, every API request, and every subprocess
+emits spans into `otel_spans`. The dashboards under `/observability`
+(SLO, audit, cost) populate from the same tables.
+
+## What you can do with it
+
+### Debug a failed scan
+
+> Why did this scan fail at 47%?
+
+Open `/observability/traces/<scan_id>` in the dashboard. The waterfall
+shows every span attached to the scan: HTTP fan-out from
+`PencheffHTTPClient`, subprocess spans for nmap/sqlmap, LLM calls to
+the agent, and any uncaught exceptions. The failed span is red; click
+to see status_code, duration, and module attribution.
+
+The same data via SQL:
+
+```sql
+SELECT name, duration_ns / 1e6 AS ms, status_code, status_message
+FROM   otel_spans
+WHERE  scan_id = '11111111-2222-3333-4444-555555555555'
+  AND  status_code = 2     -- ERROR
+ORDER BY started_at;
+```
+
+### Monitor system health
+
+Visit `/observability/slo`. Cards for **error rate**, **p50/p95/p99
+latency**, **active scans**, **queued scans**. Choose a window from 15
+minutes to 24 hours.
+
+The numbers come from FastAPI server spans (kind = 1) — no manual
+instrumentation, the auto-instrumentor wires it for you.
+
+### Audit "who scanned what target, when"
+
+`/observability/audit` shows a paginated table of every mutating API
+call, with actor, action, IP, user agent, and a link to the request's
+trace.
+
+Each row carries a sha256 chain hash:
+`row_hash = sha256(prev_hash || canonical_json(row))`. Click **Verify
+hash chain** to walk the chain start-to-end and confirm intactness.
+Tamper with any row at the DB layer and the verifier identifies the
+first broken row by id.
+
+A `pg_advisory_xact_lock` serialises chain inserts so two concurrent
+mutations don't both read the same `prev_hash`.
+
+### Track LLM cost
+
+`/observability/cost` aggregates `gen_ai.usage.*_tokens` across all
+LLM spans, grouped by model. Default window is 7 days; switch to 24h
+or 30d in the dropdown.
+
+The data is harvested from `gen_ai.completion` spans emitted by the
+swarm orchestrator (`agent_swarm/agent_loop.py`). Every LLM call
+carries:
+
+- `gen_ai.system` — the upstream host (openai, ollama, etc.)
+- `gen_ai.request.model`
+- `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens`
+- `gen_ai.response.finish_reasons`
+
+## Architecture
+
+```
+┌─────────────────────────────────┐    ┌────────────────────────────┐
+│  MCP plugin (Python, stdio)     │    │  FastAPI API + Celery      │
+│                                 │    │                            │
+│  OTel SDK                       │    │  OTel SDK                  │
+│   ├─ Auto: requests             │    │   ├─ Auto: FastAPI,        │
+│   ├─ Manual: PencheffHTTPClient │    │   │       SQLAlchemy*,     │
+│   │         tool_runner         │    │   │       Celery, Redis    │
+│   │         FastMCP dispatcher  │    │   ├─ Manual: scan_task,    │
+│   │                             │    │   │         agent_runner   │
+│   ▼                             │    │   ▼                        │
+│  MultiSpanExporter              │    │  PostgresExporter (custom) │
+│   ├─ FileExporter (always)      │    │   uses raw psycopg2 to     │
+│   │  ~/.pencheff/logs/*.jsonl   │    │   bypass SQLAlchemy and    │
+│   └─ OTLPExporter (when authed) │    │   avoid recursive spans    │
+│         ↓                       │    │                            │
+│         POST /v1/{traces,...}   │    └────────┬───────────────────┘
+└─────────────┬───────────────────┘             │
+              │ OTLP/HTTP + bearer ingest token │
+              ▼                                 ▼
+        ┌─────────────────────────────────────────────┐
+        │  Postgres                                   │
+        │   otel_spans     PARTITION BY day  (7d TTL) │
+        │   otel_logs      PARTITION BY day  (7d TTL) │
+        │   otel_metrics   PARTITION BY day  (7d TTL) │
+        │   audit_logs     hash-chained, separate TTL │
+        └────────────────┬────────────────────────────┘
+                         ▼
+        ┌─────────────────────────────────────────────┐
+        │  Celery beat: prune_observability hourly    │
+        │   DROP PARTITION older than retention_days  │
+        │   CREATE PARTITION today + 7d ahead         │
+        └─────────────────────────────────────────────┘
+```
+
+`*` SQLAlchemy auto-instrumentation is on, but the **exporter uses raw
+psycopg2** to break the recursion cycle (writing spans must not
+generate spans). Belt-and-suspenders: every write is wrapped in
+`opentelemetry.context.attach(set_value(_SUPPRESS_INSTRUMENTATION_KEY,
+True))`.
+
+## Plugin shipping (optional)
+
+When you want the MCP plugin to ship traces back to the API for a
+unified view across local IDE pentests and the SaaS surface, mint an
+`EngagementIngestToken` and point the plugin at the API:
+
+```bash
+export PENCHEFF_OBSERVABILITY_ENABLED=true
+export PENCHEFF_OBSERVABILITY_OTLP_URL=https://api.pencheff.com
+export PENCHEFF_OBSERVABILITY_OTLP_TOKEN=<engagement-ingest-token>
+
+pencheff scan --target https://staging.example.com
+```
+
+Without `OTLP_URL`, the plugin still emits — it just writes JSONL
+locally to `~/.pencheff/logs/otel-YYYYMMDD.jsonl` (one file per UTC
+day for cheap pruning) and never phones home.
+
+## Trace correlation
+
+Every scan span carries `pencheff.scan_id` as both a span attribute
+and a denormalised column on `otel_spans`. Queries like
+`WHERE scan_id = $1` use an index instead of a JSONB filter, so the
+trace-viewer waterfall returns in O(span-count-for-scan) — even
+across millions of total spans.
+
+The scan_id ↔ trace_id relationship is **n-to-one**: one scan can have
+multiple W3C trace contexts (e.g., the Celery task and an upstream API
+request), but every span in those traces carries the same scan_id
+attribute. The waterfall stitches them together.
+
+`audit_logs.trace_id` joins audit rows to spans, so reviewing an
+audit entry pivots straight into the request's trace.
+
+## Sampling
+
+100% by default. `gen_ai.completion`, root scan spans, and tool
+subprocess spans are usually under 200/second total even on a busy
+deployment, so capturing all of them costs little. Where storage
+matters, dial down:
+
+```ini
+PENCHEFF_OBSERVABILITY_SAMPLE_RATIO=0.1
+```
+
+Uses `ParentBased(TraceIdRatioBased)`, so a sampled root span
+guarantees its descendants are also sampled — operators reading a
+trace waterfall never see "missing middle" gaps from independent
+ratio decisions per child.
+
+## Retention
+
+Day-partitioned tables make 7-day retention cheap:
+
+```sql
+-- The exporter writes into the day's partition automatically.
+-- The retention task drops whole day-partitions older than the horizon.
+DROP TABLE otel_spans_20260501;        -- one millisecond, no row scan
+```
+
+The hourly retention task (`pencheff.observability.prune_partitions`)
+runs in Celery beat alongside the existing `prune_old_traffic` task
+and:
+
+1. Pre-creates partitions for **today + 7 days ahead** (idempotent
+   `CREATE TABLE IF NOT EXISTS`). A `DEFAULT` partition catches
+   stragglers from clock skew.
+2. `DROP TABLE` partitions older than `PENCHEFF_OBSERVABILITY_RETENTION_DAYS`.
+3. Separately, `DELETE FROM audit_logs WHERE created_at <
+   PENCHEFF_AUDIT_RETENTION_DAYS` (the audit table is not partitioned;
+   it sees low volume).
+
+Telemetry retention and audit retention are independent knobs. SOC2
+and ISO 27001 frameworks usually expect longer audit retention than
+debug telemetry; bump `PENCHEFF_AUDIT_RETENTION_DAYS=90` to comply.
+
+## Privacy / redaction
+
+The `redact.py` module strips sensitive material before any value
+becomes a span attribute:
+
+- **Headers** — `Authorization`, `Cookie`, `Set-Cookie`,
+  `X-API-Key`, `X-Auth-Token`, and a dozen other auth headers replaced
+  with `[REDACTED]`. Applied at `http_client.py:81` (the credential
+  injection point) so injected creds never live in spans.
+- **URLs** — query-string params like `token=`, `api_key=`,
+  `password=`, `session=` have their values masked. The path and
+  hostname pass through verbatim so operators can still recognise
+  the request in a trace.
+- **Subprocess argv** — never stored raw. `tool_runner` records
+  `tool.argv.hash` (sha256 of joined args) so two invocations with
+  the same args match by hash without exposing creds for hydra,
+  sqlmap, etc.
+- **stdout/stderr** — captured as **size only** (`tool.stdout.size`,
+  `tool.stderr.size`). Full output stays in the existing tool_runner
+  logs; spans never carry MB of binary data.
+
+## API surface
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /observability/scans/{id}/trace` | Span tree for the scan-trace waterfall viewer |
+| `GET /observability/slo` | RED + USE summary cards (windowed) |
+| `GET /observability/audit` | Paginated audit-log table |
+| `GET /observability/audit/verify` | Walk hash chain, return ok/broken_at |
+| `GET /observability/cost` | Token spend by model |
+| `POST /v1/traces` | OTLP/HTTP trace ingest (plugin → API) |
+| `POST /v1/logs` | OTLP/HTTP log ingest |
+| `POST /v1/metrics` | OTLP/HTTP metric ingest |
+
+The OTLP receivers are excluded from FastAPI auto-instrumentation
+(otherwise every ingest would itself create a server span and
+recurse). Auth is bearer-token via `EngagementIngestToken`.
+
+See the [observability API reference](/reference/observability) for
+request/response shapes.

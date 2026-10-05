@@ -1,0 +1,23 @@
+apiVersion: pencheff/v1
+kind: ScanPolicy
+metadata:
+  name: ci-gate
+  description: Fast CI/CD security gate — blocks merge if new critical/high findings appear.
+spec:
+  targets:
+    - url: ${TARGET_URL}
+  auth:
+    kind: credentials
+    values: {}
+  modules:
+    - { name: scan_waf,            depth: quick }
+    - { name: scan_infrastructure, depth: quick }
+    - { name: scan_injection,      depth: quick }
+    - { name: scan_auth,           depth: quick }
+  assertions:
+    - { id: gate_critical, condition: "critical == 0" }
+    - { id: gate_high,     condition: "high <= 0" }
+  thresholds:
+    fail_on: high
+  reports:
+    - { format: json, path: "./reports/" }

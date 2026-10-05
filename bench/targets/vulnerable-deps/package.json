@@ -1,0 +1,16 @@
+{
+  "name": "pencheff-vulnerable-deps-fixture",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Intentionally vulnerable dep fixture used by bench/run_all.sh for SCA regression testing.",
+  "dependencies": {
+    "lodash": "4.17.11",
+    "minimist": "1.2.0",
+    "handlebars": "4.0.11",
+    "marked": "0.3.6",
+    "axios": "0.21.0"
+  },
+  "devDependencies": {
+    "mocha": "3.5.3"
+  }
+}

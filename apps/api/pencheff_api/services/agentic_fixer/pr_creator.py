@@ -1,0 +1,382 @@
+"""PR creation for the agentic fixer (server-side worker path).
+
+Called by ``tasks/agentic_fix_task.py`` after the agent loop emits its
+final ``end_turn``. Walks the workspace through:
+
+1. Snapshot the diff vs. base. If empty → ``no_changes`` (terminal).
+2. Stage + commit any uncommitted changes the agent left behind.
+3. Push the branch with token-bearing URL.
+4. Open the PR via the GitHub REST API.
+
+The agent may or may not have committed inside its loop. We
+deliberately re-stage + re-commit at the end so the PR contains
+*all* working-tree changes, including any the agent forgot to commit.
+
+The desktop runtime gets its own PR-creation path in task #40
+(prefers ``gh pr create`` since users typically have gh installed
++ authed). This module is server-side only — Celery workers won't
+have gh, so REST is the single path.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import shlex
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+from .redaction import redact
+
+log = logging.getLogger("pencheff.agentic_fixer.pr")
+
+GITHUB_API = "https://api.github.com"
+
+
+class PRCreationError(Exception):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+    def __str__(self) -> str:  # noqa: D401
+        return f"{self.code}: {self.message}"
+
+
+@dataclass
+class PRResult:
+    """Outcome of the PR-creation pipeline."""
+
+    branch_name: str
+    commit_sha: str | None
+    pr_url: str | None
+    changes_pushed: bool
+    summary: str  # short human label for AgenticFixRun.current_step
+
+
+# ── Public entry point ─────────────────────────────────────────────
+
+
+async def create_pr_for_run(
+    *,
+    workspace_root: Path,
+    branch_name: str,
+    repo_full_name: str,
+    default_branch: str,
+    github_token: str,
+    pr_title: str,
+    pr_body: str,
+    agent_already_committed_on_branch: bool = False,
+) -> PRResult:
+    """Stage + commit + push + open PR. Idempotent per branch — if
+    the branch already exists on origin with the same head, we
+    re-use it. If a PR is already open for that head, return it.
+
+    Raises ``PRCreationError`` on any unrecoverable failure. The
+    caller catches and writes the error code into the
+    AgenticFixRun row.
+    """
+    # 0. Configure git author so commits land cleanly.
+    await _git(
+        ["config", "user.email", "fix@pencheff.com"],
+        cwd=workspace_root,
+    )
+    await _git(
+        ["config", "user.name", "Pencheff Agent"],
+        cwd=workspace_root,
+    )
+
+    # 1. Detect existing branch / detached HEAD state. The agent's
+    # bash tool may have already created the branch; check first to
+    # avoid clobbering its work.
+    rc, current_branch, _ = await _git(
+        ["rev-parse", "--abbrev-ref", "HEAD"], cwd=workspace_root, check=False,
+    )
+    on_target_branch = (rc == 0 and current_branch.strip() == branch_name)
+    if not on_target_branch:
+        # Try to checkout the branch; create if missing.
+        rc, _o, _e = await _git(
+            ["checkout", "-B", branch_name], cwd=workspace_root, check=False,
+        )
+        if rc != 0:
+            raise PRCreationError("checkout_failed", _e.strip() or "git checkout -B failed")
+
+    # 1b. Deterministically remediate npm dependency CVEs (`npm audit fix`, no
+    # --force). The remaining ghsa findings are TRANSITIVE npm packages locked
+    # in package-lock.json — the LLM can't reliably hand-fix those, and bumping
+    # package.json without regenerating the lockfile is a no-op for the scanner
+    # (it reads the lockfile). This runs regardless of what the agent edited, so
+    # a stale lockfile from a prior PR gets synced too. Best-effort: never fails
+    # PR creation; the updated lockfile/package.json are staged + committed in
+    # step 3. CVEs needing a major/breaking bump are left (would need --force).
+    await _remediate_npm_dependencies(workspace_root)
+
+    # 2. Snapshot working-tree state.
+    rc, status, _e = await _git(["status", "--porcelain"], cwd=workspace_root)
+    has_uncommitted = bool(status.strip())
+
+    # Even if nothing is uncommitted, the branch may carry commits
+    # the agent made. Compare against the base.
+    rc, log_tip, _e = await _git(
+        ["log", "--oneline", f"origin/{default_branch}..HEAD"],
+        cwd=workspace_root,
+        check=False,
+    )
+    has_branch_commits = bool(log_tip.strip())
+
+    if not has_uncommitted and not has_branch_commits:
+        return PRResult(
+            branch_name=branch_name,
+            commit_sha=None,
+            pr_url=None,
+            changes_pushed=False,
+            summary="agent emitted no code changes (no_changes)",
+        )
+
+    # 3. Stage + commit anything still uncommitted.
+    if has_uncommitted:
+        await _git(["add", "-A"], cwd=workspace_root)
+        commit_message = (
+            f"fix: agentic security fixes\n\n"
+            f"Generated by Pencheff Agentic Fix-all.\n\n"
+            f"Note: this commit consolidates any working-tree changes the agent\n"
+            f"left uncommitted. Individual agent commits are preserved above\n"
+            f"this one when present."
+        )
+        rc, _o, err = await _git(
+            ["commit", "-m", commit_message], cwd=workspace_root, check=False,
+        )
+        if rc != 0:
+            raise PRCreationError("commit_failed", err.strip() or "git commit failed")
+
+    # 4. Capture the head SHA + push.
+    rc, head, err = await _git(["rev-parse", "HEAD"], cwd=workspace_root)
+    if rc != 0:
+        raise PRCreationError("rev_parse_failed", err.strip())
+    commit_sha = head.strip()
+
+    # Inject the token into the origin URL for the push.
+    # The clone may already have it baked in (services that do clone
+    # via x-access-token); we re-set it defensively in case the agent
+    # ran ``git remote set-url`` for any reason.
+    push_url = f"https://x-access-token:{github_token}@github.com/{repo_full_name}.git"
+    await _git(["remote", "set-url", "origin", push_url], cwd=workspace_root)
+    rc, _o, err = await _git(
+        ["push", "-u", "--force-with-lease", "origin", branch_name],
+        cwd=workspace_root,
+        check=False,
+    )
+    if rc != 0:
+        raise PRCreationError("push_failed", redact(err.strip()))
+
+    # 5. Open the PR — or fetch an existing one for the same head.
+    owner, name = repo_full_name.split("/", 1)
+    headers = {
+        "Authorization": f"Bearer {github_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # Look up an existing PR first so re-runs don't 422.
+        list_resp = await client.get(
+            f"{GITHUB_API}/repos/{owner}/{name}/pulls",
+            headers=headers,
+            params={"head": f"{owner}:{branch_name}", "state": "open"},
+        )
+        if list_resp.status_code == 200:
+            existing = list_resp.json()
+            if isinstance(existing, list) and existing:
+                pr_url = existing[0].get("html_url")
+                return PRResult(
+                    branch_name=branch_name,
+                    commit_sha=commit_sha,
+                    pr_url=pr_url,
+                    changes_pushed=True,
+                    summary=f"updated existing PR {pr_url}",
+                )
+
+        create = await client.post(
+            f"{GITHUB_API}/repos/{owner}/{name}/pulls",
+            headers=headers,
+            json={
+                "title": pr_title,
+                "head": branch_name,
+                "base": default_branch,
+                "body": pr_body,
+                "maintainer_can_modify": True,
+            },
+        )
+    if create.status_code >= 400:
+        raise PRCreationError(
+            "pr_create_failed",
+            f"GitHub {create.status_code}: {create.text[:400]}",
+        )
+    pr_url = create.json().get("html_url")
+    return PRResult(
+        branch_name=branch_name,
+        commit_sha=commit_sha,
+        pr_url=pr_url,
+        changes_pushed=True,
+        summary=f"opened PR {pr_url}",
+    )
+
+
+# ── Helpers ────────────────────────────────────────────────────────
+
+
+def _npm_lockfile_dirs(ls_files_output: str) -> list[str]:
+    """Repo-relative dirs (``""`` = repo root) that contain a tracked
+    ``package-lock.json``, from ``git ls-files`` output. Vendored
+    ``node_modules`` lockfiles are excluded. Pure parser → unit-testable."""
+    dirs: list[str] = []
+    seen: set[str] = set()
+    for raw in ls_files_output.splitlines():
+        p = raw.strip()
+        if not p.endswith("package-lock.json") or "node_modules/" in p:
+            continue
+        d = p.rsplit("/", 1)[0] if "/" in p else ""
+        if d not in seen:
+            seen.add(d)
+            dirs.append(d)
+    return dirs
+
+
+async def _remediate_npm_dependencies(workspace_root: Path) -> list[str]:
+    """Deterministically remediate npm dependency CVEs in every directory that
+    has a tracked ``package-lock.json``, by running ``npm audit fix`` (NO
+    --force, so only semver-compatible upgrades — never a breaking major bump).
+
+    Why this exists: the remaining ghsa findings are TRANSITIVE npm packages
+    locked in package-lock.json. The LLM can't reliably hand-fix those (and
+    bumping package.json without regenerating the lockfile is a no-op for the
+    scanner, which reads the lockfile). ``npm audit fix`` is npm's purpose-built
+    remediation: it upgrades vulnerable deps within range and rewrites the
+    lockfile (+ package.json). ``--package-lock-only`` keeps it fast (no
+    node_modules install). Runs regardless of what the agent edited this run, so
+    a stale-but-already-patched lockfile from a prior PR still gets synced.
+
+    Best-effort: logs + skips on any failure (missing npm, registry/auth,
+    timeout, peer conflicts) so PR creation is never blocked. The updated
+    lockfile/package.json are picked up by the stage+commit in step 3. Only
+    npm (package-lock.json) is handled; yarn.lock / pnpm-lock.yaml are a
+    follow-up. CVEs that need a major/breaking bump are intentionally left
+    (they'd require --force) and remain visible in the next scan."""
+    rc, ls, _e = await _git(
+        ["ls-files", "*package-lock.json"], cwd=workspace_root, check=False,
+    )
+    dirs = _npm_lockfile_dirs(ls)
+    if not dirs:
+        return []
+    if not shutil.which("npm"):
+        log.warning(
+            "agentic-fix: npm not on PATH; cannot remediate npm CVEs in %s",
+            ", ".join(d or "." for d in dirs),
+        )
+        return []
+    remediated: list[str] = []
+    for d in dirs:
+        target = workspace_root / d if d else workspace_root
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "npm", "audit", "fix", "--package-lock-only",
+                "--ignore-scripts", "--no-fund",
+                cwd=str(target),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                _o, err_b = await asyncio.wait_for(proc.communicate(), timeout=300)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.communicate()
+                log.warning("agentic-fix: npm audit fix timed out in %s", target)
+                continue
+            # npm audit fix exits non-zero when vulnerabilities REMAIN (e.g.
+            # ones needing --force); that's not a hard failure for us — it may
+            # still have fixed others + updated the lockfile. Treat any run that
+            # didn't crash as a remediation attempt; git decides if it changed.
+            if proc.returncode in (0, 1):
+                remediated.append(d or ".")
+                log.info("agentic-fix: ran npm audit fix in %s (rc=%s)",
+                         target, proc.returncode)
+            else:
+                log.warning(
+                    "agentic-fix: npm audit fix errored in %s (rc=%s): %s",
+                    target, proc.returncode,
+                    err_b.decode("utf-8", "replace").strip()[:300],
+                )
+        except Exception as exc:  # noqa: BLE001 — never block PR creation
+            log.warning("agentic-fix: npm audit fix error in %s: %s", target, exc)
+    return remediated
+
+
+async def _git(
+    args: list[str],
+    *,
+    cwd: Path,
+    check: bool = True,
+) -> tuple[int, str, str]:
+    """Run ``git <args>``, capture stdout/stderr. Returns (rc, out, err)."""
+    proc = await asyncio.create_subprocess_exec(
+        "git", *args,
+        cwd=str(cwd),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    out_b, err_b = await proc.communicate()
+    out = out_b.decode("utf-8", errors="replace")
+    err = err_b.decode("utf-8", errors="replace")
+    if check and proc.returncode != 0:
+        raise PRCreationError(
+            "git_command_failed",
+            f"git {shlex.join(args)} -> rc={proc.returncode}: {err.strip()[:400]}",
+        )
+    return proc.returncode, out, err
+
+
+def build_pr_body(
+    *,
+    scan_id: str | None,
+    repo_scan_id: str | None,
+    findings_count: int,
+    iterations: int,
+    final_text: str,
+    workspace_root_label: str,
+) -> str:
+    """Compose the PR body — summary of findings, iteration count, and
+    the agent's own end-of-run text. Markdown-formatted; GitHub
+    renders it as the PR description.
+    """
+    scan_ref = (
+        f"DAST scan `{scan_id[:8]}`"
+        if scan_id else f"Repo scan `{repo_scan_id[:8] if repo_scan_id else '?'}`"
+    )
+    lines = [
+        "## Agentic Fix-all",
+        "",
+        f"This pull request was generated by Pencheff's Agentic Fix-all "
+        f"against {scan_ref} ({findings_count} open finding"
+        f"{'s' if findings_count != 1 else ''}). The agent reads + edits "
+        f"files via a constrained tool surface; every action is logged "
+        f"to the run's step audit trail.",
+        "",
+        f"- **Iterations:** {iterations}",
+        f"- **Workspace:** `{workspace_root_label}`",
+        "",
+        "### Agent summary",
+        "",
+    ]
+    cleaned = final_text.strip() if final_text else (
+        "_The agent ended without a summary turn. Review the diff carefully._"
+    )
+    lines.append(cleaned)
+    lines.append("")
+    lines.append("---")
+    lines.append(
+        "_Pencheff Agent · " "review every change before merging — "
+        "automated security fixes can have unintended side effects._"
+    )
+    return "\n".join(lines)

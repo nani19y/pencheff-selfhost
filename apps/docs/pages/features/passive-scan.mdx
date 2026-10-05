@@ -1,0 +1,69 @@
+---
+title: Passive scanner
+---
+
+# Passive scanner
+
+The passive scanner inspects observed HTTP traffic and flags issues
+without sending any new requests. It runs over two sources:
+
+1. Flows captured by the [intercepting proxy](/features/proxy)
+2. Responses already collected by active scan modules (dual-mode)
+
+## Rule set
+
+### Credential / secret leaks in bodies
+
+- JWT tokens (`eyJ…`)
+- AWS access keys (`AKIA…`)
+- GitHub PATs (`ghp_…`)
+- Private keys (`-----BEGIN RSA/EC/OPENSSH PRIVATE KEY-----`)
+
+### Error / debug disclosure
+
+- Stack traces, Python tracebacks
+- Database errors (`ORA-…`, `PG::`, `SQLSTATE[…]`, `Warning: mysql`)
+- Credentials visible in JSON/body (`username`, `password`, `email` with values)
+
+### Response header issues
+
+- `X-Powered-By` / `Server` version disclosure
+- `X-AspNet-Version`
+- Symfony debug toolbar (`X-Debug-Token-Link`)
+- Any `X-Debug-*` / `X-Debug`
+
+### Transport / cookies
+
+- Insecure HTTP traffic (non-localhost)
+- `Set-Cookie` without `Secure` on HTTPS
+- `Set-Cookie` without `HttpOnly`
+- `Set-Cookie` without `SameSite`
+
+## Run passively on captured traffic
+
+```text
+# Start the proxy
+start_proxy(session_id=sid, port=8888)
+
+# … route your browser through it for a few minutes …
+
+# Pull captured flows + run passive rules in one call
+get_proxy_traffic(session_id=sid, include_passive_findings=True)
+→ { count: 87, passive_findings_added: 5 }
+```
+
+## Run over active-scan responses
+
+Every active scan module routes its responses through the passive rules
+automatically — no extra tool calls required. A single scan therefore
+produces both the active findings and any passive ones found during the
+active traffic.
+
+## Customising rules
+
+Passive rules live in [`plugins/pencheff/pencheff/modules/web/passive_scan.py`](https://github.com/Magadha-IG/pencheff/blob/main/plugins/pencheff/pencheff/modules/web/passive_scan.py). Add
+regex patterns to `PATTERNS` or header rules to `HEADER_RULES` and restart
+the MCP server.
+
+For fully custom rules, use the [Plugin SDK](/plugin-sdk/writing-modules)
+to drop a `BaseTestModule` subclass into `~/.pencheff/custom_modules/`.

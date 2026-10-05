@@ -1,0 +1,93 @@
+# Per-package license overrides for tools/license_audit.py.
+#
+# Format: ``ecosystem:package = SPDX-License-Identifier`` per line.
+#
+# Used when a manifest doesn't surface its license (PEP 621 deps,
+# transitive npm packages). Each override is double-checked from the
+# upstream package's documented license — never invented.
+#
+# When you add a new dependency, look up its license from the upstream
+# project (PyPI ``Classifier:`` headers, GitHub LICENSE file, npm
+# ``license`` field) and append a row here in the same PR.
+#
+# All licenses below are present on tools/license-allowlist.txt.
+
+# ─── Pencheff itself ──────────────────────────────────────────────
+pypi:pencheff = MIT
+pypi:pencheff-sentry = MIT
+
+# Phase 3.1 Sentry optional dep — LiteLLM (MIT).
+pypi:litellm = MIT
+
+# ─── PyPI runtime + dev deps ───────────────────────────────────────
+pypi:fastapi = MIT
+pypi:uvicorn = BSD-3-Clause
+pypi:sqlalchemy = MIT
+pypi:asyncpg = Apache-2.0
+pypi:psycopg2-binary = LGPL-3.0
+pypi:alembic = MIT
+pypi:pydantic = MIT
+pypi:pydantic-settings = MIT
+pypi:argon2-cffi = MIT
+pypi:pyjwt = MIT
+pypi:authlib = BSD-3-Clause
+pypi:itsdangerous = BSD-3-Clause
+pypi:cryptography = Apache-2.0
+pypi:celery = BSD-3-Clause
+pypi:redis = MIT
+pypi:httpx = BSD-3-Clause
+pypi:mcp = MIT
+pypi:mitmproxy = MIT
+pypi:playwright = Apache-2.0
+pypi:websockets = BSD-3-Clause
+pypi:sse-starlette = BSD-3-Clause
+pypi:python-docx = MIT
+pypi:pyyaml = MIT
+pypi:weasyprint = BSD-3-Clause
+pypi:stripe = MIT
+pypi:dnspython = ISC
+pypi:defusedxml = PSF-2.0
+pypi:email-validator = CC0-1.0
+pypi:pathspec = MPL-2.0
+pypi:impacket = Apache-2.0
+pypi:pytest = MIT
+pypi:pytest-asyncio = Apache-2.0
+
+# ─── OpenTelemetry suite (all Apache-2.0 by foundation policy) ────
+pypi:opentelemetry-api = Apache-2.0
+pypi:opentelemetry-sdk = Apache-2.0
+pypi:opentelemetry-proto = Apache-2.0
+pypi:opentelemetry-semantic-conventions = Apache-2.0
+pypi:opentelemetry-exporter-otlp-proto-http = Apache-2.0
+pypi:opentelemetry-instrumentation-fastapi = Apache-2.0
+pypi:opentelemetry-instrumentation-asyncpg = Apache-2.0
+pypi:opentelemetry-instrumentation-celery = Apache-2.0
+pypi:opentelemetry-instrumentation-logging = Apache-2.0
+pypi:opentelemetry-instrumentation-redis = Apache-2.0
+pypi:opentelemetry-instrumentation-sqlalchemy = Apache-2.0
+
+# ─── Node — apps/web + apps/docs + extension + IDE ───────────────
+npm:next = MIT
+npm:nextra = MIT
+npm:nextra-theme-docs = MIT
+npm:react = MIT
+npm:react-dom = MIT
+npm:react-markdown = MIT
+npm:rehype-highlight = MIT
+npm:remark-gfm = MIT
+npm:mermaid = MIT
+npm:tailwindcss = MIT
+npm:tailwind-merge = MIT
+npm:autoprefixer = MIT
+npm:postcss = MIT
+npm:clsx = MIT
+npm:typescript = Apache-2.0
+npm:eslint = MIT
+npm:eslint-config-next = MIT
+npm:@types/node = MIT
+npm:@types/react = MIT
+npm:@types/react-dom = MIT
+npm:@types/vscode = MIT
+npm:@clerk/nextjs = MIT
+npm:vscode-languageclient = MIT
+npm:@vscode/vsce = MIT

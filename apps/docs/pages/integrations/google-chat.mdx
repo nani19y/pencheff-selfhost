@@ -1,0 +1,65 @@
+---
+title: Google Chat
+---
+
+# Google Chat integration
+
+Pencheff posts lifecycle events (scan started, scan done, scan failed,
+each new finding, finding updated) to a Google Chat space via an
+Incoming Webhook. Same shape as Slack — a single text message per event,
+filterable by severity and scoped per target.
+
+## Setup
+
+1. Open the Google Chat space → **+ → Apps & integrations → Webhooks → Manage webhooks → Add webhook**.
+2. Give it a name (e.g. `Pencheff`) and an avatar URL if you want one.
+3. Copy the URL — it looks like
+   `https://chat.googleapis.com/v1/spaces/AAAA…/messages?key=…&token=…`.
+4. In Pencheff: **Dashboard → Integrations → Connect → Google Chat**.
+   Paste the URL, set the severity filter, optionally narrow the
+   target/event scope, save.
+
+## Via API
+
+```http
+POST /integrations
+Content-Type: application/json
+
+{
+  "kind": "google_chat",
+  "name": "#sec-alerts",
+  "severity_filter": "high",
+  "config": {
+    "webhook_url": "https://chat.googleapis.com/v1/spaces/AAAA/messages?key=…&token=…"
+  },
+  "target_ids": [],
+  "events": []
+}
+```
+
+`target_ids` empty (or omitted) → fires for every target in the
+workspace. `events` empty → fires on every lifecycle event. See
+[Integrations overview](/integrations/overview) for the per-target +
+per-event scoping model.
+
+## What the message looks like
+
+```
+🚀 Scan started — Juvion (https://juvion.in) [engage]
+✅ Scan done — Juvion · Grade B · 2 high, 12 medium, 11 low
+🔴 [HIGH] CVSS 7.5 — S3 Bucket Publicly Listable
+   https://admin-data.s3.amazonaws.com/
+🔁 Finding updated — S3 Bucket Publicly Listable: verification_status: unverified → true_positive
+❌ Scan failed — Juvion: ConnectionRefused
+```
+
+## Notes
+
+* Webhooks support plain text up to ~4 KB per message — Pencheff
+  truncates finding descriptions to keep room.
+* Pencheff can be upgraded to send Google Chat **cards** (with severity
+  pills, links, and a CVSS badge) by setting `style: "card"` in the
+  integration config. Plain text is the default for compatibility with
+  every space.
+* No outbound IP allow-list is needed — the worker initiates the
+  connection.

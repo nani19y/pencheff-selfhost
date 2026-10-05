@@ -1,0 +1,287 @@
+---
+title: AI agent swarm — parallel multi-agent scanning
+---
+
+# AI agent swarm
+
+Pencheff's swarm mode replaces the legacy single-agent loop as the default
+execution path for every scan. Instead of one agent iterating through tool
+calls sequentially, the orchestrator fans out work across 17 specialised agents
+arranged in three phases. Recon runs first and produces a frozen snapshot of the
+attack surface; 12 breaker agents then attack the target in parallel from that
+snapshot; 6 synthesis agents then process the merged findings in parallel to
+produce chains, compliance mappings, impact proofs, PoCs, screenshots, and admin
+access evidence.
+
+The net effect is substantially deeper coverage in roughly the same wallclock
+time as the legacy loop, plus structured operator output that maps every finding
+through the full exploit chain → compliance → reproducibility path.
+
+The swarm is opt-out: set `SWARM_ENABLED=false` to instantly revert every scan
+to the legacy single-agent path with no other changes required.
+
+## Pipeline shape
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  Phase 1: ReconAgent (1 agent)                                 │
+│  Map attack surface → frozen ReconSnapshot                     │
+└────────────────────────────────┬───────────────────────────────┘
+                                 │ snapshot (read-only)
+┌────────────────────────────────▼───────────────────────────────┐
+│  Phase 2: Breakers (12 agents, fully parallel)                 │
+│                                                                │
+│  InjectionAgent        ClientSideAgent       AuthAgent         │
+│  AuthzAgent            APIAgent              InfraAgent        │
+│  CloudAgent            LLMRedTeamAgent       SupplyChainAgent  │
+│  K8sAgent              ActiveDirectoryAgent  MobileAppAgent    │
+└────────────────────────────────┬───────────────────────────────┘
+                                 │ merge findings from all breakers
+┌────────────────────────────────▼───────────────────────────────┐
+│  Phase 3: Synthesis (6 agents, fully parallel)                 │
+│                                                                │
+│  ChainAgent            ComplianceAgent                         │
+│  ProofOfImpactAgent    PayloadCraftingAgent                    │
+│  EvidenceCaptureAgent  AdminAccessAgent                        │
+└────────────────────────────────────────────────────────────────┘
+```
+
+## The 19 agents
+
+| Agent | Phase | Mandate | Tools |
+|---|---|---|---|
+| ReconAgent | 1 | Map attack surface; produce frozen snapshot | `recon_passive`, `recon_active`, `recon_api_discovery`, `scan_waf`, `authenticated_crawl` |
+| InjectionAgent | 2 | SQLi/NoSQLi/XXE/SSTI/cmdi + path traversal + file upload | `scan_injection`, `scan_file_handling`, `oast_*`, `test_endpoint` |
+| ClientSideAgent | 2 | Reflected/DOM XSS, CSRF, open redirect, CORS | `scan_client_side`, `scan_dom_xss`, `test_endpoint` |
+| AuthAgent | 2 | Login weakness, JWT, OAuth, MFA bypass | `scan_auth`, `scan_oauth`, `scan_mfa_bypass`, `test_endpoint` |
+| AuthzAgent | 2 | IDOR, vertical/horizontal privesc — quiet-quits when no credentials supplied | `scan_authz`, `test_endpoint` |
+| APIAgent | 2 | API/GraphQL flaws, websocket, business logic | `scan_api`, `scan_websocket`, `scan_business_logic`, `test_endpoint` |
+| InfraAgent | 2 | TLS/headers, HTTP smuggling, CRLF, subdomain takeover | `scan_infrastructure`, `scan_advanced`, `scan_subdomain_takeover`, `run_security_tool` |
+| CloudAgent | 2 | Cloud misconfig, IAM, public blobs, blind SSRF callbacks | `scan_cloud`, `oast_*`, `test_endpoint` |
+| LLMRedTeamAgent | 2 | Prompt injection, jailbreak, system-prompt extraction on AI/LLM endpoints | `scan_llm_red_team`, `test_endpoint` |
+| SupplyChainAgent | 2 | Exposed dependency manifests, outdated client-side libraries | `run_security_tool`, `test_endpoint` |
+| K8sAgent | 2 | Kubernetes control-plane exposure, RBAC misconfig, exposed metrics | `run_security_tool`, `test_endpoint` |
+| ActiveDirectoryAgent | 2 | Active Directory attack paths: BloodHound relationship graph, Certipy ESC1–ESC8 cert template abuse, CrackMapExec SMB enum, Impacket secretsdump | `scan_active_directory`, `test_endpoint` |
+| MobileAppAgent | 2 | Android/iOS static analysis: MobSF enrichment, manifest exported-component check, secrets sweep across decompiled output | `scan_mobile_app` |
+| ChainAgent | 3 | Multi-step attack chains; blast-radius scoring; cross-system chain detection | `exploit_chain_suggest`, `test_chain`, `test_endpoint` |
+| ComplianceAgent | 3 | Map findings to PCI-DSS/HIPAA/SOC2/GDPR controls (read-only) | `get_findings` |
+| ProofOfImpactAgent | 3 | Schema-only impact assessment via sqlmap (`--dbs/--tables/--columns/--count` only). **No row data extracted.** | `run_security_tool`, `test_endpoint` |
+| PayloadCraftingAgent | 3 | Generate `curl` + Python `requests` PoCs per finding (read-only synthesis) | `get_findings` |
+| EvidenceCaptureAgent | 3 | Playwright screenshot per verified high/critical finding with PII redaction | `capture_evidence` |
+| AdminAccessAgent | 3 | Per-finding gated; when verified admin access exists, drives Playwright into the admin panel read-only: front-page screenshot, ≤ 5 menu links enumerated, then immediate logout. No state-changing tools in registry. | `playwright_navigate` (GET-only), `playwright_screenshot`, `playwright_enumerate_links`, `playwright_logout` |
+
+## Phase 1: Recon
+
+The `ReconAgent` runs first and exclusively. It calls `recon_passive` (DNS,
+HTTP headers, technology fingerprinting, Shodan metadata if configured),
+`recon_active` (path enumeration, port probe on the primary host), and
+`recon_api_discovery` (OpenAPI/GraphQL schema fetch, common API prefixes).
+It also runs `scan_waf` to detect WAF presence and `authenticated_crawl` when
+credentials are supplied.
+
+The result is a **frozen `ReconSnapshot`**: a serialised record of discovered
+endpoints, technology stack fingerprints, WAF type, and discovered API specs.
+All Phase 2 agents receive an identical read-only copy of this snapshot — they
+cannot extend it or communicate with each other.
+
+**Graceful degradation:** if any individual recon call returns a transient error
+(network timeout, tool error), the agent retries once with a 5 s backoff. If
+the retry also fails, the snapshot is emitted with the successfully-collected
+endpoints and a `partial=true` flag. The orchestrator proceeds — Phase 2 agents
+see the partial snapshot and work on what exists. Only a fully empty snapshot
+(zero endpoints) triggers the catastrophic fallback (see below).
+
+## Phase 2: Breakers (parallel fan-out)
+
+Once the `ReconSnapshot` is sealed, the orchestrator spawns all 12 breaker
+agents simultaneously via `asyncio.gather`. Each agent receives:
+
+- A **fresh, isolated pencheff session** seeded with the read-only snapshot
+  (so every breaker starts from the same known state).
+- Its own per-agent tool registry — each agent is granted only the tools it
+  needs, reducing the chance of accidental cross-domain tool calls.
+- A turn budget drawn from the `SWARM_TURNS_*` env-var family (see
+  [Configuration](#configuration)).
+
+Notable behaviours:
+
+- **`AuthzAgent` quiet-quit:** if the scan has no credentials, `AuthzAgent`
+  emits a single informational note ("no credentials — skipping authz scan")
+  and exits cleanly. Its absence is non-fatal.
+- **Per-breaker retry:** each breaker retries its first failing tool call once
+  with a 10 s backoff. After that, partial findings are committed and the agent
+  exits — a breaker crash does not bring down the swarm.
+- **Partial-failure tolerance:** the orchestrator waits for all 12 breakers,
+  collects results from those that succeeded, and logs a warning for those that
+  failed. The merge step proceeds on whatever findings exist.
+
+After all breakers finish, their findings are de-duplicated by a deterministic
+key (`endpoint|parameter|technique|title`) and merged into a single findings
+list that Phase 3 agents consume.
+
+## Phase 3: Synthesis (6 agents in parallel)
+
+All six synthesis agents start simultaneously once the merged findings list is
+available. Each reads the merged findings (and nothing else) — none of them
+probe the target again except to capture a specific screenshot or run a
+`--count`-only sqlmap call.
+
+Each agent writes its output into a named section of the operator summary.
+Failure of any one synthesis agent is **non-fatal**: the other five still
+deliver their sections, and the failed section is noted as "unavailable" in the
+report rather than crashing the whole scan.
+
+## Operator-visible output sections
+
+The final operator summary stitches the Phase 3 agent outputs into a
+structured document in this order:
+
+1. **Lead paragraph** (from `ChainAgent`) — the top attack chain with its
+   blast-radius score and any cross-system chain it detected.
+2. **`## Compliance mapping`** (from `ComplianceAgent`) — which PCI-DSS,
+   HIPAA, SOC 2, and GDPR controls are affected.
+3. **`## Proof of Impact`** (from `ProofOfImpactAgent`) — schema-level
+   evidence: database names, table names, column names, row counts. No customer
+   data is extracted.
+4. **`## Reproducible PoCs`** (from `PayloadCraftingAgent`) — one `curl`
+   command and one Python `requests` snippet per verified high/critical finding.
+5. **`## Evidence Screenshots`** (from `EvidenceCaptureAgent`) — inline PNG
+   thumbnails of every verified high/critical finding with PII redacted.
+6. **`## Admin Panel Access (Verified)`** (from `AdminAccessAgent`) — a
+   screenshot of the admin panel front page plus up to 5 enumerated menu links.
+   This section is only present when verified admin access was confirmed by a
+   Phase 2 breaker.
+
+## Catastrophic fallback
+
+If the `ReconAgent` produces a snapshot with zero endpoints, or if all 12
+Phase 2 breakers fail, the orchestrator falls back automatically to the legacy
+single-agent loop (`agent_runner.run_agent`). The scan continues — no operator
+action required. A `swarm_fallback: true` flag is set on the scan record and
+visible in the scan-detail API response and the UI banner.
+
+**Killswitch:** setting `SWARM_ENABLED=false` in the API environment
+immediately disables swarm mode for all new scans. In-flight scans are
+unaffected. This is the fastest path to reverting to the legacy path if
+an unexpected issue arises.
+
+## Cost and performance
+
+Typical numbers for a **deep** scan against a medium-complexity target:
+
+| Metric | Typical value |
+|---|---|
+| Wallclock time | ~33 minutes |
+| Total input tokens | ~411 K |
+| Total output tokens | ~86 K |
+| Total LLM calls | ~109 calls |
+
+Per-tier turn budgets (controlled by `SWARM_TURNS_*` env vars):
+
+| Tier | ReconAgent | Each breaker | Each synthesis agent |
+|---|---|---|---|
+| `quick` | 8 | 12 | 6 |
+| `standard` | 15 | 25 | 10 |
+| `deep` | 25 | 50 | 20 |
+
+## Configuration
+
+All swarm behaviour is driven by environment variables on the API container.
+Field naming follows `apps/api/pencheff_api/config.py`.
+
+| Variable | Default | Description |
+|---|---|---|
+| `SWARM_ENABLED` | `true` | Master on/off switch. `false` reverts every scan to the legacy single-agent loop. |
+| `SWARM_TURNS_RECON_QUICK` | `8` | Turn budget for `ReconAgent` on `quick` profile. |
+| `SWARM_TURNS_RECON_STANDARD` | `15` | Turn budget for `ReconAgent` on `standard` profile. |
+| `SWARM_TURNS_RECON_DEEP` | `25` | Turn budget for `ReconAgent` on `deep` profile. |
+| `SWARM_TURNS_BREAKER_QUICK` | `12` | Turn budget per Phase 2 breaker on `quick`. |
+| `SWARM_TURNS_BREAKER_STANDARD` | `25` | Turn budget per Phase 2 breaker on `standard`. |
+| `SWARM_TURNS_BREAKER_DEEP` | `50` | Turn budget per Phase 2 breaker on `deep`. |
+| `SWARM_TURNS_SYNTHESIS_QUICK` | `6` | Turn budget per Phase 3 synthesis agent on `quick`. |
+| `SWARM_TURNS_SYNTHESIS_STANDARD` | `10` | Turn budget per Phase 3 synthesis agent on `standard`. |
+| `SWARM_TURNS_SYNTHESIS_DEEP` | `20` | Turn budget per Phase 3 synthesis agent on `deep`. |
+| `SWARM_TURNS_CHAIN_QUICK` | `6` | Override for `ChainAgent` specifically on `quick` (defaults to synthesis budget if unset). |
+| `SWARM_TURNS_CHAIN_DEEP` | `30` | Override for `ChainAgent` on `deep`. |
+| `SWARM_BREAKER_RETRY_ATTEMPTS` | `1` | How many times a failing breaker tool call is retried. |
+| `SWARM_BREAKER_RETRY_BACKOFF_SEC` | `10` | Seconds to wait between retry attempts. |
+
+## Consent screen
+
+Because the swarm calls significantly more external endpoints and can
+demonstrate real proof-of-impact (schema enumeration, admin access), Pencheff
+requires explicit operator consent before any scan is created.
+
+The scan-creation form (and the `POST /scans` API body) now includes a
+`consent_payload` block. The operator must:
+
+1. Review the disclosed-actions catalogue for the agent classes they are
+   enabling. Each agent class lists exactly what it will probe and what data it
+   may read.
+2. Paste or type an authorization statement of at least 50 characters
+   (typically: _"I am authorised to test [target] as of [date] and I accept
+   the disclosed actions above."_).
+3. Tick the "I confirm" checkbox.
+
+The `consent_payload` is persisted on `Scan.consent_payload` (JSONB) and is
+included in every audit export. The API rejects `POST /scans` if
+`consent_payload` is absent or if the authorization text is shorter than 50
+characters.
+
+> **Note:** The consent model described here covers the current non-destructive
+> swarm only. Agents that mutate target state, extract row data, or impact
+> availability require a separate expanded consent flow documented in
+> `docs/superpowers/specs/2026-05-06-destructive-agents-blueprint.md` (repo
+> path, not a published docs route) and are not enabled in any current release.
+
+## LLM trace persistence
+
+Every LLM call made by every swarm agent is recorded in the `scan_llm_traces`
+database table. Each row stores:
+
+- `agent` — which agent made the call (`InjectionAgent`, `ChainAgent`, etc.)
+- `turn` — the agent's conversation turn number at the time of the call
+- `request_messages` — the full messages array sent to the LLM (JSONB)
+- `response` — the raw response (JSONB), including tool-call blocks
+- `input_tokens`, `output_tokens`, `cache_read_tokens` — token counts
+- `reasoning` — the reasoning/thinking block if the model returned one
+
+Traces are accessible via `GET /scans/{id}/llm-traces` (auth required). They
+are also summarised inline in the scan assessment log:
+
+```
+[InjectionAgent] LLM turn=3 in=1234t out=567t cached=800t · calls=[scan_injection]
+[ChainAgent] LLM turn=1 in=3421t out=912t cached=2800t · calls=[exploit_chain_suggest,test_chain]
+```
+
+## Evidence screenshots
+
+When `EvidenceCaptureAgent` runs, it opens a Playwright browser context,
+navigates to the vulnerable URL with the session's auth cookies, and captures
+a full-page PNG. PII is redacted before the PNG is stored.
+
+Screenshots are stored at `~/.pencheff/evidence/<scan_id>/<finding_id>.png`
+inside the API worker container.
+
+They are served via `GET /scans/{id}/evidence/{finding_id}.png` (auth
+required). A `404` is returned if no screenshot exists for that finding.
+
+The Evidence Screenshots section of the operator summary embeds each PNG inline
+via a signed URL that expires after 24 hours.
+
+## What we DON'T do
+
+The current swarm is explicitly **non-destructive**:
+
+- No row data is extracted from databases — `ProofOfImpactAgent` uses sqlmap
+  with `--dbs/--tables/--columns/--count` only.
+- No state-changing requests are issued — every breaker and synthesis agent
+  operates read-only.
+- No availability degradation — no slow-loris, query-of-death, or resource
+  exhaustion testing.
+- No out-of-scope lateral movement.
+
+Capabilities that would change any of these properties require a separate
+expanded consent model, legal review, and additional infrastructure described
+in `docs/superpowers/specs/2026-05-06-destructive-agents-blueprint.md` (repo
+path). None of those capabilities are implemented in the current release.

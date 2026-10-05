@@ -1,0 +1,125 @@
+---
+title: Visual dashboards
+---
+
+# Visual dashboards
+
+Pencheff's findings register, scan history, and CVE rollups have always
+been queryable. This page covers the **chart surfaces** layered on top
+of that data — five dashboards that render the same numbers as the
+tables, but in shapes a stakeholder can read in five seconds.
+
+Every dashboard reuses primitives in
+`apps/web/components/dashboard/` and renders charts via
+[Recharts](https://recharts.org/). All data comes from existing API
+endpoints; no scan-time work is added.
+
+## Per-scan dashboard
+
+Lives at `/scans/{id}/dashboard`. Linked from the assessment page once
+the scan transitions to `status="done"`.
+
+| Tile | What it shows |
+| --- | --- |
+| **Severity donut** | Counts from `Scan.summary` rendered as a donut with center-label total. |
+| **CVSS histogram** | Findings bucketed across 0–2, 2–4, 4–6, 6–8, 8–10. Bar fill maps to the severity that band corresponds to. |
+| **Verification pie** | `verification_status` distribution: `unverified` / `true_positive` / `false_positive` / `fixed`. |
+| **Category bar** | Top-N finding categories sorted desc; bar fill = the highest-severity finding in that category. |
+| **OWASP coverage** | Stacked horizontal bars by `owasp_category × severity`. |
+| **Top-risk list** | Ten findings ranked by `risk_score` (CVSS as tiebreak), each one a click-through to `/scans/{id}/findings/{fid}`. Surfaces the `PriorityStrip` (risk score, reachability, SSVC, EPSS, KEV) inline. |
+| **Endpoint treemap** | Top-N affected endpoints sized by finding count, coloured by top severity. |
+| **Stat tiles** | Total active · KEV-in-scan · reachable · median EPSS. |
+
+Pre-completion the route shows a banner and links back to the live
+assessment page.
+
+### LLM red-team variant
+
+When `target_kind === "llm"`, the same `/scans/{id}/dashboard` route
+renders a different composition that reflects what an LLM red-team
+scan actually does — probing strategies, attack techniques, judge
+verdicts — rather than CVSS-shaped vulnerability surface.
+
+| Tile | What it shows |
+| --- | --- |
+| **Verdict funnel** | The centerpiece. Total probes flowed in → vulnerable / refused / ambiguous. Built from `/scans/{id}/llm-transcripts?format=json`. When the transcript file expired or was never written, the dashboard degrades to "vulnerable count = total findings" and surfaces the limitation inline. |
+| **OWASP-LLM-Top-10 heatmap** | One row per `LLM01` … `LLM10` with absolute failure count and per-category success rate (failures ÷ probes-in-category). Built from `Scan.summary.llm_redteam_summary.by_category` plus the transcript per-category totals. |
+| **Strategy breakdown** | Bar chart of `by_strategy` (`base`, `jailbreak`, `dataset`, `custom`, `guardrail`) plus a horizontal-bar list of the top 10 techniques (`direct_injection`, `role_play`, `constraint_violation`, …). |
+| **Judge-confidence histogram** | When LLM-as-judge is enabled, distribution of `judge.confidence` across 10 buckets 0.0–1.0. Cell colour ramps gilt → oxblood for high-confidence vulnerable verdicts. |
+| **Token + latency profile** | Stacked bar of total prompt / completion / cached / reasoning tokens (OpenTelemetry GenAI semantic conventions), plus latency p50 and p95 derived from per-probe `latency_ms`. |
+| **Top-10 failures list** | Rendered from `Scan.summary.llm_redteam_summary.top_failures` — already computed by the runner at `plugins/pencheff/pencheff/modules/llm_red_team/reporting.py`. |
+| **Severity rollup tiles** | `by_severity` counts per LLM finding, with critical accented red. |
+| **Recommended-guardrails CTA** | Link into `/scans/{id}/recommended-guardrails`. |
+
+The LLM dashboard renders **without any new backend work** — the
+`redteam_summary` payload was already persisted on `Scan.summary`,
+just not visualised. Verdict funnel + token profile + latency come
+from the existing transcript endpoint.
+
+## Per-target trend dashboard
+
+Embedded on `/targets/{id}` once the target has ≥2 completed scans.
+Powered by `GET /dashboard/target/{target_id}/trend`.
+
+- **Grade trajectory line** — score (0–100) per completed scan over time.
+- **Severity stack area chart** — severity counts per scan, x-axis = `created_at`.
+- **Stat tiles** — open total · merged fixes · MTTR (days, computed from `Finding.created_at → last_rechecked_at` for findings now `verification_status="fixed"`).
+- **Scan-pair delta strip** — `+N new · −N fixed · ±N regressed` per consecutive pair, derived from severity-summary diffs (not finding-by-finding identity comparison — accurate enough for trending and avoids an O(scans²) Finding cross-join). Each row links into `/scans/compare?a=&b=` for a finding-level diff.
+- **Empty state** — targets with 0 or 1 completed scans don't show the trend section; one snapshot isn't a trend.
+
+## Per-repo trend dashboard
+
+Lives at `/repos/{id}/dashboard`. Linked from the repo's scan-history
+header when ≥2 scans are on file. Powered by `GET /repos/{id}/trend`.
+
+- **Severity score over time** — weighted score
+  (`25 × critical + 10 × high + 4 × medium + 1 × low`) per
+  `RepoScan`, x-axis = `completed_at`.
+- **Severity stack** — severity counts per scan, area chart.
+- **Stat tiles** — open findings · merged fixes · latest commit SHA · severity score for the latest scan.
+- **Latest-scan donut + scanner duration list** — quick view into the most recent commit's findings + per-scanner runtime.
+- **One-click link** into `/repos/scans/{id}/dashboard` for the latest scan's full breakdown.
+
+## Per-repo-scan dashboard
+
+Lives at `/repos/scans/{id}/dashboard`. Linked from the scan detail
+page next to "View compliance mapping". Reuses `/repos/scans/{id}` and
+`/repos/scans/{id}/findings` (no new backend).
+
+- **Stat tiles** — total findings · scanners run · scan duration · fix progress (`merged + open / total`).
+- **Severity donut** — distribution across the scan's findings.
+- **Scanner-effort bar** — finding count per scanner (`semgrep` / `bandit` / `gosec` / `brakeman` / `eslint` / `gitleaks` / `ghsa` / `yara` / `trivy_iac` / `checkov`); tooltip shows duration + skipped/error states.
+- **File-hotspot treemap** — top-N affected files sized by finding count, coloured by top severity.
+- **Fix-status pie** — `none` / `proposed` / `pr_open` / `merged` distribution. The pivot stat that tells you whether the autofix layer is converting.
+- **Top CVEs table** — top-12 CVE-tagged findings with installed → fixed version delta and a click-through to the linked PR (when `fix_pr_url` is set).
+
+## Workspace executive dashboard
+
+Lives at `/dashboard/executive`. Plan-gated on the
+`EXECUTIVE_DASHBOARD` feature flag — see the
+[executive-dashboard page](executive-dashboard.mdx) for the per-tile
+breakdown and the API endpoints.
+
+The previous version rendered the 90-day trend as inline SVG; it now
+uses the same Recharts primitives as the rest of the dashboard
+suite. The heatmap stays as a CSS grid (Recharts has no good heatmap
+primitive).
+
+## API surface
+
+| Endpoint | Powers |
+| --- | --- |
+| `GET /scans/{id}` + `GET /findings?scan_id=` | Per-scan dashboard. |
+| `GET /scans/{id}/llm-transcripts?format=json` | LLM verdict funnel + token / latency profile. |
+| `GET /dashboard/target/{target_id}/trend` | Per-target trend section. |
+| `GET /repos/{id}/scans` + `GET /repos/{id}/trend` | Per-repo trend dashboard. |
+| `GET /repos/scans/{id}` + `GET /repos/scans/{id}/findings` | Per-repo-scan dashboard. |
+| `GET /dashboard/heatmap` / `/trend` / `/top-repos` / `/kev-exposure` / `/fix-conversion` | Executive dashboard. |
+
+## Code locations
+
+- Shared primitives — `apps/web/components/dashboard/{SeverityDonut,CategoryBar,CvssHistogram,OwaspCoverage,TopRiskList,VerificationPie,EndpointTreemap,TrendLine,SeverityStack}.tsx`
+- Repo-specific — `apps/web/components/dashboard/repo/{ScannerEffortBar,FileHotspotTreemap,CveTable,FixStatusPie}.tsx`
+- LLM-specific — `apps/web/components/dashboard/llm/{VerdictFunnel,OwaspLlmHeatmap,StrategyBreakdown,JudgeConfidence,TokenProfile,TopFailuresList}.tsx`
+- Severity tokens (single source of truth) — `apps/web/lib/sev.ts`
+- Backend aggregations — `apps/api/pencheff_api/routers/dashboard.py` (`target_trend`), `apps/api/pencheff_api/routers/repos.py` (`repo_trend`)

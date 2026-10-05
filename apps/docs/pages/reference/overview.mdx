@@ -1,0 +1,57 @@
+---
+title: API overview
+---
+
+# Pencheff SaaS API
+
+Base URL:
+
+- **Production:** `https://app.pencheff.com/api`
+- **Local dev:** `http://localhost:8000`
+
+**Interactive API explorer:** browse and test every endpoint in your browser at
+[`https://api.pencheff.com/docs`](https://api.pencheff.com/docs) (Swagger UI).
+Click **Authorize**, paste a `pcf_live_…` API key, and use **Try it out**. See
+[API keys → Interactive API explorer](/reference/api-keys#interactive-api-explorer-swagger-ui)
+for the full walkthrough, including how to find your workspace id.
+
+All endpoints require a bearer token issued by Clerk. See
+[Authentication](/reference/authentication).
+
+## Endpoints at a glance
+
+| Namespace | Endpoints | Docs |
+| --- | --- | --- |
+| `/auth` | Login, signup, logout | [authentication](/reference/authentication) |
+| `/targets` | CRUD for scan targets | [targets](/reference/targets) |
+| `/scans` | Trigger scans, stream progress, fetch results | [scans](/reference/scans) |
+| `/findings` | List, suppress, verify, comment, assign | [findings](/reference/findings) |
+| `/schedules` | Cron-driven recurring scans | [schedules](/reference/schedules) |
+| `/assets` | Attack surface inventory | [assets](/reference/assets) |
+| `/integrations` | Slack, Teams, PagerDuty, Splunk, webhook | [integrations](/reference/integrations) |
+| `/sboms/{scan_id}` | SBOM browse + download | [sboms](/reference/sboms) |
+| `/dependencies/{scan_id}` | SCA dep inventory | [dependencies](/reference/dependencies) |
+| `/proxy` | Intercepting proxy sessions | [proxy](/reference/proxy) |
+
+## MCP tools (plugin side)
+
+When you run Pencheff as an MCP server, the following **81 MCP tools**
+are available — see [MCP tool reference](/reference/mcp-tools) for the
+full list.
+
+## Response conventions
+
+- Always JSON (`Content-Type: application/json`)
+- Timestamps in ISO 8601 UTC (`"2026-04-21T14:23:00+00:00"`)
+- UUIDs for all primary keys
+- Errors: `{ "detail": "..." }` for client errors,
+  `{ "detail": "ClassName: message" }` for server errors
+- Validation errors follow FastAPI's shape: `{ "detail": [{ "loc": [...], "msg": "..." }, ...] }`
+
+## Rate limits
+
+- 60 requests/min per user (SaaS)
+- 30 concurrent scans per org on the Pro plan
+
+Hit `X-RateLimit-Remaining` in the response headers to see how close
+you are.

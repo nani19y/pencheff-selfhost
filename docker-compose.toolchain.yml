@@ -1,0 +1,12 @@
+# Opt-in auxiliary-toolchain override for local development or deployments that
+# have reviewed and accepted the licenses for bundled third-party tools.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.toolchain.yml up --build
+# Go-based CLIs are intentionally not compiled in this image; install them on
+# the host or provide a custom derivative image if your deployment needs them.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.toolchain

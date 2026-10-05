@@ -1,0 +1,338 @@
+---
+title: Tutorial - cloud target registration
+description: Register AWS, Azure, and GCP cloud targets, add read-only authorization, and test cloud account, storage, serverless, edge, database, and secrets-manager targets.
+---
+
+# Tutorial: cloud target registration
+
+This tutorial registers each Infrastructure & Cloud Security target type in the
+SaaS app. It also shows offline inventory examples you can use when you are
+learning or teaching and do not want to connect a live cloud account.
+
+## What you will create
+
+You can register any of these target kinds:
+
+- Cloud Account (CSPM) - broad account posture
+- Serverless Functions - Lambda, Azure Functions, Cloud Functions metadata
+- Cloud Storage - S3, Azure Blob, GCS buckets/containers
+- Load Balancer / CDN - ALB/ELB, CloudFront, Azure Front Door, GCP load balancers
+- Database (Cloud) - RDS, Cloud SQL, Cosmos DB, managed databases
+- Secrets Manager - AWS Secrets Manager, Azure Key Vault, GCP Secret Manager
+
+Pencheff only needs metadata. It does not mutate resources, and it never reads
+secret values.
+
+## 1. Open the target picker
+
+1. Sign in to the web app.
+2. Open **Targets**.
+3. Click **Register target**.
+4. Open **Infrastructure & Cloud Security**.
+5. Select one or more target cards.
+6. Click **Continue**.
+
+You can also open **By Discipline** and select:
+
+- **CSPM** for broad cloud posture.
+- **CIEM** for cloud identity and entitlement posture.
+- **DSPM** for storage, database, and secrets posture.
+- **Serverless Security** for functions.
+- **Edge Security** for load balancer/CDN.
+
+## 2. Choose provider and scope
+
+For each selected cloud target:
+
+1. Enter a friendly target name, such as `AWS prod storage`.
+2. Select **AWS**, **Azure**, or **GCP**.
+3. Enter the provider scope:
+
+| Provider | Field | Example |
+| --- | --- | --- |
+| AWS | Account ID | `123456789012` |
+| Azure | Subscription ID | `00000000-0000-0000-0000-000000000000` |
+| GCP | Project ID | `production-project` |
+
+4. Enter regions or locations:
+
+```text
+us-east-1, us-west-2
+```
+
+For global-only tests, leave regions blank.
+
+Pencheff does not ask for an invoke URL for cloud targets. It creates a target
+identifier like:
+
+```text
+cloud://aws/123456789012/cloud_storage
+```
+
+## 3. Add AWS authorization
+
+Use a read-only IAM user or temporary STS credentials.
+
+Minimum practical managed policies for a first test:
+
+- `SecurityAudit`
+- `ViewOnlyAccess`
+
+For a tighter setup:
+
+1. In AWS IAM, create a policy that allows read-only `List*`, `Get*`, and
+   `Describe*` calls for the services you want to inspect.
+2. Attach the policy to an IAM user or role.
+3. Create an access key.
+4. In Pencheff, paste:
+
+```text
+Access key ID: AKIA...
+Secret access key: ...
+Session token: optional, only for STS/SSO temporary credentials
+Role ARN: optional, only if Pencheff should assume a read-only role
+```
+
+AWS examples:
+
+| Target | Helpful read permissions |
+| --- | --- |
+| Cloud Account | IAM, CloudTrail, Config, EC2 networking read actions |
+| Serverless | Lambda `List*` and `Get*`, IAM read actions |
+| Storage | S3 `List*` and `GetBucket*` metadata actions |
+| Load Balancer / CDN | ELBv2, CloudFront, WAF read actions |
+| Database | RDS, DynamoDB, Redshift, DocumentDB read actions |
+| Secrets Manager | Secrets Manager `ListSecrets`, `DescribeSecret`, resource-policy read actions |
+
+Do not grant write actions for normal Pencheff cloud scans.
+
+## 4. Add Azure authorization
+
+Use a Service Principal.
+
+1. In Azure, open **App registrations**.
+2. Create an app registration named `pencheff-readonly`.
+3. Create a client secret.
+4. Open the target subscription.
+5. Assign these roles to the app:
+
+```text
+Reader
+Security Reader
+```
+
+6. In Pencheff, paste:
+
+```text
+Tenant ID
+Client ID
+Client secret
+```
+
+Azure target examples:
+
+| Target | Metadata Pencheff expects |
+| --- | --- |
+| Cloud Account | subscription posture, IAM role assignments, diagnostic settings |
+| Serverless | Function App visibility, auth settings, runtime metadata |
+| Storage | Blob/container public access, encryption, logging |
+| Load Balancer / CDN | Front Door/CDN/WAF/TLS metadata |
+| Database | SQL/Cosmos DB public network access, encryption, backup state |
+| Secrets Manager | Key Vault secret metadata, policies, rotation state when available |
+
+## 5. Add GCP authorization
+
+Use a service account JSON key.
+
+1. Open **IAM & Admin**.
+2. Create a service account named `pencheff-readonly`.
+3. Grant the service account read-only roles for the target project.
+4. For a first scan, use:
+
+```text
+Viewer
+Security Reviewer
+```
+
+5. Add resource-specific viewer roles as needed:
+
+```text
+Cloud Functions Viewer
+Storage Object Viewer only if you intentionally want object metadata
+Secret Manager Viewer for secret metadata only
+Cloud SQL Viewer
+Compute Viewer
+```
+
+6. Create a JSON key.
+7. In Pencheff, paste or upload the service-account JSON.
+
+Do not grant roles that allow changing IAM, changing network settings, reading
+secret payloads, or editing data stores.
+
+## 6. Pick scan options
+
+Each target type has checkboxes for the checks it supports.
+
+Cloud Account:
+
+- Check IAM and entitlements
+- Check network exposure
+- Check audit logging
+
+Serverless Functions:
+
+- Check public invocation
+- Check deprecated runtimes
+- Check environment metadata
+
+Cloud Storage:
+
+- Check public access
+- Check encryption
+- Check access logging
+
+Load Balancer / CDN:
+
+- Check TLS configuration
+- Check origin exposure
+- Check WAF coverage
+- Check cache policy
+
+Database:
+
+- Check public access
+- Check encryption
+- Check backups
+
+Secrets Manager:
+
+- Check rotation
+- Check access policy
+- Check encryption
+
+## 7. Optional: run with offline inventory
+
+Offline inventory is the simplest way to learn the flow. Paste one of these
+examples in **Inventory JSON** and leave provider credentials blank.
+
+Cloud Account:
+
+```json
+{
+  "iam": [
+    {
+      "principal": "arn:aws:iam::123456789012:role/AdminLike",
+      "actions": ["*", "iam:PassRole"]
+    }
+  ],
+  "audit_logging": {
+    "enabled": false,
+    "log_integrity_validation": false
+  }
+}
+```
+
+Serverless Functions:
+
+```json
+{
+  "functions": [
+    {
+      "name": "billing-worker",
+      "public_invocation": true,
+      "runtime": "nodejs12.x",
+      "env_keys": ["DATABASE_PASSWORD"]
+    }
+  ]
+}
+```
+
+Cloud Storage:
+
+```json
+{
+  "storage": [
+    {
+      "name": "prod-public-assets",
+      "public": true,
+      "encrypted": false,
+      "logging_enabled": false
+    }
+  ]
+}
+```
+
+Load Balancer / CDN:
+
+```json
+{
+  "cdn": [
+    {
+      "name": "app-cdn",
+      "tls_min_version": "1.0",
+      "waf_enabled": false,
+      "origin_public": true,
+      "caches_authorized_content": true
+    }
+  ]
+}
+```
+
+Cloud Database:
+
+```json
+{
+  "databases": [
+    {
+      "name": "prod-db",
+      "public_access": true,
+      "encrypted": false,
+      "backups_enabled": false,
+      "deletion_protection": false
+    }
+  ]
+}
+```
+
+Secrets Manager:
+
+```json
+{
+  "secrets": [
+    {
+      "name": "prod/db/password",
+      "rotation_enabled": false,
+      "policy_public": true,
+      "encrypted": false
+    }
+  ]
+}
+```
+
+Never paste a real secret value into inventory JSON.
+
+## 8. Register and commission
+
+1. Keep **Commission the assessment immediately upon registration** checked if
+   you want the scan to start right away.
+2. Click **Register target**.
+3. Review the consent screen.
+4. Confirm the read-only cloud metadata disclosure.
+5. Start the scan.
+
+When the scan finishes, findings are grouped by agent:
+
+- `CloudIamExposureAgent`
+- `CloudStorageAgent`
+- `ServerlessSecurityAgent`
+- `EdgeCdnSecurityAgent`
+- `CloudDatabaseAgent`
+- `SecretsHygieneAgent`
+- `CloudAuditLoggingAgent`
+
+## Next
+
+- [Cloud security feature reference](/features/cloud-security)
+- [IaC + cloud hardening](/tutorials/iac-cloud-hardening)
+- [Container image scanning](/features/container)

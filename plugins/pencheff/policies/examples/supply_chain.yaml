@@ -1,0 +1,21 @@
+apiVersion: pencheff/v1
+kind: ScanPolicy
+metadata:
+  name: supply-chain
+  description: SBOM + SCA + license compliance + container + IaC scan.
+spec:
+  targets:
+    - url: local:./
+  modules:
+    - { name: scan_dependencies,   params: { path: "./" } }
+    - { name: generate_sbom,       params: { path: "./", format: cyclonedx } }
+    - { name: check_licenses,      params: { path: "./" } }
+    - { name: scan_dockerfile,     params: { path: "./" } }
+    - { name: scan_kubernetes,     params: { path: "./k8s/" } }
+    - { name: scan_terraform,      params: { path: "./infra/" } }
+  assertions:
+    - { id: no_kev, condition: "critical == 0" }
+  thresholds:
+    fail_on: high
+  reports:
+    - { format: json, path: "./reports/" }

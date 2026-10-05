@@ -1,0 +1,158 @@
+name: Pencheff LLM Red Team
+
+on:
+  workflow_dispatch:
+    inputs:
+      endpoint:
+        description: "LLM chat endpoint URL"
+        required: true
+        type: string
+      provider:
+        description: "Provider preset"
+        required: false
+        default: "openai-chat"
+        type: choice
+        options:
+          - openai-chat
+          - custom
+          - websocket
+      model:
+        description: "Model identifier"
+        required: false
+        default: ""
+        type: string
+      profile:
+        description: "Payload cap profile"
+        required: false
+        default: "standard"
+        type: choice
+        options:
+          - quick
+          - standard
+          - deep
+      fail_on:
+        description: "Fail on severity at or above"
+        required: false
+        default: "high"
+        type: choice
+        options:
+          - critical
+          - high
+          - medium
+          - low
+          - info
+
+jobs:
+  llm-redteam:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    env:
+      LLM_ENDPOINT: ${{ inputs.endpoint }}
+      LLM_PROVIDER: ${{ inputs.provider }}
+      LLM_MODEL: ${{ inputs.model }}
+      LLM_PROFILE: ${{ inputs.profile }}
+      FAIL_ON: ${{ inputs.fail_on }}
+      LLM_AUTH_HEADER: ${{ secrets.LLM_AUTH_HEADER }}
+      LLM_HEADERS_JSON: ${{ secrets.LLM_HEADERS_JSON }}
+      LLM_SYSTEM_PROMPT: ${{ secrets.LLM_SYSTEM_PROMPT }}
+      LLM_REQUEST_TEMPLATE: ${{ secrets.LLM_REQUEST_TEMPLATE }}
+      LLM_RESPONSE_PATH: ${{ secrets.LLM_RESPONSE_PATH }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Pencheff
+        run: pip install -e plugins/pencheff
+
+      - name: Run LLM red-team suite
+        run: |
+          python - <<'PY'
+          import asyncio
+          import json
+          import os
+          import sys
+
+          from pencheff.config import Severity
+          from pencheff.core.session import create_session
+          from pencheff.modules.llm_red_team import LLM_RED_TEAM_MODULES
+          from pencheff.modules.llm_red_team.reporting import build_red_team_summary
+          from pencheff.reporting.exporter import export_json, export_junit, export_prometheus
+
+          caps = {"quick": 25, "standard": 100, "deep": None}
+          rank = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+
+          headers = {}
+          if os.getenv("LLM_AUTH_HEADER"):
+              headers["Authorization"] = os.environ["LLM_AUTH_HEADER"]
+          if os.getenv("LLM_HEADERS_JSON"):
+              headers.update(json.loads(os.environ["LLM_HEADERS_JSON"]))
+
+          cfg = {
+              "provider": os.environ["LLM_PROVIDER"],
+              "model": os.getenv("LLM_MODEL") or None,
+              "system_prompt": os.getenv("LLM_SYSTEM_PROMPT") or None,
+              "request_template": os.getenv("LLM_REQUEST_TEMPLATE") or None,
+              "response_path": os.getenv("LLM_RESPONSE_PATH") or None,
+              "retries": 1,
+              "redteam": {
+                  "strategies": ["base64", "rot13", "leetspeak", "jailbreak", "crescendo"],
+                  "guardrails": ["pii", "secrets", "unsafe-code", "tool-authz"],
+                  "guardrail_bypass": True,
+              },
+              "thresholds": {"max_latency_ms": 10000, "max_tokens_per_call": 4096},
+              "budget": {"max_calls": 750},
+          }
+          cfg = {k: v for k, v in cfg.items() if v is not None}
+
+          sess = create_session(
+              target_url=os.environ["LLM_ENDPOINT"],
+              credentials={"headers": headers} if headers else None,
+              depth="standard",
+              llm_config=cfg,
+          )
+
+          async def main():
+              all_findings = []
+              for mod_cls in LLM_RED_TEAM_MODULES.values():
+                  mod = mod_cls()
+                  findings = await mod.run(
+                      sess,
+                      http=None,
+                      config={"max_payloads": caps[os.environ["LLM_PROFILE"]]},
+                  )
+                  all_findings.extend(findings)
+              sess.findings.add_many(all_findings)
+
+          asyncio.run(main())
+          os.makedirs("pencheff-llm-redteam", exist_ok=True)
+          export_json(sess, "pencheff-llm-redteam")
+          export_junit(sess, "pencheff-llm-redteam")
+          export_prometheus(sess, "pencheff-llm-redteam")
+          summary = build_red_team_summary(sess.findings.get_all())
+          with open("pencheff-llm-redteam/summary.json", "w", encoding="utf-8") as fh:
+              json.dump(summary, fh, indent=2)
+          print(json.dumps(summary, indent=2))
+
+          threshold = rank[os.environ["FAIL_ON"]]
+          worst = max(
+              (rank.get(f.severity.value, 0) for f in sess.findings.get_all()),
+              default=-1,
+          )
+          if worst >= threshold:
+              sys.exit(1)
+          PY
+
+      - name: Upload LLM red-team artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pencheff-llm-redteam-${{ github.run_id }}
+          path: pencheff-llm-redteam/
+          retention-days: 30

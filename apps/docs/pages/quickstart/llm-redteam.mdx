@@ -1,0 +1,165 @@
+---
+title: Quickstart — LLM red team
+description: Adversarial test a chat-completions endpoint in under 5 minutes.
+---
+
+import { Callout, Tabs } from "nextra/components";
+
+# Quickstart: LLM red team
+
+Pencheff treats an LLM endpoint as a third kind of asset alongside URL
+(DAST) and Repo (SAST/SCA). Register a chat-completions URL once,
+fire a curated suite of black-box adversarial probes at it, get OWASP
+LLM Top 10 (2025) findings in the same unified queue as everything
+else.
+
+## 1. Get the right endpoint URL
+
+The red-team module talks to the **chat-completions** endpoint, not
+the model info page. Examples that work:
+
+| Provider preset | Endpoint URL |
+| --- | --- |
+| `openai-chat` | `https://api.openai.com/v1/chat/completions` |
+| `openai-chat` (OpenRouter) | `https://openrouter.ai/api/v1/chat/completions` |
+| `azure-openai` | `https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=2024-02-01` |
+| `bedrock` | `https://bedrock-runtime.<region>.amazonaws.com/model/<model>/invoke` |
+| `vertex` | `https://<region>-aiplatform.googleapis.com/v1/projects/<project>/locations/<region>/publishers/google/models/<model>:generateContent` |
+| `custom` | Any HTTPS URL &mdash; you supply the request-body template + response JSONPath |
+| `executable` | `cmd:` URL &mdash; local subprocess, JSON over stdin/stdout |
+| `websocket` | `wss://&hellip;` |
+| `browser` | Playwright drives the chat UI |
+
+Cloud-native auth re-signs / refreshes tokens per request without
+touching the credential blob. Optional extras pull the right SDK:
+`pip install pencheff[bedrock]` / `[vertex]` / `[azure]`.
+
+## 2. Pick a profile
+
+| Profile | Payloads | Wall time @ 18 RPM |
+| --- | --- | --- |
+| `quick` | 25 | ~5 min (10 min budget) |
+| `standard` | 75 | ~15 min (30 min budget) |
+| `deep` | 250 | ~60–90 min (2 hour budget — fits tier-4 surface + always-on TAP/GOAT/Hydra) |
+
+Round-robin across techniques means a `quick` profile never starves
+any single technique class.
+
+## 3. Run it
+
+<Tabs items={["SaaS Dashboard", "CLI", "MCP host"]}>
+<Tabs.Tab>
+
+1. **`/targets/new`** &rarr; pick **LLM endpoint**.
+2. Endpoint URL = the chat-completions URL.
+3. Provider preset: `OpenAI-compatible` or one of the cloud-native
+   shapes.
+4. Add an `Authorization` header row with the literal value
+   `Bearer sk-…`. Add any provider-specific extras
+   (`HTTP-Referer`, `OpenAI-Organization`, `x-api-key`).
+5. Optionally paste your deployed system prompt baseline so probes
+   exercise the **deployed** configuration, not a bare model.
+6. Pick a profile (`quick` / `standard` / `deep`) and submit.
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+```bash
+pencheff llm-redteam \
+  --target https://openrouter.ai/api/v1/chat/completions \
+  --provider openai-chat \
+  --model 'meta-llama/llama-3.3-70b-instruct:free' \
+  --header "Authorization=Bearer sk-or-v1-…" \
+  --profile standard \
+  --strategies 'base64,jailbreak,crescendo,leetspeak' \
+  --datasets 'donotanswer,harmbench' \
+  --guardrails 'pii,secrets,unsafe-code,tool-authz' \
+  --judge-provider openai-moderation \
+  --judge-endpoint https://api.openai.com/v1/moderations \
+  --max-rps 0.3 \
+  --max-cost-usd 5 \
+  --output-format html \
+  --output-file llm-report.html \
+  --fail-on high
+```
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+```text
+> Red-team this OpenRouter endpoint with the standard profile, judge
+  with OpenAI moderation, fail on high.
+```
+
+The host calls `scan_llm_red_team` once with the merged config. The
+runner branches on `target.kind = "llm"` and dispatches all 10 OWASP
+LLM modules in a single stage.
+
+</Tabs.Tab>
+</Tabs>
+
+## Coverage at a glance
+
+The runner fires payloads across every OWASP LLM Top 10 (2025)
+category in one shot, and **automatically loads** the tier-4 add-on
+plugin packs and dataset seeds that augment each module:
+
+| ID | Module | Auto-loaded plugins | Auto-loaded datasets |
+| --- | --- | --- | --- |
+| LLM01 | Prompt Injection | `coding-agent:repo-prompt-injection` | (none) |
+| LLM02 | Sensitive Information Disclosure | `coding-agent:secret-handling`, `coding-agent:procfs-credential-read`, `coding-agent:steganographic-exfil`, `coding-agent:delayed-ci-exfil`, `rag:exfiltration` | (none) |
+| LLM03 | Supply Chain | (none) | (none) |
+| LLM04 | Data and Model Poisoning | `rag:poisoning` | (none) |
+| LLM05 | Improper Output Handling | `coding-agent:generated-vulnerabilities`, `coding-agent:terminal-output-injection` | aegis (S3 / S7), unsafebench (phishing-art), harmbench |
+| LLM06 | Excessive Agency | `coding-agent:automation-poisoning`, `coding-agent:network-egress-bypass`, `coding-agent:sandbox-escape`, `coding-agent:verifier-sabotage`, `coding-agent:core`, `mcp:tool-poisoning`, `mcp:tool-name-collision`, `mcp:untrusted-server-prompt`, `mcp:resource-exfil` | (none) |
+| LLM07 | System Prompt Leakage | (none) | (none) |
+| LLM08 | Vector and Embedding Weaknesses | (none) | (none) |
+| LLM09 | Misinformation | `bias:age`, `bias:disability`, `bias:gender`, `bias:race`, `rag:source-attribution` | aegis (S1, S2, S4, S5, S6), unsafebench (hate-iconography, graphic-violence, NSFW-CSAM, weapon-howto, doxx), xstest (8 over-refusal probes — verdict inverted), harmbench, donotanswer, beavertails, toxic-chat |
+| LLM10 | Unbounded Consumption | (none) | (none) |
+
+When an **attacker LLM** is configured on the target, every base
+case is also marked for **TAP** + **GOAT** + **Hydra** iterative
+search — the dispatcher routes those marker cases to the matching
+attacker-driven loop at scan time.
+
+Every finding is mapped to six compliance frameworks: **OWASP LLM
+Top 10 · MITRE ATLAS · NIST AI Risk Management Framework · EU AI
+Act · GDPR · ISO/IEC 42001:2023**.
+
+<Callout type="info">
+  **Reasoning models** (Nemotron, DeepSeek-R1, QwQ, &hellip;) emit
+  `<think>...</think>` traces that confuse regex judges. Set
+  `--judge-provider openai-moderation` &mdash; it scores the visible
+  output, not the chain-of-thought.
+</Callout>
+
+## Cost &amp; rate ceilings
+
+The token-bucket rate limiter is shared across every probe targeting
+the same endpoint, so 10 OWASP modules dispatching concurrently
+respect a single per-key cap. Defaults:
+
+```
+max_rpm: 18              # OpenRouter free tier ≈ 20 RPM
+max_cost_usd: 5.0
+max_calls: 2000
+max_latency_ms: 30000    # emits LLM10 finding when exceeded
+```
+
+429 responses honour the upstream `Retry-After` header automatically;
+the shared limiter stalls all concurrent dispatchers until the
+provider&rsquo;s window resets so retries don&rsquo;t thunder-herd.
+
+## Next
+
+* [AI target provider examples](/tutorials/ai-target-provider-examples)
+  &mdash; dashboard field-by-field examples for OpenAI-compatible,
+  Azure OpenAI, Bedrock, Vertex, custom LLMs, guard models, MCP, RAG,
+  voice, model artifacts, and memory targets.
+* [LLM Red Team feature reference](/features/llm-redteam) &mdash;
+  every strategy, every dataset, every judge, every transport.
+* [Tutorial: model A/B regression gate](/tutorials/llm-ab-regression)
+  &mdash; gate the model upgrade PR on safety regressions.
+* [Compliance mapping](/quickstart/compliance) &mdash; LLM scans use
+  the AI-specific framework set (OWASP LLM, MITRE ATLAS, NIST AI RMF,
+  EU AI Act).

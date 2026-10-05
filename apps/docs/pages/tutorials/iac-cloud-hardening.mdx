@@ -1,0 +1,112 @@
+---
+title: Tutorial — IaC + cloud hardening
+description: Trivy IaC + Checkov against Terraform / K8s / CloudFormation, and the compliance trail that proves it.
+---
+
+# Tutorial: IaC + cloud hardening
+
+The repo scanner runs **Trivy IaC** and **Checkov** in parallel
+against Terraform, CloudFormation, Helm, Kubernetes manifests, and
+Dockerfiles. This tutorial walks through wiring the policy
+threshold, suppressing intentional exceptions, and turning the
+output into a control attestation.
+
+## Scenario
+
+* **Repo.** `acme-co/infra` &mdash; ~150 Terraform modules, ~80
+  Helm charts, three CloudFormation stacks.
+* **Constraint.** A handful of legacy modules cannot satisfy the
+  CIS benchmark today &mdash; we need to suppress them with a
+  recorded justification, not just disable the scanner.
+* **Goal.** A clean scan + an audit trail of every suppression.
+
+## 1. Run the scan
+
+If the infra is in the same repo as application code,
+[connecting the repo](/repos/connect) once enables IaC scanning
+automatically &mdash; both Trivy IaC and Checkov fan out as part
+of the standard repo scan.
+
+If infra lives in a dedicated repo:
+
+```bash
+curl -X POST -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  "$PENCHEFF_API_BASE/repos/$REPO_ID/scan"
+```
+
+The scan opens at `/repos/scans/{id}` with a per-scanner card
+showing the Trivy IaC and Checkov counts.
+
+## 2. Triage the noise
+
+Both scanners default to flagging `medium+`. The Checkov rule pack
+is broad, so the unified findings view will surface a long list on
+the first run. Two paths to focus engineer attention:
+
+* **Filter at view time.** The repo scan&rsquo;s `severity` filter
+  hides MEDIUM in one click.
+* **Suppress recurring noise.** For policy hits that you&rsquo;ve
+  already accepted, suppress them with a justification (next step)
+  &mdash; suppressed findings stay in the database but don&rsquo;t
+  appear on the report by default.
+
+## 3. Suppress with a justification
+
+A finding can be suppressed with one of:
+
+* `accepted_risk` &mdash; known and accepted (recorded with reason
+  + reviewer)
+* `wont_fix` &mdash; acknowledged but not in remediation scope
+* `false_positive` &mdash; confirmed noise
+* `duplicate` &mdash; same root cause tracked elsewhere
+* `out_of_scope` &mdash; outside agreed test scope
+
+```bash
+curl -X POST -H "Authorization: Bearer $PENCHEFF_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reason": "accepted_risk",
+    "notes": "Dev cluster only — does not handle production data. Reviewed by SRE 2026-04-12."
+  }' \
+  "$PENCHEFF_API_BASE/findings/$FINDING_ID/suppress"
+```
+
+Suppressions are logged with timestamp, user, and notes; they
+appear on the audit trail and survive re-scans.
+
+## 4. Read the compliance rollup
+
+`/repos/scans/{id}/compliance` &mdash; switch to **NIST 800-53**.
+IaC findings (`category: iac` or `misconfiguration`) light up:
+
+* `CM-6` &mdash; Configuration Settings
+* `CM-7` &mdash; Least Functionality
+* `SC-7` &mdash; Boundary Protection (when network-config flagged)
+
+For PCI-DSS the same findings light up `2.2 / 6.2`. For ISO 27001:2022
+they hit `A.8.8 / A.8.9`.
+
+## 5. Container hardening
+
+When the repo also contains a `Dockerfile`, Trivy&rsquo;s container
+image scanner fans out automatically. Findings carry the offending
+layer and the recommended fix line.
+
+For images already in a registry (not in a connected repo), the MCP
+host exposes `scan_container_image` as a one-shot tool &mdash; pass
+the image reference (`acme/api:1.42.0`), it returns the same
+finding shape as the repo-scan path.
+
+## Deliverable
+
+* A clean repo scan you can attach to the next infra PR.
+* A signed-off suppression list for the legacy modules.
+* A NIST 800-53 control rollup the auditor can ingest as evidence.
+
+## Next
+
+* [Tutorial: Cloud target registration](/tutorials/cloud-targets).
+* [IaC feature reference](/features/iac).
+* [Cloud security targets](/features/cloud-security).
+* [Tutorial: SBOM as evidence](/tutorials/sbom-evidence).
+* [Tutorial: Audit-ready bundle](/tutorials/audit-ready-bundle).

@@ -1,0 +1,38 @@
+[
+  {
+    "id": "solidity-tx-origin-auth",
+    "severity": "high",
+    "title": "Authorization check via tx.origin",
+    "description": "tx.origin returns the EOA that started the transaction chain — using it for authorization lets an attacker phish a privileged user into calling a malicious contract that then forwards the call back to the protected function. Use msg.sender for caller-identity checks.",
+    "remediation": "Replace tx.origin with msg.sender in any access-control modifier or require() check.",
+    "cwe": "CWE-477",
+    "source": "hand-curated"
+  },
+  {
+    "id": "solidity-weak-randomness",
+    "severity": "medium",
+    "title": "Block-state used as a randomness source",
+    "description": "block.timestamp, block.number, block.difficulty, and block.prevrandao are all influenceable by miners or proposers within a small window. Using them to seed lotteries, NFT mint orders, or any value an attacker would profit from manipulating is unsafe.",
+    "remediation": "Use a commit-reveal scheme, a VRF (e.g. Chainlink VRF), or an oracle for randomness. Document any deliberate use of block-state randomness with a // pencheff:allow comment.",
+    "cwe": "CWE-330",
+    "source": "hand-curated"
+  },
+  {
+    "id": "solidity-deprecated-selfdestruct",
+    "severity": "medium",
+    "title": "Deprecated SELFDESTRUCT opcode",
+    "description": "selfdestruct() was deprecated in Solidity 0.8.18; per EIP-6049 its behaviour is changing and the contract may not actually be removed from state on future hardforks. Existing patterns that rely on it for fund recovery / migration may silently break.",
+    "remediation": "Migrate to an explicit pause/upgrade pattern (e.g. OpenZeppelin's UUPS) instead of relying on selfdestruct.",
+    "cwe": "CWE-477",
+    "source": "hand-curated"
+  },
+  {
+    "id": "solidity-unchecked-low-level-call",
+    "severity": "high",
+    "title": "Low-level call return value discarded",
+    "description": "address.call() / .delegatecall() / .staticcall() return a (bool success, bytes memory data) tuple. Discarding the success flag means a failed call silently succeeds at the caller — funds get stuck, state changes are lost. The classic foot-gun behind King-of-the-Hill exploits.",
+    "remediation": "Always capture and check the success flag: `(bool ok, ) = target.call{value: amount}(\"\"); require(ok, \"call failed\");`",
+    "cwe": "CWE-252",
+    "source": "hand-curated"
+  }
+]

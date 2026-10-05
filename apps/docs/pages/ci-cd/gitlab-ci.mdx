@@ -1,0 +1,99 @@
+---
+title: GitLab CI
+---
+
+# GitLab CI
+
+Pencheff ships a reusable GitLab CI template at [`apps/gitlab-ci/.gitlab-ci.yml`](https://github.com/Magadha-IG/pencheff/blob/main/apps/gitlab-ci/.gitlab-ci.yml) in the repository.
+
+## Quick start
+
+Add to your project's `.gitlab-ci.yml`:
+
+```yaml
+include:
+  - remote: 'https://raw.githubusercontent.com/Magadha-IG/pencheff/main/apps/gitlab-ci/.gitlab-ci.yml'
+
+variables:
+  PENCHEFF_TARGET: "https://your-app.example.com"
+  PENCHEFF_FAIL_ON: "high"
+  PENCHEFF_API_TOKEN: $PENCHEFF_API_TOKEN   # set in GitLab CI/CD Settings → Variables
+```
+
+The template runs on merge requests and pushes to the default branch. The scan report (JSON + Markdown) is uploaded as a GitLab artifact retained for 30 days.
+
+## Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `PENCHEFF_TARGET` | *(required)* | Target URL or HOST:PORT |
+| `PENCHEFF_PROFILE` | `cicd` | `quick` \| `standard` \| `deep` \| `api-only` \| `compliance` \| `cicd` |
+| `PENCHEFF_FAIL_ON` | `high` | Minimum severity to fail the pipeline: `info` \| `low` \| `medium` \| `high` \| `critical` |
+| `PENCHEFF_API_BASE` | *(empty)* | Hosted Pencheff API base URL |
+| `PENCHEFF_API_TOKEN` | *(empty)* | Bearer token — set as a **masked** CI/CD variable |
+| `PENCHEFF_ENGAGEMENT_ID` | *(empty)* | Scope scan to a specific engagement |
+| `PENCHEFF_ARTIFACT_NAME` | `pencheff-report` | Name of the uploaded artifact |
+
+## Full template (copy-paste)
+
+```yaml
+stages: [security]
+
+variables:
+  PENCHEFF_TARGET: ""
+  PENCHEFF_PROFILE: "cicd"
+  PENCHEFF_FAIL_ON: "high"
+  PENCHEFF_API_BASE: ""
+  PENCHEFF_API_TOKEN: ""
+  PENCHEFF_ENGAGEMENT_ID: ""
+  PENCHEFF_ARTIFACT_NAME: "pencheff-report"
+
+pencheff-security-scan:
+  stage: security
+  image: python:3.12-slim
+  cache:
+    paths: [/root/.pencheff/cve_cache.db]
+    key: pencheff-cve
+  before_script:
+    - pip install --quiet pencheff
+  script:
+    - mkdir -p "$CI_PROJECT_DIR/pencheff-report"
+    - |
+      EXTRA=""
+      if [ -n "$PENCHEFF_ENGAGEMENT_ID" ]; then
+        EXTRA="--engagement-id $PENCHEFF_ENGAGEMENT_ID"
+      fi
+      set +e
+      pencheff scan \
+        --target "$PENCHEFF_TARGET" \
+        --profile "$PENCHEFF_PROFILE" \
+        --fail-on "$PENCHEFF_FAIL_ON" \
+        --output "$CI_PROJECT_DIR/pencheff-report" \
+        --format json,markdown $EXTRA
+      RC=$?
+      set -e
+      case "$RC" in
+        0) echo "PENCHEFF_WORST_SEVERITY=none" >> pencheff.env ;;
+        2) echo "PENCHEFF_WORST_SEVERITY=$PENCHEFF_FAIL_ON" >> pencheff.env ;;
+        *) echo "PENCHEFF_WORST_SEVERITY=error" >> pencheff.env ;;
+      esac
+      exit $RC
+  artifacts:
+    when: always
+    name: "$PENCHEFF_ARTIFACT_NAME"
+    paths: [pencheff-report/]
+    reports:
+      dotenv: pencheff.env
+    expire_in: 30 days
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+```
+
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | No findings at or above `PENCHEFF_FAIL_ON` severity |
+| `2` | At least one finding at or above threshold — pipeline fails |
+| other | Scan error (network, auth, config) |

@@ -1,0 +1,275 @@
+---
+title: MCP tool reference
+---
+
+# MCP tool reference
+
+Pencheff registers **88 MCP tools** across session, recon, scan,
+mobile, exploit, SCA, IaC, network, proxy, fuzzer, ASM, integrations,
+and reporting. Every tool returns a JSON object.
+
+## Session
+
+- `pentest_init(target_url, credentials?, scope?, exclude_paths?, test_depth?, profile?)`
+- `pentest_configure(session_id, updates)`
+- `pentest_status(session_id)`
+- `list_scan_profiles()`
+
+## Recon
+
+- `recon_passive(session_id, techniques?)`
+- `recon_active(session_id, ...)`
+- `recon_api_discovery(session_id, api_type?)`
+
+## Scan (web DAST)
+
+`scan_waf`, `scan_injection`, `scan_client_side`, `scan_auth`,
+`scan_authz`, `scan_infrastructure`, `scan_api`, `scan_business_logic`,
+`scan_advanced`, `scan_cloud`, `scan_file_handling`, `scan_websocket`,
+`scan_mfa_bypass`, `scan_oauth`, `scan_subdomain_takeover`,
+`scan_dom_xss`.
+
+## Mobile (static)
+
+- `scan_mobile_static(session_id, apk_path?, ipa_path?, types?, use_mobsf?)`
+
+Decompiles an APK with apktool + jadx, or unzips an IPA and parses
+`Info.plist`, then sweeps for OWASP Mobile Top 10 issues:
+debuggable / allowBackup / usesCleartextTraffic flags, exported
+components without permissions, missing networkSecurityConfig,
+hardcoded secrets (AWS / Google / Firebase / Slack / GitHub / Stripe /
+JWTs / PEM private keys), insecure crypto (DES, 3DES, RC4, ECB,
+MD5, SHA-1, hardcoded keys/IVs, `java.util.Random`), iOS ATS bypass
+(`NSAllowsArbitraryLoads`), custom URL schemes, embedded provisioning
+profiles, and missing PIE flag (via `otool -hv`, macOS only).
+
+Pass exactly one of `apk_path` or `ipa_path`. Set `types` to a subset
+of `["manifest", "secrets", "crypto", "ios"]` to narrow coverage.
+`use_mobsf=true` triggers a MobSF REST enrichment pass — requires
+`MOBSF_API_KEY` and a running MobSF server. Dynamic instrumentation
+(Frida, objection, drozer) requires an emulator or rooted device and
+is **not** part of this tool.
+
+Required tools: `apktool` and `jadx` for Android; `plistlib` (stdlib)
+for iOS plist parsing; `otool` (Xcode CLT, macOS only) for binary
+hardening checks. See `check_dependencies` for runtime availability.
+
+- `scan_mobile_app(session_id, apk_path, platform?, modules?, mobsf_url?)`
+
+  Simplified single-call wrapper. `platform`: `"android"` (default) or `"ios"`. `modules`: any subset of `["mobsf", "apktool", "manifest", "secrets"]`. `mobsf_url` defaults to `http://127.0.0.1:8000`. Returns per-module result dicts, each with `findings_count` and a `findings` list. Requires `MOBSF_API_KEY` env var for MobSF enrichment.
+
+## Active Directory / Internal Network
+
+- `scan_active_directory(session_id, domain, username, password, dc_ip?, modules?)`
+
+  Orchestrated Active Directory enumeration. Modules (any subset): `bloodhound` (BloodHound-python relationship graph — attack paths to Domain Admin), `certipy` (ESC1–ESC15 certificate template abuse), `crackmapexec` (SMB/share/WinRM enumeration via NetExec/CrackMapExec), `impacket` (secretsdump/Kerberoast/AS-REP roast via Impacket suite).
+
+  All external CLI tools are detected at runtime via `check_dependencies` — if a tool is absent, the module returns `{"error": "...", "install_hint": "..."}` and the rest continue. No external tool installation is bundled with the package.
+
+  Typical workflow: `scan_active_directory` → analyse BloodHound output for shortest path to Domain Admin → `scan_active_directory(modules=["certipy"])` → check for ESC1–ESC8 → `test_endpoint` to prove LDAP/Kerberos access.
+
+## Attack Surface Monitoring (continuous)
+
+- `scan_asm(session_id, org, root_domain, modules?)`
+
+  Continuous ASM pass for an organisation. Modules (any subset): `discovery` (subfinder + crt.sh passive subdomain enumeration), `cert_watch` (certificate transparency log watch — flags new issuances in the last 7 days), `change_detection` (diffs current asset inventory against the last snapshot — emits a finding per new asset).
+
+  Results are persisted to `~/.pencheff/asm_inventory.db`. Combine with `recon_passive` for full-coverage surface mapping.
+
+  Distinct from the older `asm_discover` / `asm_diff` tools (still available): `scan_asm` is the single-call orchestrated entry point used by the swarm.
+
+## LLM red team
+
+- `scan_llm_red_team(session_id, categories?, techniques?, max_payloads?)`
+
+Black-box adversarial probes against the chat endpoint configured on
+the session via `pentest_init(target_url=..., llm_config={...})`. Runs
+all 10 OWASP LLM Top 10 (2025) modules — LLM01 prompt injection,
+LLM02 sensitive information disclosure, LLM03 supply chain, LLM04
+data and model poisoning, LLM05 improper output handling, LLM06
+excessive agency, LLM07 system prompt leakage, LLM08 vector and
+embedding weaknesses, LLM09 misinformation, LLM10 unbounded
+consumption — with a deterministic regex verdict, optional
+embedding-similarity escalation, optional LLM-as-judge override
+(OpenAI-compatible / Llama Guard / Granite Guardian / OpenAI
+Moderation / executable), and optional PAIR iterative refinement
+via a configured attacker LLM.
+
+Filter to a subset with `categories=["LLM01","LLM07"]` or
+`techniques=["direct_injection","crescendo"]`. The runner caps total
+payloads via `max_payloads` (the API scan-runner sets this from the
+profile: `quick=25`, `standard=75`, `deep=250`). Findings are keyed
+on `(category, technique)` so each technique gets one Finding with
+up to 5 evidence rows — never N near-duplicate clones.
+
+Required session config:
+
+```python
+pentest_init(
+    target_url="https://your-llm.example.com/v1/chat/completions",
+    credentials={"headers": {"Authorization": "Bearer your-token"}},
+    llm_config={
+        "provider": "openai-chat",   # or custom / executable / websocket / bedrock / vertex / azure-openai / browser
+        "model": "your-model-id",
+        "system_prompt": "...",      # optional baseline
+        "max_rps": 0.3,              # per-key rate cap (shared across modules)
+        "retries": 3,
+        "redteam": {
+            "strategies": ["base64", "jailbreak", "crescendo"],
+            "datasets": ["donotanswer", "harmbench"],
+            "guardrails": ["pii", "secrets", "unsafe-code"],
+            "iterative": "pair",
+            "judge": {"enabled": True, "provider": "openai-moderation",
+                      "endpoint": "https://api.openai.com/v1/moderations",
+                      "headers": {"Authorization": "Bearer sk-..."}},
+            "attacker": {"enabled": True, "provider": "openai-chat",
+                         "endpoint": "...", "model": "...", "headers": {...}},
+            "embedder": {"enabled": True, "endpoint": "...", "model": "..."},
+        },
+    },
+)
+```
+
+Full feature documentation: [LLM red team
+feature](/features/llm-redteam). API target schema: [LLM
+targets](/reference/targets#llm-targets).
+
+## Exploit
+
+- `test_endpoint(session_id, url, method, payload, ...)`
+- `test_chain(session_id, steps)`
+- `exploit_chain_suggest(session_id)`
+- `payload_generate(session_id, attack_type, context, waf_detected?)`
+
+## SCA / SBOM / IaC (new in v1)
+
+- `scan_dependencies(session_id, path, annotate_reachability?)`
+- `generate_sbom(session_id, path, fmt, output_dir?)`
+- `check_licenses(session_id, path, policy_file?)`
+- `scan_dockerfile(session_id, path)`
+- `scan_kubernetes(session_id, path)`
+- `scan_terraform(session_id, path)`
+- `scan_helm(session_id, chart_path, values_file?)`
+- `scan_container_image(session_id, image_ref)`
+
+## Network VA (new in v1)
+
+- `scan_host_vulns(session_id, host?, ports?)`
+- `scan_network_misconfig(session_id, host?)`
+- `scan_authenticated_host(session_id, host, protocol, credentials_ref, port?)`
+- `scan_industrial_protocols(session_id, host?)`
+- `refresh_cve_feed(session_id, force?)`
+
+## Proxy + fuzzer (new in v1)
+
+- `start_proxy(session_id, port?)`
+- `stop_proxy(session_id)`
+- `get_proxy_traffic(session_id, since?, include_passive_findings?)`
+- `fuzz_parameter(session_id, url, method?, param, wordlist, encoders?, headers?, body?, concurrency?)`
+- `list_fuzz_wordlists(session_id)`
+- `run_policy(session_id, policy_path)`
+
+## ASM (new in v1)
+
+- `asm_discover(session_id, org, root_domain)`
+- `asm_list_assets(session_id, org, asset_type?)`
+- `asm_diff(session_id, org)`
+- `asm_cert_watch(session_id, domain)`
+
+## Integrations (new in v1)
+
+- `export_to_slack(session_id, webhook_url, severity_filter?)`
+- `export_to_teams(session_id, webhook_url, severity_filter?)`
+- `export_to_discord(session_id, webhook_url, severity_filter?)`
+- `export_to_pagerduty(session_id, routing_key)`
+- `export_to_opsgenie(session_id, api_key)`
+- `export_to_splunk(session_id, hec_url, token)`
+- `send_webhook(session_id, webhook_url, hmac_secret?, severity_filter?)`
+
+## Reporting
+
+- `get_findings(session_id, severity?, include_suppressed?)`
+- `get_findings_enriched(session_id, severity?, include_suppressed?)`
+- `generate_report(session_id, format, report_type?)`
+- `export_report(session_id, formats, output_dir?)`
+- `suppress_finding(session_id, finding_id, reason, notes?)`
+- `unsuppress_finding(session_id, finding_id)`
+- `verify_finding(session_id, finding_id, status)`
+
+## History
+
+- `save_scan(session_id)`
+- `list_scan_history(target_url?)`
+- `compare_scans(session_a, session_b)`
+
+## Tickets
+
+- `export_to_github(session_id, repo, labels?, severity_filter?)`
+- `export_to_jira(session_id, project_key, issue_type?, severity_filter?)`
+
+## External tools
+
+- `run_security_tool(session_id, tool, args, timeout?, parse_output?)`
+- `check_dependencies(session_id)`
+- `list_custom_modules(session_id)`
+
+## OAST
+
+- `oast_init(session_id)`
+- `oast_new_url(session_id)`
+- `oast_poll(session_id)`
+
+## Evidence capture
+
+- `capture_evidence(session_id, finding_id, url, selector?, full_page?)` —
+  Opens a Playwright browser context with the session's auth cookies, navigates
+  to `url`, and captures a PNG screenshot. PII (emails, phone numbers, national
+  IDs) is redacted before the file is written. The resulting PNG is stored at
+  `~/.pencheff/evidence/<scan_id>/<finding_id>.png` and served via
+  `GET /scans/{id}/evidence/{finding_id}.png`. Called exclusively by
+  `EvidenceCaptureAgent` in Phase 3.
+
+## Playwright (admin panel read-only)
+
+These four tools are agent-callable but restricted to the `AdminAccessAgent`
+tool registry. They inherit the session's auth cookies and are hardened to
+refuse state-changing HTTP methods.
+
+- `playwright_navigate(session_id, url)` — GET-only page navigation. Refuses
+  any URL that would result in a POST/PUT/PATCH/DELETE. Returns rendered page
+  title and HTTP status.
+- `playwright_screenshot(session_id, selector?, full_page?)` — Screenshot the
+  current page state. Returns a base64-encoded PNG thumbnail inline plus writes
+  the full PNG to the evidence store.
+- `playwright_enumerate_links(session_id, max_links?)` — Read-only enumeration
+  of visible `<a>` elements on the current page. Returns up to `max_links`
+  (default 5) href + text pairs. Filters out anchors that resolve to forms or
+  JS-only actions.
+- `playwright_logout(session_id)` — Click the first logout-looking element
+  (text heuristic: "log out", "sign out", "logout") then close the browser
+  context. Mandatory call at the end of `AdminAccessAgent`.
+
+## Orchestrator-internal tools
+
+> **Note:** These tools are **not** decorated with `@mcp.tool()` and are
+> **not callable by agents**. They are invoked directly by the swarm
+> orchestrator in Python to manage the lifecycle of breaker sessions. They are
+> documented here for operator awareness and plugin-SDK implementors.
+
+- `set_auth_state(session_id, cookies?, headers?, tokens?)` — Inject
+  authentication material into a session. Used by the orchestrator to seed each
+  breaker session with the operator-supplied credentials before the breaker
+  agent starts.
+- `attach_oast(session_id, oast_session_id)` — Reuse an existing OAST callback
+  handle in a new session. Lets the orchestrator share one interactsh session
+  across multiple breakers to correlate out-of-band callbacks.
+- `import_endpoints(session_id, endpoints)` — Bulk-load the `ReconSnapshot`
+  endpoint list into a newly created breaker session. Avoids repeating the full
+  recon phase for every breaker.
+- `copy_finding(src_session_id, dst_session_id, finding_id, tag?)` — Clone a
+  finding from one session to another, optionally tagging it with the source
+  agent name. Used by the orchestrator to merge breaker results into the
+  canonical scan record.
+- `pentest_destroy(session_id)` — Release a pencheff session from in-memory
+  state and close any open browser contexts. Called by the orchestrator after
+  each breaker finishes to reclaim memory during a swarm scan.

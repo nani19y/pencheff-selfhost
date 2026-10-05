@@ -1,0 +1,74 @@
+---
+title: Security Lake
+---
+
+# Security Lake
+
+Pencheff Security Lake normalizes every finding to the **OCSF 1.3.0** schema
+(Vulnerability Finding, Compliance Finding, and Detection Finding classes) and
+writes them to an **Apache Iceberg** table on Cloudflare R2. The lake is
+org-scoped: all scans in the workspace feed into one table, so you can query,
+trend, and correlate across scan history without exporting individual reports.
+
+## Enabling and disabling
+
+Security Lake is **disabled by default**. Enable it per-org from
+**Settings → Security Lake**.
+
+Once enabled, Pencheff begins ingesting findings on every completed scan.
+Each finding is validated against the OCSF schema before ingestion; findings
+that fail validation are quarantined and not written to the lake.
+
+To disable, toggle the switch in Settings. Ingestion stops immediately. Your
+lake data is retained for a **7-day grace window**, then purged. Disabling
+and re-enabling within the grace window preserves existing data.
+
+## Storage model
+
+- **Format**: Apache Iceberg table on Cloudflare R2.
+- **Schema**: OCSF 1.3.0 — Vulnerability Finding, Compliance Finding,
+  Detection Finding classes.
+- **Write mode**: append-only event log. Each scan emits new event rows;
+  deduplication produces a latest-state-per-finding view on read.
+- **Validation**: strict OCSF schema check before write. Invalid records go to
+  a quarantine table and do not enter the main lake.
+
+## Consuming findings
+
+### Internal queries
+
+Use the API endpoints below to query, trend, and correlate findings without
+leaving Pencheff. Results reflect the deduped latest-state view.
+
+### Export
+
+- `GET /security-lake/export?format=ndjson` — NDJSON stream, one OCSF record
+  per line.
+- `GET /security-lake/export?format=parquet` — Parquet file of the current
+  latest-state view.
+
+### BYO bucket and SIEM pull
+
+Pull exported files into your own SIEM or data lake. NDJSON and Parquet output
+are OCSF-normalized, so ingestion rules written for OCSF sources work directly.
+
+## API
+
+All endpoints return `403 Forbidden` when Security Lake is disabled for the org.
+
+- `GET /security-lake/findings` — Paginated list of OCSF-normalized findings.
+  Supports `scan_id`, `severity`, `class_uid`, and `time_dt` range filters.
+- `GET /security-lake/trends` — Severity and class counts over time, bucketed
+  by day/week/month.
+- `GET /security-lake/correlate` — Cross-finding correlation by asset, CWE,
+  rule id, or OCSF category.
+- `GET /security-lake/export` — Stream the lake as NDJSON or Parquet.
+  `?format=ndjson` (default) or `?format=parquet`.
+
+## OCSF 1.3.0 class mapping
+
+| Pencheff finding type | OCSF class                  | class_uid |
+| --------------------- | --------------------------- | --------- |
+| DAST / SAST / SCA     | Vulnerability Finding       | 2002      |
+| IaC / compliance scan | Compliance Finding          | 2003      |
+| SIEM / runtime events | Detection Finding           | 2004      |

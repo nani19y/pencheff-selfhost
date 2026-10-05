@@ -231,10 +231,10 @@ services:
       - sh
       - -c
       - >
-        celery -A pencheff_api.tasks.celery_app.celery_app worker
+        /usr/local/bin/celery -A pencheff_api.tasks.celery_app.celery_app worker
         --loglevel=info
         --concurrency=${WORKER_CONCURRENCY:-2}
-        --queues core,cat_code_supply
+        --queues core,cat_web_api,cat_code_supply,cat_infra_cloud,cat_network_host,cat_ai_llm,cat_mobile_client,cat_ot_iot,cat_identity
         $$([ "$${WORKER_ALWAYS_ON:-true}" = "true" ] && echo -B)
 
   web:

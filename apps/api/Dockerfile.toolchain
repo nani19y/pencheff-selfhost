@@ -37,12 +37,12 @@ COPY plugins/pencheff /build/plugins/pencheff
 COPY apps/api /build/apps/api
 COPY README.md /build/README.md
 
-# Pencheff plugin + API + Semgrep + Bandit + Checkov + Playwright into
-# an isolated prefix so we can move the whole tree to the runtime stage.
+# Pencheff/API dependencies stay in their pinned prefix. Scanner CLIs use
+# a separate venv to avoid replacing the runtime MCP and other dependencies.
 # (CodeQL removed in v0.7 — see header comment.)
-RUN pip install --prefix=/opt/pkgs "/build/plugins/pencheff[cloud]" \
- && pip install --prefix=/opt/pkgs /build/apps/api \
- && pip install --prefix=/opt/pkgs semgrep bandit checkov playwright
+RUN pip install --prefix=/opt/pkgs "/build/plugins/pencheff[cloud]" /build/apps/api \
+ && python -m venv /opt/scanner-tools \
+ && /opt/scanner-tools/bin/pip install semgrep bandit checkov playwright
 
 RUN find /opt/pkgs -type d -name "__pycache__" -exec rm -rf {} + \
  && find /opt/pkgs -type d -name "tests" -exec rm -rf {} + \
@@ -244,9 +244,10 @@ RUN set -eux; \
     fi; \
     rm -f /tmp/gitleaks-release.json /tmp/gitleaks-url /tmp/gitleaks.tar.gz /tmp/osv-release.json /tmp/osv-url
 
-# Bring across the pre-built Python tree (pencheff plugin + API +
-# Semgrep + Bandit + Checkov + Playwright) from the builder stage.
+# Bring across Pencheff/API dependencies and isolated scanner tools.
 COPY --from=builder /opt/pkgs /usr/local
+COPY --from=builder /opt/scanner-tools /opt/scanner-tools
+ENV PATH=/opt/scanner-tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # gosec (Apache-2.0) — Go SAST. Static binary, install at runtime
 # stage so the upstream installer's curl uses the runtime curl.

@@ -55,6 +55,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://pencheff:pencheff@postgres:5432/pencheff
       REDIS_URL: redis://redis:6379/0
+      FERNET_KEY_FILE: /run/pencheff-secrets/fernet.key
       WORKER_ALWAYS_ON: ${WORKER_ALWAYS_ON:-true}
       WORKER_IDLE_GRACE_SECONDS: ${WORKER_IDLE_GRACE_SECONDS:-30}
       WORKER_COMPOSE_PROJECT: ${WORKER_COMPOSE_PROJECT:-pencheff}
@@ -134,6 +135,7 @@ services:
     volumes:
       - reports:/tmp/pencheff-reports
       - /var/run/docker.sock:/var/run/docker.sock
+      - fernet_key:/run/pencheff-secrets
     command: >
       sh -c "alembic upgrade head &&
              uvicorn pencheff_api.main:app --host 0.0.0.0 --port 8000"
@@ -159,6 +161,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://pencheff:pencheff@postgres:5432/pencheff
       REDIS_URL: redis://redis:6379/0
+      FERNET_KEY_FILE: /run/pencheff-secrets/fernet.key
       WORKER_ALWAYS_ON: ${WORKER_ALWAYS_ON:-true}
       WORKER_IDLE_GRACE_SECONDS: ${WORKER_IDLE_GRACE_SECONDS:-30}
       WORKER_COMPOSE_PROJECT: ${WORKER_COMPOSE_PROJECT:-pencheff}
@@ -218,6 +221,7 @@ services:
         condition: service_healthy
     volumes:
       - reports:/tmp/pencheff-reports
+      - fernet_key:/run/pencheff-secrets
     # ``-B`` runs the embedded beat scheduler (periodic tasks: zombie-scan
     # recovery, scheduled-scan dispatch, SLA monitor, retention prune, weekly
     # digest). Beat is only enabled in always-on mode — in on-demand mode the
@@ -251,3 +255,4 @@ services:
 volumes:
   pg_data:
   reports:
+  fernet_key:

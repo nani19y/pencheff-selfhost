@@ -45,3 +45,6 @@ docs/design/
 # Any local copies here are build output, not monorepo source.
 /pencheff-studio/
 /pencheff-studio-windows/
+PAT.txt
+
+PAT.txt

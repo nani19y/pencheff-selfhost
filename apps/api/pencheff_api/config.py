@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -328,6 +329,40 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     s = Settings()
     if not s.fernet_key:
-        from cryptography.fernet import Fernet
-        s.fernet_key = Fernet.generate_key().decode()
+        key_file = os.environ.get("FERNET_KEY_FILE")
+        if key_file:
+            from pathlib import Path
+            from fcntl import flock, LOCK_EX
+            from cryptography.fernet import Fernet
+
+            path = Path(key_file)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            lock_path = path.with_name(path.name + ".lock")
+            with lock_path.open("a+", encoding="utf-8") as lock:
+                os.chmod(lock_path, 0o600)
+                flock(lock.fileno(), LOCK_EX)
+                if path.exists():
+                    key = path.read_text(encoding="utf-8").strip()
+                    if not key:
+                        raise RuntimeError(
+                            f"Fernet key file {path} is empty; refusing to replace it"
+                        )
+                    try:
+                        Fernet(key.encode("ascii"))
+                    except (ValueError, TypeError) as exc:
+                        raise RuntimeError(
+                            f"Fernet key file {path} is invalid; refusing to replace it"
+                        ) from exc
+                else:
+                    key = Fernet.generate_key().decode("ascii")
+                    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    with os.fdopen(fd, "w", encoding="utf-8") as key_handle:
+                        key_handle.write(key + "\n")
+                        key_handle.flush()
+                        os.fsync(key_handle.fileno())
+                s.fernet_key = key
+        else:
+            # Development fallback when no persistent key store was configured.
+            from cryptography.fernet import Fernet
+            s.fernet_key = Fernet.generate_key().decode()
     return s

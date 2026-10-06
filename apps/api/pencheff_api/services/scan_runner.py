@@ -3546,6 +3546,12 @@ async def _run_kind_aware_scan(scan_id: str, target: Target, Session) -> None:
     kind_creds: dict | None = None
     if getattr(target, "kind_credentials_encrypted", None):
         kind_creds = decrypt_credentials(target.kind_credentials_encrypted)
+        if kind_creds is None:
+            raise RuntimeError(
+                "This target has saved credentials, but they cannot be decrypted. "
+                "The API and worker must share a persistent FERNET_KEY. Configure "
+                "the shared key store, then re-enter this target's credentials."
+            )
 
     # GitHub App fallback for cicd_pipeline Phase B: if the operator enabled
     # live probing but attached no PAT, mint a short-lived installation token

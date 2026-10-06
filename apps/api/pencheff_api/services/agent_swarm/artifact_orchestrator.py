@@ -161,7 +161,13 @@ async def run_artifact_orchestrator(
                         f"upload fetch/extract failed: {acquired['error']}"
                     )
             else:
-                await _log(f"[Artifact] cloning {cfg.get('repo_url')}")
+                auth_kind = "PAT configured" if (
+                    kind_credentials
+                    and (kind_credentials.get("pat") or kind_credentials.get("token"))
+                ) else "no PAT configured"
+                await _log(
+                    f"[Artifact] cloning {cfg.get('repo_url')} ({auth_kind})"
+                )
                 acquired = await srv.artifact_clone_repo(
                     session_id=session_id,
                     url=cfg.get("repo_url", ""),

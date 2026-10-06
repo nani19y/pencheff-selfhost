@@ -1,7 +1,7 @@
 """Persist the finding subset selected for an agentic fix run.
 
-Revision ID: 0063
-Revises: 0062
+Revision ID: 0072
+Revises: 0071
 """
 from typing import Union
 
@@ -10,8 +10,8 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 
-revision: str = "0063"
-down_revision: Union[str, None] = "0062"
+revision: str = "0072"
+down_revision: Union[str, None] = "0071"
 branch_labels = None
 depends_on = None
 

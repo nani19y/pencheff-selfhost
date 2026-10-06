@@ -66,6 +66,7 @@ class StartAgenticRunRequest(BaseModel):
     scan_id: str | None = None
     repo_scan_id: str | None = None
     repository_id: str | None = None
+    finding_ids: list[str] | None = None
     runtime: str = "server"  # "server" | "desktop"
 
 
@@ -217,6 +218,35 @@ async def _repo_scan_findings_count(session: AsyncSession, scan_id: str) -> int:
     )).scalars().fetchall().__len__()
 
 
+async def _selected_finding_ids(
+    session: AsyncSession, model, parent_column, parent_id: str,
+    requested_ids: list[str] | None,
+) -> tuple[int, list[str] | None]:
+    """Validate a requested subset against the scan and return its count.
+
+    ``None`` preserves the legacy select-all behavior for older clients.
+    """
+    if requested_ids is None:
+        return 0, None
+    normalized = list(dict.fromkeys(requested_ids))
+    if not normalized:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Select at least one finding to remediate.")
+    rows = (await session.execute(
+        select(model.id).where(
+            parent_column == parent_id,
+            model.suppressed.is_(False),
+            model.id.in_(normalized),
+        )
+    )).scalars().all()
+    valid = {str(row_id) for row_id in rows}
+    if len(valid) != len(normalized):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "One or more selected findings are not open findings in this scan.",
+        )
+    return len(valid), normalized
+
+
 # ── POST /fix-tasks/agentic ─────────────────────────────────────────
 
 
@@ -265,6 +295,7 @@ async def start_agentic_run(
 
     runtime = body.runtime if body.runtime in ("server", "desktop") else "server"
     findings_count = 0
+    selected_finding_ids = body.finding_ids
     repo_provider: str | None = None
     repository_id: str | None = None
 
@@ -277,7 +308,13 @@ async def start_agentic_run(
         )).scalar_one_or_none()
         if scan is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "scan not found")
-        findings_count = await _scan_findings_count(session, body.scan_id)
+        if selected_finding_ids is None:
+            findings_count = await _scan_findings_count(session, body.scan_id)
+        else:
+            findings_count, selected_finding_ids = await _selected_finding_ids(
+                session, DbFinding, DbFinding.scan_id, body.scan_id,
+                selected_finding_ids,
+            )
         _tgt = (await session.execute(
             select(Target).where(Target.id == scan.target_id)
         )).scalar_one_or_none()
@@ -350,7 +387,13 @@ async def start_agentic_run(
         )).scalar_one_or_none()
         if rs is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "repo scan not found")
-        findings_count = await _repo_scan_findings_count(session, body.repo_scan_id)
+        if selected_finding_ids is None:
+            findings_count = await _repo_scan_findings_count(session, body.repo_scan_id)
+        else:
+            findings_count, selected_finding_ids = await _selected_finding_ids(
+                session, RepoFinding, RepoFinding.repo_scan_id, body.repo_scan_id,
+                selected_finding_ids,
+            )
         # Look up the underlying repo's provider so we can refuse the
         # impossible combination of (local-provider repo) + (server
         # runtime) — the API container can't see the user's local path.
@@ -417,6 +460,7 @@ async def start_agentic_run(
         runtime=runtime,
         status="queued",
         findings_count=findings_count,
+        selected_finding_ids=selected_finding_ids,
         model=s.agentic_fix_effective_model,
         max_iterations=iter_cap,
     )

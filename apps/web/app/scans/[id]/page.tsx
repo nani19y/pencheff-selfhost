@@ -150,6 +150,9 @@ export default function ScanDetailPage() {
   const [scan, setScan] = useState<Scan | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [findings, setFindings] = useState<Finding[]>([]);
+  const [selectedFindingIds, setSelectedFindingIds] = useState<Set<string>>(
+    new Set(),
+  );
   // Set when the /findings fetch itself fails — so a fetch error surfaces on
   // screen instead of silently rendering an empty register (which looks
   // identical to "no findings").
@@ -389,6 +392,30 @@ export default function ScanDetailPage() {
     if (filter === "all") return findings;
     return findings.filter((f) => f.severity === filter);
   }, [findings, filter]);
+  const openFindingIds = useMemo(
+    () => findings.filter((f) => !f.suppressed).map((f) => f.id),
+    [findings],
+  );
+  function toggleFindingGroup(rows: Finding[]) {
+    const ids = rows.filter((row) => !row.suppressed).map((row) => row.id);
+    setSelectedFindingIds((prev) => {
+      const next = new Set(prev);
+      const shouldSelect = ids.some((findingId) => !next.has(findingId));
+      for (const findingId of ids) {
+        if (shouldSelect) next.add(findingId);
+        else next.delete(findingId);
+      }
+      return next;
+    });
+  }
+  function toggleFinding(findingId: string) {
+    setSelectedFindingIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(findingId)) next.delete(findingId);
+      else next.add(findingId);
+      return next;
+    });
+  }
 
   // Same-title findings across multiple endpoints usually represent ONE
   // underlying issue (e.g. "HSTS Not Configured" on every subdomain).
@@ -977,11 +1004,29 @@ export default function ScanDetailPage() {
 
           {scan.status === "done" && findings.length > 0 && (
             <div className="mb-6 flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-3 font-mono text-[12px] text-slate">
+                <span>{selectedFindingIds.size} selected for remediation</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFindingIds(new Set(openFindingIds))}
+                  className="underline underline-offset-4 hover:text-ink"
+                >
+                  Select all open findings ({openFindingIds.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFindingIds(new Set())}
+                  className="underline underline-offset-4 hover:text-ink"
+                >
+                  Clear selection
+                </button>
+              </div>
               <FixAllAgentButton
                 scope="scan"
                 id={id}
                 linkedRepos={linkedRepos}
                 allowNoRepo={target?.base_url?.startsWith("upload://") ?? false}
+                selectedFindingIds={[...selectedFindingIds]}
               />
             </div>
           )}
@@ -1050,6 +1095,7 @@ export default function ScanDetailPage() {
               <table className="brutal-table">
                 <thead>
                   <tr>
+                    <th aria-label="Select findings for remediation" />
                     <th style={{ width: 180 }}>Severity</th>
                     <th>Finding</th>
                     <th style={{ width: 220 }}>Priority</th>
@@ -1067,9 +1113,35 @@ export default function ScanDetailPage() {
                     const groupKey = `${f.category}|${f.title}`;
                     const isExpanded = expandedGroups.has(groupKey);
                     const groupSize = rows.length;
+                    const selectableIds = rows
+                      .filter((row) => !row.suppressed)
+                      .map((row) => row.id);
+                    const selectedInGroup = selectableIds.filter((findingId) =>
+                      selectedFindingIds.has(findingId),
+                    ).length;
                     return (
                       <Fragment key={groupKey}>
                         <tr className="group relative">
+                          <td className="text-center">
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${f.title} for remediation`}
+                              checked={
+                                selectableIds.length > 0 &&
+                                selectedInGroup === selectableIds.length
+                              }
+                              ref={(node) => {
+                                if (node) {
+                                  node.indeterminate =
+                                    selectedInGroup > 0 &&
+                                    selectedInGroup < selectableIds.length;
+                                }
+                              }}
+                              disabled={selectableIds.length === 0}
+                              onChange={() => toggleFindingGroup(rows)}
+                              className="accent-gilt"
+                            />
+                          </td>
                           <td className="relative">
                             <span
                               className={`absolute left-0 top-2 bottom-2 w-[3px] rounded-[1px] ${bar}`}
@@ -1170,6 +1242,16 @@ export default function ScanDetailPage() {
                                 key={`${groupKey}:${row.id}`}
                                 className="bg-vellum/40"
                               >
+                                <td className="text-center">
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Select ${row.title} at ${row.endpoint || "this endpoint"} for remediation`}
+                                    checked={selectedFindingIds.has(row.id)}
+                                    disabled={row.suppressed}
+                                    onChange={() => toggleFinding(row.id)}
+                                    className="accent-gilt"
+                                  />
+                                </td>
                                 <td />
                                 <td colSpan={3}>
                                   <span className="pl-6 inline-flex items-center gap-3 font-mono text-[12px] text-slate">

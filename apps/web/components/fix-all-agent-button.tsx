@@ -81,6 +81,7 @@ export function FixAllAgentButton({
   id,
   linkedRepos = [],
   allowNoRepo = false,
+  selectedFindingIds = [],
   className,
 }: {
   scope: "scan" | "repo";
@@ -93,6 +94,7 @@ export function FixAllAgentButton({
   // Upload-source targets have no git repo — the run returns a downloadable
   // .zip instead of a PR, so don't gate the button on an attached repository.
   allowNoRepo?: boolean;
+  selectedFindingIds: string[];
   className?: string;
 }) {
   const [usage, setUsage] = useState<AgenticUsage | null>(null);
@@ -185,11 +187,12 @@ export function FixAllAgentButton({
         scope === "scan"
           ? {
               scan_id: id,
+              finding_ids: selectedFindingIds,
               ...(selectedRepositoryId
                 ? { repository_id: selectedRepositoryId }
                 : {}),
             }
-          : { repo_scan_id: id };
+          : { repo_scan_id: id, finding_ids: selectedFindingIds };
       const accepted = await api<AgenticRun>("/fix-tasks/agentic", {
         method: "POST",
         body: JSON.stringify(body),
@@ -210,7 +213,7 @@ export function FixAllAgentButton({
       setStarting(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, id, selectedRepositoryId]);
+  }, [scope, id, selectedRepositoryId, selectedFindingIds]);
 
   // ── Cancel ────────────────────────────────────────────────────
   const cancelRun = useCallback(async () => {
@@ -374,7 +377,8 @@ export function FixAllAgentButton({
             isRunning ||
             blockedByUsage === true ||
             needsRepository ||
-            noAttachedRepository
+            noAttachedRepository ||
+            selectedFindingIds.length === 0
           }
         >
           {starting
@@ -382,8 +386,8 @@ export function FixAllAgentButton({
             : isRunning
               ? labelForStatus(run.status)
               : run && TERMINAL.has(run.status)
-                ? "Run Agent again"
-                : "Fix all findings (Agent)"}
+                ? `Remediate ${selectedFindingIds.length} selected findings`
+                : `Remediate ${selectedFindingIds.length} selected findings`}
         </Button>
         {isRunning && (
           <Button variant="ink" onClick={cancelRun}>

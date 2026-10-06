@@ -75,6 +75,9 @@ export default function RepoScanPage() {
   const router = useRouter();
   const [scan, setScan] = useState<Scan | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
+  const [selectedFindingIds, setSelectedFindingIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [filter, setFilter] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -130,7 +133,6 @@ export default function RepoScanPage() {
     }
     return map;
   }, [findings, filter]);
-
   if (!scan) {
     if (err) return <p className="text-[14px] text-oxblood">{err}</p>;
     return (
@@ -192,7 +194,28 @@ export default function RepoScanPage() {
         <div className="mt-6 flex flex-wrap items-center gap-3">
           {findings.length > 0 && (
             <div className="flex flex-col gap-3 w-full">
-              <FixAllAgentButton scope="repo" id={scanId} />
+              <div className="flex flex-wrap items-center gap-3 font-mono text-[12px] text-slate">
+                <span>{selectedFindingIds.size} selected for remediation</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFindingIds(new Set(findings.map((f) => f.id)))}
+                  className="underline underline-offset-4 hover:text-ink"
+                >
+                  Select all findings ({findings.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFindingIds(new Set())}
+                  className="underline underline-offset-4 hover:text-ink"
+                >
+                  Clear selection
+                </button>
+              </div>
+              <FixAllAgentButton
+                scope="repo"
+                id={scanId}
+                selectedFindingIds={[...selectedFindingIds]}
+              />
             </div>
           )}
           <Link
@@ -226,7 +249,19 @@ export default function RepoScanPage() {
               </h2>
               <div className="bg-paper border border-hairline rounded-md shadow-subtle divide-y divide-hairline">
                 {rows.map((f) => (
-                  <FindingRow key={f.id} f={f} />
+                  <FindingRow
+                    key={f.id}
+                    f={f}
+                    selected={selectedFindingIds.has(f.id)}
+                    onSelectionChange={(checked) =>
+                      setSelectedFindingIds((prev) => {
+                        const next = new Set(prev);
+                        if (checked) next.add(f.id);
+                        else next.delete(f.id);
+                        return next;
+                      })
+                    }
+                  />
                 ))}
               </div>
             </div>
@@ -246,27 +281,44 @@ export default function RepoScanPage() {
   );
 }
 
-function FindingRow({ f }: { f: Finding }) {
+function FindingRow({
+  f,
+  selected,
+  onSelectionChange,
+}: {
+  f: Finding;
+  selected: boolean;
+  onSelectionChange: (checked: boolean) => void;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div className="p-5">
-      <button
-        className="w-full text-left flex items-start justify-between gap-6"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <div>
-          <div className="font-medium text-ink">{f.title}</div>
-          <div className="mt-1 text-[12px] text-slate font-mono">
-            {f.scanner} {f.rule_id ? `· ${f.rule_id}` : ""}
-            {f.file_path
-              ? ` · ${f.file_path}${f.line_start ? `:${f.line_start}` : ""}`
-              : ""}
-            {f.cve ? ` · ${f.cve}` : ""}
-            {f.package ? ` · ${f.package}@${f.installed_version}` : ""}
+      <div className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          aria-label={`Select ${f.title} for remediation`}
+          checked={selected}
+          onChange={(e) => onSelectionChange(e.target.checked)}
+          className="mt-1 accent-gilt"
+        />
+        <button
+          className="w-full text-left flex items-start justify-between gap-6"
+          onClick={() => setOpen((v) => !v)}
+        >
+          <div>
+            <div className="font-medium text-ink">{f.title}</div>
+            <div className="mt-1 text-[12px] text-slate font-mono">
+              {f.scanner} {f.rule_id ? `· ${f.rule_id}` : ""}
+              {f.file_path
+                ? ` · ${f.file_path}${f.line_start ? `:${f.line_start}` : ""}`
+                : ""}
+              {f.cve ? ` · ${f.cve}` : ""}
+              {f.package ? ` · ${f.package}@${f.installed_version}` : ""}
+            </div>
           </div>
-        </div>
-        <div className="text-[12px] text-slate">{open ? "−" : "+"}</div>
-      </button>
+          <div className="text-[12px] text-slate">{open ? "−" : "+"}</div>
+        </button>
+      </div>
       {open && (
         <div className="mt-4 text-[13px] text-graphite space-y-3">
           {f.description && (

@@ -222,12 +222,15 @@ async def _materialize_workspace(
 
         _cfg = dict(target.kind_config or {})
         if target.kind == "source_code" and _cfg.get("source") == "upload":
-            rows = (await session.execute(
-                select(DbFinding).where(
-                    DbFinding.scan_id == run.scan_id,
-                    DbFinding.suppressed.is_(False),
+            finding_stmt = select(DbFinding).where(
+                DbFinding.scan_id == run.scan_id,
+                DbFinding.suppressed.is_(False),
+            )
+            if run.selected_finding_ids is not None:
+                finding_stmt = finding_stmt.where(
+                    DbFinding.id.in_(run.selected_finding_ids)
                 )
-            )).scalars().all()
+            rows = (await session.execute(finding_stmt)).scalars().all()
 
             def _split_ep(ep: str | None):
                 if ep and ":" in ep and ep.rsplit(":", 1)[1].isdigit():
@@ -268,12 +271,15 @@ async def _materialize_workspace(
             )
         repo = repos[0]
 
-        rows = (await session.execute(
-            select(DbFinding).where(
-                DbFinding.scan_id == run.scan_id,
-                DbFinding.suppressed.is_(False),
+        finding_stmt = select(DbFinding).where(
+            DbFinding.scan_id == run.scan_id,
+            DbFinding.suppressed.is_(False),
+        )
+        if run.selected_finding_ids is not None:
+            finding_stmt = finding_stmt.where(
+                DbFinding.id.in_(run.selected_finding_ids)
             )
-        )).scalars().all()
+        rows = (await session.execute(finding_stmt)).scalars().all()
         findings = [
             FindingForAgent(
                 id=r.id,
@@ -307,12 +313,15 @@ async def _materialize_workspace(
         raise RuntimeError("repo vanished mid-run")
 
     # Load findings.
-    rows = (await session.execute(
-        select(RepoFinding).where(
-            RepoFinding.repo_scan_id == run.repo_scan_id,
-            RepoFinding.suppressed.is_(False),
+    finding_stmt = select(RepoFinding).where(
+        RepoFinding.repo_scan_id == run.repo_scan_id,
+        RepoFinding.suppressed.is_(False),
+    )
+    if run.selected_finding_ids is not None:
+        finding_stmt = finding_stmt.where(
+            RepoFinding.id.in_(run.selected_finding_ids)
         )
-    )).scalars().all()
+    rows = (await session.execute(finding_stmt)).scalars().all()
     findings = [
         FindingForAgent(
             id=r.id, kind="repo", severity=r.severity,

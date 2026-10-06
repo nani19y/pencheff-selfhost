@@ -1170,6 +1170,9 @@ class AgenticFixRun(Base):
     # queued | cloning | running | committing | pushing | done | failed | canceled
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
     findings_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # ``None`` means legacy select-all behavior; a list scopes this run to
+    # operator-selected findings and survives the async queue handoff.
+    selected_finding_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     iterations: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     current_step: Mapped[str | None] = mapped_column(Text, nullable=True)
     branch_name: Mapped[str | None] = mapped_column(String(255), nullable=True)

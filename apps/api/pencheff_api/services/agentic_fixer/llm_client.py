@@ -209,23 +209,29 @@ class LLMClient:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
-        # Most OpenAI-compatible providers authenticate with a Bearer token.
-        # Google's Generative Language OpenAI-compat endpoint is different:
-        # API keys must be sent as x-goog-api-key rather than as a
-        # Bearer token. Sending a Gemini API key in Authorization produces
-        # Google 401 ACCESS_TOKEN_TYPE_UNSUPPORTED.
+        # The Gemini OpenAI-compatible endpoint uses the normal OpenAI
+        # authentication shape: the Gemini API key is sent as a Bearer
+        # token. The important distinction is the endpoint path:
+        # Google requires /v1beta/openai for OpenAI-compatible
+        # /chat/completions requests. Using /v1beta directly reaches the
+        # native Generative Language API, which expects a different request
+        # shape/auth flow and can return ACCESS_TOKEN_TYPE_UNSUPPORTED or
+        # "Missing or invalid Authorization header".
+        base_url = self._base_url
+        if "generativelanguage.googleapis.com" in base_url:
+            marker = "generativelanguage.googleapis.com"
+            if "/openai" not in base_url.lower():
+                base_url = base_url.rstrip("/") + "/openai"
+
         headers = {
+            "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
-        if "generativelanguage.googleapis.com" in self._base_url:
-            headers["x-goog-api-key"] = self._api_key
-        else:
-            headers["Authorization"] = f"Bearer {self._api_key}"
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(
-                    f"{self._base_url}/chat/completions",
+                    f"{base_url}/chat/completions",
                     json=payload,
                     headers=headers,
                 )

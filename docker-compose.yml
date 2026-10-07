@@ -76,6 +76,7 @@ services:
       AGENTIC_FIX_API_KEY: ${AGENTIC_FIX_API_KEY:-}
       AGENTIC_FIX_BASE_URL: ${AGENTIC_FIX_BASE_URL:-}
       AGENTIC_FIX_MODEL: ${AGENTIC_FIX_MODEL:-}
+      AGENTIC_FIX_REQUEST_TIMEOUT: ${AGENTIC_FIX_REQUEST_TIMEOUT:-600}
       # Dispatch tuning — when true, every scan runs the deterministic
       # populator first and hands the populated session to the engine.
       AGENT_DISPATCH_BETA_OVERRIDE: ${AGENT_DISPATCH_BETA_OVERRIDE:-true}
@@ -186,6 +187,7 @@ services:
       AGENTIC_FIX_API_KEY: ${AGENTIC_FIX_API_KEY:-}
       AGENTIC_FIX_BASE_URL: ${AGENTIC_FIX_BASE_URL:-}
       AGENTIC_FIX_MODEL: ${AGENTIC_FIX_MODEL:-}
+      AGENTIC_FIX_REQUEST_TIMEOUT: ${AGENTIC_FIX_REQUEST_TIMEOUT:-600}
       AGENT_DISPATCH_BETA_OVERRIDE: ${AGENT_DISPATCH_BETA_OVERRIDE:-true}
       FREE_PLAN_OPTION_3_QUOTA: ${FREE_PLAN_OPTION_3_QUOTA:-10}
       # Fix-LLM — kept in parity with the api service so the worker can

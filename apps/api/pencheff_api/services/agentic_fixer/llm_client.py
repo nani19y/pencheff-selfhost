@@ -209,10 +209,18 @@ class LLMClient:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
+        # Most OpenAI-compatible providers authenticate with a Bearer token.
+        # Google's Generative Language OpenAI-compat endpoint is different:
+        # API keys must be sent as x-goog-api-key rather than as a
+        # Bearer token. Sending a Gemini API key in Authorization produces
+        # Google 401 ACCESS_TOKEN_TYPE_UNSUPPORTED.
         headers = {
-            "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
+        if "generativelanguage.googleapis.com" in self._base_url:
+            headers["x-goog-api-key"] = self._api_key
+        else:
+            headers["Authorization"] = f"Bearer {self._api_key}"
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:

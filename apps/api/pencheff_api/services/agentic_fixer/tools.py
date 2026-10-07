@@ -42,7 +42,37 @@ from .shell_tool import tool_bash
 log = logging.getLogger("pencheff.agentic_fixer.tools")
 
 
-ToolHandler = Callable[[Path, dict], Awaitable[ToolResult]]
+ToolHandler = Callable[[Path, dict[str, Any]], Awaitable[ToolResult]]
+
+
+def _normalize_tool_input(tool_name: str, tool_input: Any) -> dict[str, Any]:
+    """Normalize provider tool arguments at the dispatcher boundary."""
+    if isinstance(tool_input, dict):
+        return tool_input
+    if isinstance(tool_input, list) and len(tool_input) == 1:
+        value = tool_input[0]
+        if isinstance(value, str):
+            positional_keys = {
+                "grep": "pattern",
+                "glob": "pattern",
+                "read_file": "path",
+                "bash": "command",
+            }
+            positional_key = positional_keys[tool_name] if tool_name in positional_keys else None
+            if positional_key:
+                log.warning(
+                    "agentic fix: normalizing positional list input for %s",
+                    tool_name,
+                )
+                return {positional_key: value}
+        if isinstance(value, dict):
+            return value
+    log.warning(
+        "agentic fix: invalid tool input for %s: expected object, got %s",
+        tool_name,
+        type(tool_input).__name__,
+    )
+    return {}
 
 
 # Flat handler table. Add a new tool: append here + add to
@@ -73,7 +103,7 @@ class DispatchOutcome:
 async def dispatch_tool(
     workspace_root: Path,
     tool_name: str,
-    tool_input: dict[str, Any],
+    tool_input: Any,
     run_id: str | None = None,
     iteration: int = 0,
 ) -> DispatchOutcome:
@@ -93,6 +123,7 @@ async def dispatch_tool(
     """
     started = time.monotonic()
     result: ToolResult
+    tool_input = _normalize_tool_input(tool_name, tool_input)
 
     # Loop-detection nudge — only for tools that have a clear notion
     # of "same call same result" (read-only ops). edit_file /

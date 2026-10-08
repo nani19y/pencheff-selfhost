@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 FindingKind = Literal["sast", "dast"]
-ProposalStatus = Literal["draft", "applied", "failed", "superseded"]
+ProposalStatus = Literal["draft", "approved", "applied", "failed", "superseded"]
 ProposalSource = Literal["scanner", "llm"]
 
 

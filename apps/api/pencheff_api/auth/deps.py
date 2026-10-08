@@ -45,7 +45,7 @@ async def get_current_user(
         org = (await session.execute(select(Org).order_by(Org.created_at.asc()).limit(1))).scalar_one_or_none()
         if org is None:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "No Pencheff organization is configured.")
-        user = User(id=subject if len(subject) == 36 else None, email=email, name=str(name), org_id=org.id, is_active=True)
+        user = User(email=email, name=str(name), org_id=org.id, is_active=True)
         # UUID PKs cannot safely use arbitrary OIDC subjects; let SQLAlchemy
         # generate a UUID and store the immutable OIDC subject in google_sub.
         user.google_sub = subject

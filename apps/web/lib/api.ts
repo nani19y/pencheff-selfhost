@@ -50,6 +50,10 @@ export async function api<T = unknown>(
     "Content-Type": "application/json",
     ...(fetchInit.headers as Record<string, string> | undefined),
   };
+  const accessToken = await getAccessToken();
+  if (accessToken && !headers.Authorization) {
+    headers.Authorization = "Bearer " + accessToken;
+  }
   // Scope every request to the currently-active workspace. The backend
   // looks up the workspace via get_active_workspace() and reject any ID
   // the caller isn't a member of.

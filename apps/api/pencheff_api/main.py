@@ -246,6 +246,7 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     )
 
 
+app.include_router(__import__('pencheff_api.routers.auth', fromlist=['router']).router)
 app.include_router(capabilities.router)
 app.include_router(llm_providers.router)
 app.include_router(workspaces.router)

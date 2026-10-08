@@ -36,6 +36,16 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30
 
+    # OIDC / Keycloak authentication. When enabled, browser/API requests must
+    # carry a signed Bearer access token from this issuer. Authorization is
+    # resolved from Keycloak realm/client roles and groups; Pencheff never
+    # stores or receives the user's IDP password.
+    oidc_enabled: bool = False
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_audience: str = ""
+    oidc_jwks_url: str = ""
+
     fernet_key: str = Field(default="")  # generate with Fernet.generate_key(); base64 url-safe 32 bytes
 
     # Triage / grading backend — used for false-positive filtering and

@@ -38,17 +38,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    // Return the authorization response directly to the client-rendered
+    // dashboard. The root page performs a server redirect to /dashboard,
+    // which would otherwise consume/drop the authorization-code query before
+    // keycloak-js can exchange it for tokens.
+    const redirectUri = window.location.origin + "/dashboard";
+
     kc.init({
       onLoad: "login-required",
+      redirectUri,
       pkceMethod: "S256",
       checkLoginIframe: false,
-      responseMode: "query",
     }).then((ok) => {
       if (!mounted) return;
       setAuthenticated(ok);
       setTokenClaims((kc.tokenParsed as Record<string, unknown> | undefined) ?? null);
       setLoading(false);
-    }).catch(() => {
+    }).catch((error) => {
+      // Keep the UI in an explicit signed-out state, but do not hide the
+      // underlying initialization failure from developers.
+      console.error("Keycloak initialization failed:", error);
       if (mounted) {
         setAuthenticated(false);
         setLoading(false);
@@ -64,8 +73,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     authenticated,
     tokenClaims,
-    login: async () => { await getKeycloak()?.login({ redirectUri: window.location.href }); },
-    logout: async () => { await getKeycloak()?.logout({ redirectUri: window.location.origin }); },
+    login: async () => {
+      await getKeycloak()?.login({
+        redirectUri: window.location.origin + "/dashboard",
+      });
+    },
+    logout: async () => {
+      await getKeycloak()?.logout({ redirectUri: window.location.origin });
+    },
   }), [loading, authenticated, tokenClaims]);
 
   if (loading) {

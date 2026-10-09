@@ -84,8 +84,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AuthProvider>
-      <html lang="en" data-theme="dark" className="dark">
+    <html lang="en" data-theme="dark" className="dark">
         <head>
           <link rel="preconnect" href="https://fonts.googleapis.com" />
           <link
@@ -121,11 +120,12 @@ export default function RootLayout({
           />
         </head>
         <body className="min-h-screen antialiased bg-canvas text-graphite font-body selection:bg-orange-400 selection:text-paper">
-          <WorkspaceProvider>
-            <NotificationsProvider>{children}</NotificationsProvider>
-          </WorkspaceProvider>
+          <AuthProvider>
+            <WorkspaceProvider>
+              <NotificationsProvider>{children}</NotificationsProvider>
+            </WorkspaceProvider>
+          </AuthProvider>
         </body>
       </html>
-    </AuthProvider>
   );
 }

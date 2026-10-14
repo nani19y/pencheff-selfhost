@@ -81,18 +81,22 @@ GROUP_ROLE_ALIASES: dict[str, str] = {
 }
 
 
-def permissions_for_claims(claims: dict) -> set[str]:
-    """Resolve effective permissions from direct roles and group claims."""
+def permissions_for_claims(claims: dict, roles_client_id: str = "") -> set[str]:
+    """Resolve permissions from realm roles, one trusted client, and groups.
+
+    Never trust roles from every resource_access client: another unrelated
+    client may define a role with the same name as a Pencheff administrator.
+    """
     roles: set[str] = set()
     realm_access = claims.get("realm_access") or {}
     if isinstance(realm_access, dict):
         roles.update(str(r) for r in (realm_access.get("roles") or []))
 
     resource_access = claims.get("resource_access") or {}
-    if isinstance(resource_access, dict):
-        for resource in resource_access.values():
-            if isinstance(resource, dict):
-                roles.update(str(r) for r in (resource.get("roles") or []))
+    if roles_client_id and isinstance(resource_access, dict):
+        resource = resource_access.get(roles_client_id)
+        if isinstance(resource, dict):
+            roles.update(str(r) for r in (resource.get("roles") or []))
 
     groups = claims.get("groups") or []
     for group in groups:

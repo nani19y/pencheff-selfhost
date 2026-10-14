@@ -80,7 +80,9 @@ async def get_current_user(
     request.state.user_id = user.id
     request.state.org_id = user.org_id
     request.state.oidc_claims = claims
-    request.state.oidc_permissions = permissions_for_claims(claims)
+    request.state.oidc_permissions = permissions_for_claims(
+        claims, settings.oidc_roles_client_id or settings.oidc_client_id
+    )
     request.state.api_key_id = None
     return user
 

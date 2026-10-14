@@ -264,13 +264,45 @@ async def supersede_proposal(
     await session.commit()
 
 
+# ── Manual approval ────────────────────────────────────────────────
+
+@router.post(
+    "/fix-proposals/{proposal_id}/approve",
+    response_model=FixProposalOut,
+    dependencies=[Depends(require_permission("remediation:approve"))],
+)
+async def approve_proposal(
+    proposal_id: str,
+    workspace: Workspace = Depends(get_active_workspace),
+    session: AsyncSession = Depends(get_session),
+) -> FixProposalOut:
+    """Explicit human approval gate. Approval never executes code by itself."""
+    p = (await session.execute(
+        select(FixProposal).where(
+            FixProposal.id == proposal_id,
+            FixProposal.org_id == workspace.org_id,
+        )
+    )).scalar_one_or_none()
+    if p is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "proposal not found")
+    if p.status != "draft":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Only draft proposals can be approved; current status={p.status}.",
+        )
+    p.status = "approved"
+    await session.commit()
+    await session.refresh(p)
+    return _to_out(p)
+
+
 # ── Apply ───────────────────────────────────────────────────────────
 
 
 @router.post(
     "/fix-proposals/{proposal_id}/apply",
     response_model=ApplyResultOut,
-    dependencies=[Depends(require_scope("fix_proposals:write"))],
+    dependencies=[Depends(require_permission("remediation:execute"))],
 )
 async def apply_proposal(
     proposal_id: str,
@@ -285,9 +317,11 @@ async def apply_proposal(
     )).scalar_one_or_none()
     if p is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "proposal not found")
-    if p.status not in ("draft", "failed"):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"Cannot apply a proposal in status={p.status}.")
+    if p.status != "approved":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Remediation requires explicit approval before execution.",
+        )
     if not p.repository_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "Proposal has no associated repository.")

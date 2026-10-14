@@ -1,6 +1,6 @@
 import "../styles/globals.css";
 import type { Metadata, Viewport } from "next";
-import { AppClerkProvider } from "@/components/clerk-provider";
+import { AuthProvider } from "@/components/auth-provider";
 import { WorkspaceProvider } from "@/lib/workspace-context";
 import { NotificationsProvider } from "@/lib/notifications-context";
 import {
@@ -84,8 +84,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AppClerkProvider>
-      <html lang="en" data-theme="dark" className="dark">
+    <html lang="en" data-theme="dark" className="dark">
         <head>
           <link rel="preconnect" href="https://fonts.googleapis.com" />
           <link
@@ -121,11 +120,12 @@ export default function RootLayout({
           />
         </head>
         <body className="min-h-screen antialiased bg-canvas text-graphite font-body selection:bg-orange-400 selection:text-paper">
-          <WorkspaceProvider>
-            <NotificationsProvider>{children}</NotificationsProvider>
-          </WorkspaceProvider>
+          <AuthProvider>
+            <WorkspaceProvider>
+              <NotificationsProvider>{children}</NotificationsProvider>
+            </WorkspaceProvider>
+          </AuthProvider>
         </body>
       </html>
-    </AppClerkProvider>
   );
 }

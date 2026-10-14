@@ -31,17 +31,35 @@ async def get_current_user(
 
     claims = await authenticate_request(request)
     subject = str(claims["sub"])
-    email = str(claims.get("email") or f"{subject}@oidc.local").lower()
+    # Never use an unverified email claim to link an identity to an existing
+    # Pencheff account. Keep unverified identities on a synthetic address.
+    verified_email = claims.get("email") if claims.get("email_verified") is True else None
+    email = str(verified_email or f"{subject}@oidc.local").strip().lower()
     name = claims.get("name") or claims.get("preferred_username") or email
 
     user = (await session.execute(select(User).where(User.google_sub == subject))).scalar_one_or_none()
-    if user is None:
+    if user is None and verified_email:
         user = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if user is not None:
+            # An email already bound to a different OIDC subject must never be
+            # silently reassigned. An unbound account can be linked only after
+            # the identity provider has asserted that the email is verified.
+            if user.google_sub and user.google_sub != subject:
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    "This account is linked to a different identity. Contact an administrator.",
+                )
+            if not user.google_sub:
+                user.google_sub = subject
+                await session.commit()
+                await session.refresh(user)
 
-    # OIDC authentication identifies the person; Pencheff membership determines
-    # which tenant they can access. New users are provisioned into the first
-    # organization only when explicitly enabled by the deployment policy.
     if user is None:
+        if not settings.oidc_auto_provision_users:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Your identity is valid, but no Pencheff account is provisioned. Contact an administrator.",
+            )
         org = (await session.execute(select(Org).order_by(Org.created_at.asc()).limit(1))).scalar_one_or_none()
         if org is None:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "No Pencheff organization is configured.")
@@ -62,7 +80,9 @@ async def get_current_user(
     request.state.user_id = user.id
     request.state.org_id = user.org_id
     request.state.oidc_claims = claims
-    request.state.oidc_permissions = permissions_for_claims(claims)
+    request.state.oidc_permissions = permissions_for_claims(
+        claims, settings.oidc_roles_client_id or settings.oidc_client_id
+    )
     request.state.api_key_id = None
     return user
 

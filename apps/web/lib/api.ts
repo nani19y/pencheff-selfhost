@@ -80,14 +80,16 @@ export async function api<T = unknown>(
 
 /**
  * Multipart upload (source archives, mobile/client artifacts). FormData sets
- * its own Content-Type boundary, so we don't set it here. CE is de-authed —
- * requests carry only the workspace scope, no bearer token.
+ * its own Content-Type boundary, so we don't set it here. Attach the same OIDC
+ * bearer token and workspace scope used by ordinary API requests.
  */
 export async function apiUpload<T = unknown>(
   path: string,
   form: FormData,
 ): Promise<T> {
   const headers: Record<string, string> = {};
+  const accessToken = await getAccessToken();
+  if (accessToken) headers.Authorization = "Bearer " + accessToken;
   const ws = getActiveWorkspaceId();
   if (ws) headers["X-Workspace-Id"] = ws;
   const res = await fetch(`${API}${path}`, {
@@ -95,6 +97,7 @@ export async function apiUpload<T = unknown>(
     headers,
     body: form,
   });
+  if (res.status === 401) throw new Error("unauthorized");
   if (!res.ok) throw await apiError(res);
   if (res.status === 204) return undefined as T;
   const ct = res.headers.get("content-type") || "";
@@ -160,7 +163,13 @@ export async function downloadFile(
   path: string,
   suggestedName?: string,
 ): Promise<void> {
-  const res = await fetch(`${API}${path}`);
+  const headers: Record<string, string> = {};
+  const accessToken = await getAccessToken();
+  if (accessToken) headers.Authorization = "Bearer " + accessToken;
+  const ws = getActiveWorkspaceId();
+  if (ws) headers["X-Workspace-Id"] = ws;
+  const res = await fetch(`${API}${path}`, { headers });
+  if (res.status === 401) throw new Error("unauthorized");
   if (!res.ok) {
     throw await apiError(res);
   }

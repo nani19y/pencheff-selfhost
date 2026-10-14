@@ -42,6 +42,12 @@ async def validate_access_token(token: str) -> dict[str, Any]:
             "OIDC authentication is not configured.",
         )
 
+    if not settings.oidc_audience.strip():
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "OIDC_AUDIENCE must be configured when OIDC authentication is enabled.",
+        )
+
     try:
         jwks_url = await _discover_jwks_url(issuer)
         client = _jwks_client(jwks_url)
@@ -51,7 +57,7 @@ async def validate_access_token(token: str) -> dict[str, Any]:
             "verify_signature": True,
             "verify_exp": True,
             "verify_iss": True,
-            "verify_aud": bool(settings.oidc_audience),
+            "verify_aud": True,
         }
         kwargs: dict[str, Any] = {"issuer": issuer, "options": options}
         if settings.oidc_audience:

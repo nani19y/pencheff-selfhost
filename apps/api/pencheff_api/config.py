@@ -43,8 +43,12 @@ class Settings(BaseSettings):
     oidc_enabled: bool = False
     oidc_issuer: str = ""
     oidc_client_id: str = ""
+    # Only this client's resource roles are accepted for authorization.
+    oidc_roles_client_id: str = ""
     oidc_audience: str = ""
     oidc_jwks_url: str = ""
+    # New identities are denied by default; operators must explicitly opt in.
+    oidc_auto_provision_users: bool = False
 
     fernet_key: str = Field(default="")  # generate with Fernet.generate_key(); base64 url-safe 32 bytes
 

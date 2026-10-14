@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     oidc_client_id: str = ""
     oidc_audience: str = ""
     oidc_jwks_url: str = ""
+    # New identities are denied by default; operators must explicitly opt in.
+    oidc_auto_provision_users: bool = False
 
     fernet_key: str = Field(default="")  # generate with Fernet.generate_key(); base64 url-safe 32 bytes
 

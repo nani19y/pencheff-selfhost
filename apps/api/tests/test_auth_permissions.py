@@ -35,9 +35,20 @@ def test_unrecognized_roles_are_ignored():
     assert permissions == set()
 
 
-def test_client_roles_are_resolved():
-    permissions = permissions_for_claims({
-        "resource_access": {"pencheff-web": {"roles": ["pencheff-security"]}}
-    })
+def test_client_roles_are_resolved_only_for_configured_client():
+    claims = {
+        "resource_access": {
+            "pencheff-web": {"roles": ["pencheff-security"]},
+            "unrelated-client": {"roles": ["pencheff-admin"]},
+        }
+    }
+    permissions = permissions_for_claims(claims, "pencheff-web")
     assert "scans:write" in permissions
     assert "org:manage_members" not in permissions
+
+
+def test_admin_role_from_unrelated_client_is_ignored():
+    permissions = permissions_for_claims({
+        "resource_access": {"unrelated-client": {"roles": ["pencheff-admin"]}}
+    }, "pencheff-web")
+    assert permissions == set()
